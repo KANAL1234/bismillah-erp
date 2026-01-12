@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useProducts, useDeleteProduct } from '@/lib/queries/products'
+import { useInventoryStock } from '@/lib/queries/inventory'
+import { StockInitializeDialog } from '@/components/stock-initialize-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,7 +23,14 @@ import { toast } from 'sonner'
 export default function ProductsPage() {
     const [searchQuery, setSearchQuery] = useState('')
     const { data: products, isLoading } = useProducts()
+    const { data: inventoryStock } = useInventoryStock()
     const deleteProduct = useDeleteProduct()
+
+    // Add function to get total stock for a product
+    const getProductTotalStock = (productId: string) => {
+        const productStock = inventoryStock?.filter(s => s.product_id === productId)
+        return productStock?.reduce((sum, s) => sum + s.quantity_available, 0) || 0
+    }
 
     // Filter products based on search
     const filteredProducts = products?.filter((product) => {
@@ -95,6 +104,7 @@ export default function ProductsPage() {
                                     <TableHead className="font-bold">Cost Price</TableHead>
                                     <TableHead className="font-bold">Selling Price</TableHead>
                                     <TableHead className="font-bold">UOM</TableHead>
+                                    <TableHead className="font-bold text-right">Stock</TableHead>
                                     <TableHead className="font-bold">Status</TableHead>
                                     <TableHead className="text-right font-bold">Actions</TableHead>
                                 </TableRow>
@@ -102,7 +112,7 @@ export default function ProductsPage() {
                             <TableBody>
                                 {filteredProducts?.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="text-center py-12 text-slate-500">
+                                        <TableCell colSpan={9} className="text-center py-12 text-slate-500">
                                             <div className="flex flex-col items-center">
                                                 <Package className="h-8 w-8 mb-2 opacity-20" />
                                                 <p>No products found</p>
@@ -122,6 +132,9 @@ export default function ProductsPage() {
                                             <TableCell>Rs. {product.cost_price?.toLocaleString()}</TableCell>
                                             <TableCell>Rs. {product.selling_price?.toLocaleString()}</TableCell>
                                             <TableCell>{product.units_of_measure?.code}</TableCell>
+                                            <TableCell className="text-right font-bold">
+                                                {getProductTotalStock(product.id).toLocaleString()}
+                                            </TableCell>
                                             <TableCell>
                                                 <Badge variant={product.is_active ? 'default' : 'secondary'}>
                                                     {product.is_active ? 'Active' : 'Inactive'}
@@ -134,6 +147,10 @@ export default function ProductsPage() {
                                                             <Pencil className="h-4 w-4" />
                                                         </Button>
                                                     </Link>
+                                                    <StockInitializeDialog
+                                                        productId={product.id}
+                                                        productName={product.name}
+                                                    />
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
