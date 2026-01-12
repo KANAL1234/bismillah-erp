@@ -68,10 +68,10 @@ export default function InventoryPage() {
                     <p className="text-slate-500">Track and manage stock across all locations.</p>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
-                    <Link href="/dashboard/inventory/transfer" className="flex-1 md:flex-none">
+                    <Link href="/dashboard/inventory/transfers" className="flex-1 md:flex-none">
                         <Button variant="outline" className="w-full">Stock Transfer</Button>
                     </Link>
-                    <Link href="/dashboard/inventory/adjustment" className="flex-1 md:flex-none">
+                    <Link href="/dashboard/inventory/adjustments" className="flex-1 md:flex-none">
                         <Button variant="outline" className="w-full">Stock Adjustment</Button>
                     </Link>
                 </div>

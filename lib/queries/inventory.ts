@@ -163,7 +163,10 @@ export function useInitializeStock() {
                     .from('inventory_stock')
                     .update({
                         quantity_on_hand: quantity,
+                        quantity_available: quantity,
                         average_cost: unit_cost,
+                        total_value: quantity * unit_cost,
+                        last_updated: new Date().toISOString()
                     })
                     .eq('id', existing.id)
                     .select()
@@ -179,7 +182,10 @@ export function useInitializeStock() {
                         product_id,
                         location_id,
                         quantity_on_hand: quantity,
+                        quantity_available: quantity,
                         average_cost: unit_cost,
+                        total_value: quantity * unit_cost,
+                        last_updated: new Date().toISOString()
                     })
                     .select()
                     .single()

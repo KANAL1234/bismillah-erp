@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useProducts, useDeleteProduct } from '@/lib/queries/products'
 import { useInventoryStock } from '@/lib/queries/inventory'
-import { StockInitializeDialog } from '@/components/stock-initialize-dialog'
+import { StockInitializeDialog } from '@/components/inventory/stock-initialize-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,6 +18,16 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Plus, Search, Pencil, Trash2, Package } from 'lucide-react'
 import Link from 'next/link'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 
 export default function ProductsPage() {
@@ -25,6 +35,8 @@ export default function ProductsPage() {
     const { data: products, isLoading } = useProducts()
     const { data: inventoryStock } = useInventoryStock()
     const deleteProduct = useDeleteProduct()
+
+    const [productToDelete, setProductToDelete] = useState<{ id: string, name: string } | null>(null)
 
     // Add function to get total stock for a product
     const getProductTotalStock = (productId: string) => {
@@ -42,18 +54,24 @@ export default function ProductsPage() {
         )
     })
 
-    const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`Are you sure you want to delete "${name}"?`)) return
+    const [isDeleting, setIsDeleting] = useState(false)
 
+    const handleDelete = async () => {
+        if (!productToDelete) return
+
+        setIsDeleting(true)
         try {
-            await deleteProduct.mutateAsync(id)
+            await deleteProduct.mutateAsync(productToDelete.id)
             toast.success('Product Deleted', {
-                description: `${name} has been deleted successfully.`,
+                description: `${productToDelete.name} has been deleted successfully.`,
             })
+            setProductToDelete(null)
         } catch (error: any) {
             toast.error('Error', {
                 description: error.message,
             })
+        } finally {
+            setIsDeleting(false)
         }
     }
 
@@ -155,7 +173,7 @@ export default function ProductsPage() {
                                                         variant="ghost"
                                                         size="icon"
                                                         className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
-                                                        onClick={() => handleDelete(product.id, product.name)}
+                                                        onClick={() => setProductToDelete({ id: product.id, name: product.name })}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
@@ -173,6 +191,37 @@ export default function ProductsPage() {
             <div className="text-sm text-slate-500 px-2">
                 Showing <strong>{filteredProducts?.length}</strong> of <strong>{products?.length}</strong> products
             </div>
-        </div>
+
+            <AlertDialog open={!!productToDelete} onOpenChange={(open) => !open && setProductToDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete <span className="font-medium text-slate-900">"{productToDelete?.name}"</span>?
+                            This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => {
+                                e.preventDefault()
+                                handleDelete()
+                            }}
+                            disabled={isDeleting}
+                        >
+                            {isDeleting ? (
+                                <>
+                                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                    Deleting...
+                                </>
+                            ) : (
+                                'Delete Product'
+                            )}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </div >
     )
 }

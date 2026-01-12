@@ -40,6 +40,27 @@ export type UnitOfMeasure = {
     description: string | null
 }
 
+export type StockTransferStatus =
+    | 'DRAFT'
+    | 'PENDING_APPROVAL'
+    | 'APPROVED'
+    | 'IN_TRANSIT'
+    | 'COMPLETED'
+    | 'CANCELLED'
+
+export type StockAdjustmentType =
+    | 'CYCLE_COUNT'
+    | 'DAMAGE'
+    | 'EXPIRY'
+    | 'LOSS'
+    | 'FOUND'
+    | 'OTHER'
+
+export type StockAdjustmentStatus =
+    | 'DRAFT'
+    | 'PENDING_APPROVAL'
+    | 'APPROVED'
+
 export type ProductWithDetails = Product & {
     product_categories: ProductCategory
     units_of_measure: UnitOfMeasure
