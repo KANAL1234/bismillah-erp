@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Sidebar } from '@/components/dashboard/sidebar'
 
 export default async function DashboardLayout({
     children,
@@ -23,60 +23,30 @@ export default async function DashboardLayout({
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Top Navigation */}
-            <nav className="bg-white border-b shadow-sm sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex justify-between h-16">
-                        <div className="flex">
-                            <div className="flex-shrink-0 flex items-center">
-                                <h1 className="text-xl font-bold text-slate-900">
-                                    Bismillah Oil Agency
-                                </h1>
-                            </div>
-                            <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                                <Link
-                                    href="/dashboard"
-                                    className="border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors"
-                                >
-                                    Dashboard
-                                </Link>
-                                <Link
-                                    href="/dashboard/products"
-                                    className="border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors"
-                                >
-                                    Products
-                                </Link>
-                                <Link
-                                    href="/dashboard/inventory"
-                                    className="border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors"
-                                >
-                                    Inventory
-                                </Link>
-                                <Link
-                                    href="/dashboard/sales"
-                                    className="border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors"
-                                >
-                                    Sales
-                                </Link>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                            <span className="text-sm text-slate-600 hidden md:inline-block">{user.email}</span>
-                            <form action={signOut}>
-                                <Button variant="outline" size="sm">
-                                    Sign Out
-                                </Button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </nav>
+        <div className="flex h-screen bg-gray-50">
+            {/* Left Sidebar */}
+            <Sidebar />
 
-            {/* Main Content */}
-            <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-                {children}
-            </main>
+            {/* Main Content Area */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+                {/* Top Header */}
+                <header className="flex h-16 items-center justify-between border-b bg-white px-6">
+                    <h2 className="text-lg font-semibold text-slate-900">Bismillah Oil Agency</h2>
+                    <div className="flex items-center space-x-4">
+                        <span className="text-sm text-slate-600">{user.email}</span>
+                        <form action={signOut}>
+                            <Button variant="outline" size="sm">
+                                Sign Out
+                            </Button>
+                        </form>
+                    </div>
+                </header>
+
+                {/* Main Content */}
+                <main className="flex-1 overflow-y-auto p-6">
+                    {children}
+                </main>
+            </div>
         </div>
     )
 }

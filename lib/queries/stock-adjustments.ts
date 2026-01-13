@@ -169,6 +169,99 @@ export function useApproveAdjustment() {
                 }
             }
 
+            // === PHASE 3: POST COGS TO GL (Accounting Integration) ===
+            try {
+                // Get fiscal year
+                const { data: fiscalYear } = await supabase
+                    .from('fiscal_years')
+                    .select('id')
+                    .eq('is_closed', false)
+                    .single()
+
+                // Get accounts
+                const { data: accounts } = await supabase
+                    .from('chart_of_accounts')
+                    .select('id, account_code')
+
+                const inventoryAccount = accounts?.find(a => a.account_code === '1200') // Inventory
+                const cogsAccount = accounts?.find(a => a.account_code === '5010') // COGS
+
+                if (!inventoryAccount || !cogsAccount || !fiscalYear) {
+                    throw new Error('Required accounts not found')
+                }
+
+                // Calculate total adjustment value
+                const totalValue = adjustment.stock_adjustment_items.reduce((sum: number, item: any) => {
+                    const difference = item.physical_quantity - item.system_quantity
+                    return sum + (Math.abs(difference) * item.unit_cost)
+                }, 0)
+
+                if (totalValue > 0) {
+                    // Create journal entry for COGS impact
+                    const journalNumber = `JE-ADJ-${Date.now()}`
+                    const isDecrease = adjustment.stock_adjustment_items[0].physical_quantity < adjustment.stock_adjustment_items[0].system_quantity
+
+                    const { data: journalEntry } = await supabase
+                        .from('journal_entries')
+                        .insert({
+                            journal_number: journalNumber,
+                            journal_type: 'AUTO',
+                            journal_date: adjustment.adjustment_date,
+                            fiscal_year_id: fiscalYear.id,
+                            narration: `Stock Adjustment - ${adjustment.adjustment_type}: ${adjustment.reason}`,
+                            total_debit: totalValue,
+                            total_credit: totalValue,
+                            status: 'posted',
+                            posted_at: new Date().toISOString()
+                        })
+                        .select()
+                        .single()
+
+                    if (journalEntry) {
+                        // Create journal lines based on adjustment type
+                        const lines = isDecrease ? [
+                            // Decrease: Debit COGS, Credit Inventory
+                            {
+                                journal_entry_id: journalEntry.id,
+                                account_id: cogsAccount.id,
+                                debit_amount: totalValue,
+                                credit_amount: 0,
+                                description: `${adjustment.adjustment_type} - Stock decrease`
+                            },
+                            {
+                                journal_entry_id: journalEntry.id,
+                                account_id: inventoryAccount.id,
+                                debit_amount: 0,
+                                credit_amount: totalValue,
+                                description: `${adjustment.adjustment_type} - Stock decrease`
+                            }
+                        ] : [
+                            // Increase: Debit Inventory, Credit COGS
+                            {
+                                journal_entry_id: journalEntry.id,
+                                account_id: inventoryAccount.id,
+                                debit_amount: totalValue,
+                                credit_amount: 0,
+                                description: `${adjustment.adjustment_type} - Stock increase`
+                            },
+                            {
+                                journal_entry_id: journalEntry.id,
+                                account_id: cogsAccount.id,
+                                debit_amount: 0,
+                                credit_amount: totalValue,
+                                description: `${adjustment.adjustment_type} - Stock increase`
+                            }
+                        ]
+
+                        await supabase.from('journal_entry_lines').insert(lines)
+                        console.log(`✅ Stock adjustment posted to GL: ${journalNumber}`)
+                    }
+                }
+            } catch (glError) {
+                console.warn('GL posting failed (non-critical):', glError)
+                // Don't fail adjustment if GL posting fails
+            }
+
             return { id }
         },
         onSuccess: () => {

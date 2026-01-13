@@ -1,0 +1,249 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { createClient } from '@/lib/supabase/client'
+import { SalesInvoice, SalesInvoiceWithDetails, SalesOrder } from '@/lib/types/database'
+import { toast } from 'sonner'
+
+export type CreateInvoiceInput = {
+    customer_id: string
+    sales_order_id?: string
+    invoice_date: string
+    due_date: string
+    status: SalesInvoice['status']
+    subtotal: number
+    tax_amount: number
+    discount_amount: number
+    shipping_charges: number
+    total_amount: number
+    amount_paid: number
+    notes?: string
+    items: {
+        product_id: string
+        sales_order_item_id?: string
+        quantity: number
+        unit_price: number
+        discount_percentage: number
+        tax_percentage: number
+        line_total: number
+    }[]
+}
+
+export function useSalesInvoices() {
+    return useQuery({
+        queryKey: ['sales-invoices'],
+        queryFn: async () => {
+            const supabase = createClient()
+            const { data, error } = await supabase
+                .from('sales_invoices')
+                .select(`
+                    *,
+                    customers (
+                        id,
+                        name,
+                        customer_code
+                    ),
+                    sales_orders (
+                        order_number
+                    )
+                `)
+                .order('created_at', { ascending: false })
+
+            if (error) throw error
+            return data as (SalesInvoice & {
+                customers: { name: string, customer_code: string },
+                sales_orders?: { order_number: string }
+            })[]
+        }
+    })
+}
+
+export function useSalesInvoice(id: string) {
+    return useQuery({
+        queryKey: ['sales-invoice', id],
+        queryFn: async () => {
+            const supabase = createClient()
+            const { data, error } = await supabase
+                .from('sales_invoices')
+                .select(`
+                    *,
+                    customers (*),
+                    sales_orders (order_number),
+                    sales_invoice_items (
+                        *,
+                        products (
+                            id,
+                            name,
+                            sku,
+                            uom_id
+                        )
+                    )
+                `)
+                .eq('id', id)
+                .single()
+
+            if (error) throw error
+            return data as SalesInvoiceWithDetails
+        },
+        enabled: !!id
+    })
+}
+
+export function useCreateSalesInvoice() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (input: CreateInvoiceInput) => {
+            const supabase = createClient()
+
+            // 1. Get next invoice number
+            const { data: lastInvoice } = await supabase
+                .from('sales_invoices')
+                .select('invoice_number')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single()
+
+            let nextNumber = 'INV-0001'
+            if (lastInvoice) {
+                const lastNum = parseInt(lastInvoice.invoice_number.split('-')[1])
+                nextNumber = `INV-${String(lastNum + 1).padStart(4, '0')}`
+            }
+
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) throw new Error('User not authenticated')
+
+            // 2. Insert Invoice
+            const { data: invoice, error: invoiceError } = await supabase
+                .from('sales_invoices')
+                .insert({
+                    invoice_number: nextNumber,
+                    customer_id: input.customer_id,
+                    sales_order_id: input.sales_order_id,
+                    invoice_date: input.invoice_date,
+                    due_date: input.due_date,
+                    status: input.status,
+                    subtotal: input.subtotal,
+                    tax_amount: input.tax_amount,
+                    discount_amount: input.discount_amount,
+                    shipping_charges: input.shipping_charges,
+                    total_amount: input.total_amount,
+                    amount_paid: input.amount_paid,
+                    notes: input.notes,
+                    created_by: user.id
+                })
+                .select()
+                .single()
+
+            if (invoiceError) throw invoiceError
+
+            // 3. Insert Items
+            const items = input.items.map(item => ({
+                invoice_id: invoice.id,
+                sales_order_item_id: item.sales_order_item_id,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                discount_percentage: item.discount_percentage,
+                tax_percentage: item.tax_percentage
+                // line_total is generated
+            }))
+
+            const { error: itemsError } = await supabase
+                .from('sales_invoice_items')
+                .insert(items)
+
+            if (itemsError) throw itemsError
+
+            return invoice
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sales-invoices'] })
+            toast.success('Invoice created successfully')
+        },
+        onError: (error) => {
+            console.error('Error creating invoice:', error)
+            toast.error('Failed to create invoice')
+        }
+    })
+}
+
+export function useUpdateInvoiceStatus() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, status }: { id: string, status: SalesInvoice['status'] }) => {
+            const supabase = createClient()
+            const { error } = await supabase
+                .from('sales_invoices')
+                .update({ status })
+                .eq('id', id)
+
+            if (error) throw error
+
+            // Post to General Ledger if status is posted (Accounting Integration)
+            if (status === 'posted') {
+                try {
+                    await supabase.rpc('post_customer_invoice', {
+                        p_invoice_id: id
+                    })
+                } catch (glError) {
+                    console.warn('GL posting failed (non-critical):', glError)
+                    // Don't fail the status update if GL posting fails
+                }
+            }
+        },
+        onSuccess: (_, { id }) => {
+            queryClient.invalidateQueries({ queryKey: ['sales-invoices'] })
+            queryClient.invalidateQueries({ queryKey: ['sales-invoice', id] })
+            queryClient.invalidateQueries({ queryKey: ['journal-entries'] })
+            queryClient.invalidateQueries({ queryKey: ['chart-of-accounts'] })
+            toast.success('Invoice status updated')
+        },
+        onError: (error) => {
+            toast.error('Failed to update status')
+        }
+    })
+}
+
+export function useGenerateInvoiceFromOrder() {
+    const createInvoice = useCreateSalesInvoice()
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (order: SalesOrder & { items: any[] }) => {
+            const invoiceDate = new Date().toISOString().split('T')[0]
+            // Default 30 day term
+            const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+            await createInvoice.mutateAsync({
+                customer_id: order.customer_id,
+                sales_order_id: order.id,
+                invoice_date: invoiceDate,
+                due_date: dueDate,
+                status: 'draft',
+                subtotal: order.subtotal,
+                tax_amount: order.tax_amount,
+                discount_amount: order.discount_amount,
+                shipping_charges: order.shipping_charges,
+                total_amount: order.total_amount,
+                amount_paid: 0,
+                notes: order.notes || undefined,
+                items: order.items.map((item: any) => ({
+                    product_id: item.product_id,
+                    sales_order_item_id: item.id,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    discount_percentage: item.discount_percentage,
+                    tax_percentage: item.tax_percentage,
+                    line_total: item.line_total
+                }))
+            })
+        },
+        onSuccess: () => {
+            toast.success('Invoice generated from Order')
+        },
+        onError: (error) => {
+            console.error('Generation failed', error)
+            toast.error('Failed to generate invoice')
+        }
+    })
+}
