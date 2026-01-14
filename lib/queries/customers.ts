@@ -165,3 +165,53 @@ export function useCreateReceiptVoucher() {
         },
     })
 }
+// Get customer transactions (combined invoices and receipts)
+export function useCustomerTransactions(customerId: string) {
+    return useQuery({
+        queryKey: ['customers', customerId, 'transactions'],
+        queryFn: async () => {
+            // Fetch Invoices
+            const { data: invoices, error: invErr } = await supabase
+                .from('customer_invoices_accounting')
+                .select('*')
+                .eq('customer_id', customerId)
+                .order('invoice_date', { ascending: false })
+
+            if (invErr) throw invErr
+
+            // Fetch Receipts
+            const { data: receipts, error: recErr } = await supabase
+                .from('receipt_vouchers')
+                .select('*')
+                .eq('customer_id', customerId)
+                .order('receipt_date', { ascending: false })
+
+            if (recErr) throw recErr
+
+            // Combine and format
+            const transactions = [
+                ...(invoices || []).map(inv => ({
+                    id: inv.id,
+                    date: inv.invoice_date,
+                    type: 'INVOICE' as const,
+                    reference: inv.invoice_number,
+                    amount: inv.total_amount,
+                    status: inv.status,
+                    notes: inv.notes
+                })),
+                ...(receipts || []).map(rec => ({
+                    id: rec.id,
+                    date: rec.receipt_date,
+                    type: 'PAYMENT' as const,
+                    reference: rec.voucher_number,
+                    amount: rec.amount,
+                    status: rec.status,
+                    notes: rec.notes
+                }))
+            ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+            return transactions
+        },
+        enabled: !!customerId,
+    })
+}
