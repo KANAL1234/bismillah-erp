@@ -1451,7 +1451,7 @@ export default function SystemHealthPage() {
                     receipt_date: new Date().toISOString().split('T')[0],
                     amount: payAmount,
                     payment_method: 'CASH',
-                    status: 'posted',
+                    status: 'cleared',  // Trigger requires 'cleared' status
                     notes: 'System Health Test Payment'
                 }).select().single()
 
@@ -1536,8 +1536,8 @@ export default function SystemHealthPage() {
                 const { data: leaveResult, error: leaveErr } = await supabase.rpc('request_leave', {
                     p_employee_id: testEmployeeId,
                     p_leave_type_id: leaveType.id,
-                    p_start_date: new Date().toISOString().split('T')[0],
-                    p_end_date: new Date().toISOString().split('T')[0],
+                    p_from_date: new Date().toISOString().split('T')[0],
+                    p_to_date: new Date().toISOString().split('T')[0],
                     p_reason: 'System Health Test'
                 })
                 if (leaveErr) throw leaveErr
