@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useStockTransfers, useUpdateTransferStatus, useDeleteTransfer } from '@/lib/queries/stock-transfers'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +32,14 @@ import {
 } from '@/components/ui/alert-dialog'
 
 export default function StockTransfersPage() {
+    return (
+        <PermissionGuard permission="inventory.stock.transfer">
+            <StockTransfersContent />
+        </PermissionGuard>
+    )
+}
+
+function StockTransfersContent() {
     const { data: allTransfers, isLoading } = useStockTransfers()
     const updateStatus = useUpdateTransferStatus()
     const deleteTransfer = useDeleteTransfer()

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useStockAdjustments, useSubmitAdjustment, useApproveAdjustment, useDeleteAdjustment } from '@/lib/queries/stock-adjustments'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +31,14 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 
 export default function StockAdjustmentsPage() {
+    return (
+        <PermissionGuard permission="inventory.stock.adjust">
+            <StockAdjustmentsContent />
+        </PermissionGuard>
+    )
+}
+
+function StockAdjustmentsContent() {
     const { data: allAdjustments, isLoading } = useStockAdjustments()
     const submitAdjustment = useSubmitAdjustment()
     const approveAdjustment = useApproveAdjustment()

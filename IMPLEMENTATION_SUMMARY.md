@@ -1,5 +1,5 @@
 # Bismillah ERP - Implementation Status Report
-Last Updated: January 13, 2026
+Last Updated: January 13, 2026 (Updated File Structure & Schema)
 
 ## 1. Core Modules Implemented
 
@@ -102,6 +102,66 @@ A high-performance diagnostic suite (12 Modules) for real-time ERP verification.
   - **Expanded Cleanup API**: Server-side logic to reliably purge all `TEST-` and `Mock` data.
   - **Reactivity**: Cleanup invokes before and after diagnostic runs.
 
+## 5. Dynamic Role-Based Access Control (RBAC) (NEW) ✨
+A fully customized, dynamic permission system that replaces fixed roles with a granular "allowance" matrix.
+
+### 🔐 Multi-Tier Security
+- **Super Admin**: Permanent role with absolute system access.
+- **Custom Roles**: Ability to create limitless roles (e.g., "Night Shift Manager", "Inventory Auditor").
+- **Granular Permissions**: 55+ specific permissions covering every button and route in the system.
+
+### 🛡️ Location-Based Access Control (LBAC) - COMPLETE ✨
+A comprehensive security layer that restricts data access and operational capabilities based on the user's assigned physical locations (Stores/Vehicles/Warehouses).
+
+#### 🎯 Core Features
+- **Multi-Location Mapping**: Users can be assigned to multiple specific locations (Main Warehouse, Store 1, Mobile Van A).
+- **Header-Based Selection**: Users with 2+ locations can select "All My Locations" or a specific location from the header dropdown.
+- **Dynamic Filtering**: All modules automatically filter data based on the selected location(s).
+- **Super Admin Enforcement**: Super Admins now respect location assignments (no bypass).
+
+#### 📊 Complete Module Coverage (9/9 Modules)
+1. **Inventory Management**: 
+   - Respects header location selection
+   - "All My Locations" shows aggregated data from all allowed locations
+   - Specific location shows only that location's data
+   
+2. **Point of Sale (POS)**:
+   - Uses selected location from header
+   - Single-location operation (physical requirement)
+   - Shows loading state during initialization
+   
+3. **POS History**:
+   - Filters sales by allowed locations
+   - Location dropdown shows only authorized locations
+   
+4. **Sales Orders** (List & New):
+   - List filtered by allowed warehouse locations
+   - New order warehouse dropdown filtered by access
+   
+5. **Stock Transfers** (List & New):
+   - List shows transfers where user has access to from_location OR to_location
+   - "From Location" dropdown filtered by allowed locations
+   - "To Location" shows ALL locations (business requirement)
+   
+6. **Goods Receipt Notes (GRN)** (List & New):
+   - List filtered by allowed receiving locations
+   - New GRN location dropdown filtered by access
+   
+7. **Transaction Registers (Reports)**:
+   - Location filter dropdown shows only allowed locations
+   - Sales/Purchase registers respect location filtering
+
+#### 🔐 Security Implementation
+- **Database Level**: `user_allowed_locations` table tracks location assignments
+- **Context Provider**: `LocationContext` manages current selection and allowed locations
+- **Frontend Enforcement**: All queries filtered by `allowedLocationIds` array
+- **Super Admin Change**: Removed bypass in `hasLocationAccess()` function - all users follow same rules
+
+#### 🎨 UI Components
+- **LocationSelector**: Header dropdown with "All My Locations" option for multi-location users
+- **Badge Display**: Single-location users see location badge (no dropdown)
+- **Persistent Selection**: Location choice saved in localStorage
+
 ## 6. UI/UX Improvements
 
 ### 🧭 Professional Navigation
@@ -112,6 +172,9 @@ A high-performance diagnostic suite (12 Modules) for real-time ERP verification.
 - **Sticky Header**: improved accessibility.
 
 ### 🎨 Interface Standards
+- **Scrolling Fixes**: Improved layout for Role Management and User Management pages:
+  - Independent scrolling for lists/grids while keeping the page header and actions visible.
+  - Eliminated double scrollbars and layout shifting on high-density displays.
 - **Dialogs**: Replaced all native browser alerts with custom `AlertDialog` components.
 - **Notifications**: Integrated `sonner` for beautiful toast notifications.
 - **Hydration Fixes**: Resolved Next.js SSR hydration mismatches for a smoother load.
@@ -126,11 +189,14 @@ A high-performance diagnostic suite (12 Modules) for real-time ERP verification.
 ## 7. Technical Architecture
 
 ### 🏗️ Backend & Database
-- **Schema Synchronization**: Verified and synced database schema with local migrations.
+- **Consolidated Schema**: Single source of truth at `supabase/migrations/bismillah_erp_complete_schema.sql` (541KB, containing all tables, triggers, and RPCs).
+- **Dynamic RBAC Logic**:
+  - `get_user_permissions`: Aggregates permissions from all user roles into a single JSON object for frontend caching.
+  - `assign_role_to_user`: Securely links users to permissions with audit trails.
 - **RPC Functions**:
   - `adjust_inventory_stock`: Handles safe atomic stock updates.
   - `update_vendor_balance`: Manages financial ledgers.
-- **Type Safety**: Comprehensive TypeScript definitions for all 20+ database tables.
+- **Type Safety**: Comprehensive TypeScript definitions for all 25+ database tables and RBAC interfaces.
 
 ## 8. Pakistan Accounting Module (NEW) ✨
 
@@ -170,11 +236,21 @@ A fully-featured, Pakistan-compliant accounting system with automatic GL posting
 - **Payment Tracking**: Monitor unpaid, partial, paid, and overdue invoices
 
 #### 📈 Financial Reports & Registers
-- **Transaction Registers**: Detailed Sales and Purchase registers with date filtering and summary RPCs.
-- **Product-wise Sales**: Analyze performance at the product SKU level.
-- **Trial Balance**: Verify books are balanced with debit/credit totals.
-- **Standard Reports**: Balance Sheet and Profit & Loss (P&L) implementations ready.
-- **Export**: Export reports to Excel for formal accounting review.
+**Implemented:**
+- **Transaction Registers**: Detailed Sales and Purchase registers with date filtering and summary RPCs
+- **Product-wise Sales**: Analyze performance at the product SKU level
+- **Customer/Vendor Analysis**: Sales by customer and purchases by vendor reports
+- **Trial Balance**: Verify books are balanced with debit/credit totals
+- **Profit & Loss Statement**: Complete P&L with revenue, COGS, expenses, and net profit
+- **Balance Sheet**: Assets, liabilities, and equity statement
+- **Aging Reports**: Vendor aging (AP) and Customer aging (AR) with aging buckets
+- **Export**: Export all reports to Excel for formal accounting review
+
+**Planned (Not Yet Implemented):**
+- ⏳ Cash Flow Statement
+- ⏳ General Ledger Detailed Report
+- ⏳ Sales Tax Monthly Return (FBR Format)
+- ⏳ WHT Monthly Return (FBR Format)
 
 #### 🇵🇰 Pakistan Compliance
 - **Fiscal Year**: July-June fiscal year (Pakistan standard)

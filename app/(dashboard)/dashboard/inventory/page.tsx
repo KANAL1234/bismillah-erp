@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useInventoryStock, useLowStock } from '@/lib/queries/inventory'
 import { useLocations } from '@/lib/queries/locations'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,31 +26,59 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Search, AlertTriangle, Package, Warehouse, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
+import { useLocation } from '@/components/providers/location-provider'
 
 export default function InventoryPage() {
+    return (
+        <PermissionGuard permission="inventory.stock.view">
+            <InventoryContent />
+        </PermissionGuard>
+    )
+}
+
+function InventoryContent() {
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedLocation, setSelectedLocation] = useState<string>('all')
+    const { allowedLocationIds, currentLocationId } = useLocation()
 
     const { data: allStock, isLoading } = useInventoryStock()
     const { data: lowStock } = useLowStock()
     const { data: locations } = useLocations()
 
-    // Filter stock
+    // Filter locations by user access
+    const allowedLocations = locations?.filter(loc => allowedLocationIds.includes(loc.id))
+
+    // Determine which locations to show based on header selection
+    // If currentLocationId is set, show only that location
+    // If currentLocationId is empty/null, show all allowed locations
+    const locationsToShow = currentLocationId
+        ? [currentLocationId]
+        : allowedLocationIds
+
+    // Filter stock by header location selection first, then by page filter and search
     const filteredStock = allStock?.filter((stock) => {
+        // LBAC: Filter by header location selection
+        if (!locationsToShow.includes(stock.location_id)) {
+            return false
+        }
+
+        // Page-level location filter (optional additional filter)
+        if (selectedLocation !== 'all' && stock.location_id !== selectedLocation) {
+            return false
+        }
+
         const matchesSearch =
             stock.products.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             stock.products.sku.toLowerCase().includes(searchQuery.toLowerCase())
 
-        const matchesLocation =
-            selectedLocation === 'all' || stock.location_id === selectedLocation
-
-        return matchesSearch && matchesLocation
+        return matchesSearch
     })
 
-    // Calculate summary stats
-    const totalValue = allStock?.reduce((sum, s) => sum + (s.total_value || 0), 0) || 0
-    const totalProducts = new Set(allStock?.map(s => s.product_id)).size
-    const lowStockCount = lowStock?.length || 0
+    // Calculate summary stats (only from locations shown based on header selection)
+    const allowedStock = allStock?.filter(s => locationsToShow.includes(s.location_id))
+    const totalValue = allowedStock?.reduce((sum, s) => sum + (s.total_value || 0), 0) || 0
+    const totalProducts = new Set(allowedStock?.map(s => s.product_id)).size
+    const lowStockCount = lowStock?.filter(s => locationsToShow.includes(s.location_id)).length || 0
 
     if (isLoading) {
         return (
@@ -151,8 +180,8 @@ export default function InventoryPage() {
                                         <SelectValue placeholder="All Locations" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All Locations</SelectItem>
-                                        {locations?.map((location) => (
+                                        <SelectItem value="all">All My Locations</SelectItem>
+                                        {allowedLocations?.map((location) => (
                                             <SelectItem key={location.id} value={location.id}>
                                                 {location.name}
                                             </SelectItem>
@@ -279,41 +308,43 @@ export default function InventoryPage() {
 
                 <TabsContent value="by-location" className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {locations?.map((location) => {
-                            const locationStock = allStock?.filter(s => s.location_id === location.id)
-                            const locationValue = locationStock?.reduce((sum, s) => sum + (s.total_value || 0), 0) || 0
+                        {allowedLocations
+                            ?.filter(loc => locationsToShow.includes(loc.id)) // Filter by header selection
+                            .map((location) => {
+                                const locationStock = allStock?.filter(s => s.location_id === location.id)
+                                const locationValue = locationStock?.reduce((sum, s) => sum + (s.total_value || 0), 0) || 0
 
-                            return (
-                                <Card key={location.id} className="hover:ring-2 hover:ring-slate-100 transition-all">
-                                    <CardHeader className="pb-3">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <CardTitle className="text-lg">{location.name}</CardTitle>
-                                                <p className="text-sm font-mono text-slate-500">{location.code}</p>
+                                return (
+                                    <Card key={location.id} className="hover:ring-2 hover:ring-slate-100 transition-all">
+                                        <CardHeader className="pb-3">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <CardTitle className="text-lg">{location.name}</CardTitle>
+                                                    <p className="text-sm font-mono text-slate-500">{location.code}</p>
+                                                </div>
+                                                <Badge variant="secondary" className="bg-slate-100 text-slate-900">
+                                                    {location.location_types?.name}
+                                                </Badge>
                                             </div>
-                                            <Badge variant="secondary" className="bg-slate-100 text-slate-900">
-                                                {location.location_types?.name}
-                                            </Badge>
-                                        </div>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="flex justify-between items-end border-t pt-4">
-                                            <div>
-                                                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Inventory Value</p>
-                                                <p className="text-xl font-bold text-slate-900">Rs. {locationValue.toLocaleString()}</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-xs text-slate-500 mb-1">{locationStock?.length || 0} unique SKUs</p>
-                                                <div className="flex gap-1 justify-end">
-                                                    <div className="h-1.5 w-8 rounded-full bg-slate-200"></div>
-                                                    <div className="h-1.5 w-8 rounded-full bg-slate-900"></div>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <div className="flex justify-between items-end border-t pt-4">
+                                                <div>
+                                                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Inventory Value</p>
+                                                    <p className="text-xl font-bold text-slate-900">Rs. {locationValue.toLocaleString()}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs text-slate-500 mb-1">{locationStock?.length || 0} unique SKUs</p>
+                                                    <div className="flex gap-1 justify-end">
+                                                        <div className="h-1.5 w-8 rounded-full bg-slate-200"></div>
+                                                        <div className="h-1.5 w-8 rounded-full bg-slate-900"></div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            )
-                        })}
+                                        </CardContent>
+                                    </Card>
+                                )
+                            })}
                     </div>
                 </TabsContent>
             </Tabs>

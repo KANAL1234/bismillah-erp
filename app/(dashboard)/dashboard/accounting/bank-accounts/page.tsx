@@ -5,9 +5,18 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useBankAccounts } from '@/lib/queries/bank-accounts'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Building2, Plus, Star } from 'lucide-react'
 
 export default function BankAccountsPage() {
+    return (
+        <PermissionGuard permission="accounting.bank_accounts.read">
+            <BankAccountsContent />
+        </PermissionGuard>
+    )
+}
+
+function BankAccountsContent() {
     const { data: accounts, isLoading } = useBankAccounts()
 
     return (

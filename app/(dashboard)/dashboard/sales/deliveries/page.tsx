@@ -23,10 +23,19 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useDeliveryNotes } from '@/lib/queries/delivery-notes'
+import { PermissionGuard } from '@/components/permission-guard'
 import { format } from 'date-fns'
 import { DeliveryNote } from '@/lib/types/database'
 
 export default function DeliveryNotesPage() {
+    return (
+        <PermissionGuard permission="sales.deliveries.read">
+            <DeliveryNotesContent />
+        </PermissionGuard>
+    )
+}
+
+function DeliveryNotesContent() {
     const { data: notes, isLoading } = useDeliveryNotes()
     const [searchTerm, setSearchTerm] = useState('')
 

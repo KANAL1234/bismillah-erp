@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { usePurchaseOrders, useUpdatePOStatus, useDeletePurchaseOrder } from '@/lib/queries/purchase-orders'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,14 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 
 export default function PurchaseOrdersPage() {
+    return (
+        <PermissionGuard permission="procurement.purchase_orders.read">
+            <PurchaseOrdersContent />
+        </PermissionGuard>
+    )
+}
+
+function PurchaseOrdersContent() {
     const { data: allOrders, isLoading } = usePurchaseOrders()
     const updateStatus = useUpdatePOStatus()
     const deletePO = useDeletePurchaseOrder()

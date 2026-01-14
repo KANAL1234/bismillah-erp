@@ -75,6 +75,30 @@ export function useLocationStock(locationId: string) {
     })
 }
 
+// Get stock for multiple locations (LBAC support)
+export function useMultiLocationStock(locationIds: string[]) {
+    return useQuery({
+        queryKey: ['inventory-stock', 'locations', locationIds.sort().join(',')],
+        queryFn: async () => {
+            if (locationIds.length === 0) return []
+
+            const { data, error } = await supabase
+                .from('inventory_stock')
+                .select(`
+          *,
+          products(id, sku, name, reorder_point, selling_price),
+          locations(id, code, name)
+        `)
+                .in('location_id', locationIds)
+                .order('products(name)')
+
+            if (error) throw error
+            return data as InventoryStockWithDetails[]
+        },
+        enabled: locationIds.length > 0,
+    })
+}
+
 // Get low stock items
 export function useLowStock() {
     return useQuery({

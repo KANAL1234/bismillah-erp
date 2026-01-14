@@ -24,10 +24,19 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSalesInvoices } from '@/lib/queries/sales-invoices'
+import { PermissionGuard } from '@/components/permission-guard'
 import { format, isPast, parseISO } from 'date-fns'
 import { SalesInvoice } from '@/lib/types/database'
 
 export default function SalesInvoicesPage() {
+    return (
+        <PermissionGuard permission="sales.invoices.read">
+            <SalesInvoicesContent />
+        </PermissionGuard>
+    )
+}
+
+function SalesInvoicesContent() {
     const { data: invoices, isLoading } = useSalesInvoices()
     const [searchTerm, setSearchTerm] = useState('')
 

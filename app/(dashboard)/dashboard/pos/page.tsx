@@ -7,6 +7,9 @@ import { useLocationStock } from '@/lib/queries/inventory'
 import { useLocations } from '@/lib/queries/locations'
 import { useCustomers, useSearchCustomers } from '@/lib/queries/customers'
 import { useCreatePOSSale } from '@/lib/queries/pos-sales'
+import { useAuth } from '@/components/providers/auth-provider'
+import { useLocation } from '@/components/providers/location-provider'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,10 +40,18 @@ import { QuickAddCustomer } from '@/components/pos/quick-add-customer'
 import Link from 'next/link'
 
 export default function POSPage() {
+    return (
+        <PermissionGuard permission="pos.sales.create">
+            <POSContent />
+        </PermissionGuard>
+    )
+}
+
+function POSContent() {
     const router = useRouter()
+    const { currentLocationId, currentLocation, loading: locationLoading } = useLocation()
 
     // State
-    const [locationId, setLocationId] = useState('')
     const [searchQuery, setSearchQuery] = useState('')
     const [customerSearchQuery, setCustomerSearchQuery] = useState('')
     const [selectedCustomer, setSelectedCustomer] = useState<any>(null)
@@ -51,17 +62,26 @@ export default function POSPage() {
 
     // Queries
     const { data: products } = useProducts()
-    const { data: locations } = useLocations()
-    const { data: locationStock } = useLocationStock(locationId)
+    const { data: locationStock } = useLocationStock(currentLocationId || '')
     const { data: customerResults } = useSearchCustomers(customerSearchQuery)
     const createSale = useCreatePOSSale()
 
-    // Set default location
-    useEffect(() => {
-        if (!locationId && locations && locations.length > 0) {
-            setLocationId(locations[0].id)
-        }
-    }, [locationId, locations])
+    // Show loading while location is being determined
+    if (locationLoading || !currentLocationId) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <Card className="w-96">
+                    <CardContent className="pt-6 text-center space-y-4">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mx-auto"></div>
+                        <p className="text-lg font-semibold">Loading POS...</p>
+                        <p className="text-sm text-muted-foreground">
+                            {locationLoading ? 'Initializing location...' : 'Please select a location from the header.'}
+                        </p>
+                    </CardContent>
+                </Card>
+            </div>
+        )
+    }
 
     // Filter products by search
     const filteredProducts = products?.filter(product => {
@@ -175,7 +195,7 @@ export default function POSPage() {
 
         try {
             const sale = await createSale.mutateAsync({
-                locationId,
+                locationId: currentLocationId,
                 customerId: selectedCustomer?.id,
                 items: cart,
                 paymentMethod,
@@ -208,20 +228,11 @@ export default function POSPage() {
             <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-4">
                     <h1 className="text-3xl font-bold">Point of Sale</h1>
-                    <div className="w-48">
-                        <Select value={locationId} onValueChange={setLocationId}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select Location" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {locations?.map(loc => (
-                                    <SelectItem key={loc.id} value={loc.id}>
-                                        {loc.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                    {currentLocation && (
+                        <Badge variant="outline" className="text-base">
+                            {currentLocation.location_name}
+                        </Badge>
+                    )}
                 </div>
                 <div className="flex gap-2">
                     <Link href="/dashboard/pos/history">

@@ -5,11 +5,20 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useJournalEntries, usePostJournalEntry } from '@/lib/queries/journal-entries'
+import { PermissionGuard } from '@/components/permission-guard'
 import { FileText, Plus, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 
 export default function JournalEntriesPage() {
+    return (
+        <PermissionGuard permission="accounting.journal_entries.read">
+            <JournalEntriesContent />
+        </PermissionGuard>
+    )
+}
+
+function JournalEntriesContent() {
     const { data: entries, isLoading } = useJournalEntries()
     const postEntry = usePostJournalEntry()
 

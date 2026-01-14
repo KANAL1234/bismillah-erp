@@ -1,4 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+'use client'
+
+import { useEffect, useState } from 'react'
+import { PermissionGuard } from '@/components/permission-guard'
+import { createClient } from '@/lib/supabase/client'
+import { useLocation } from '@/components/providers/location-provider'
+import { useAuth } from '@/components/providers/auth-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -12,127 +18,198 @@ import {
     AlertCircle,
     CheckCircle,
     Clock,
-    Calculator
+    Calculator,
+    BarChart3,
+    Lock
 } from 'lucide-react'
 import Link from 'next/link'
 
-export default async function DashboardPage() {
-    const supabase = await createClient()
+export default function DashboardPage() {
+    return (
+        <PermissionGuard
+            permission="dashboard.overview.view"
+            fallback={
+                <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+                    <h2 className="text-2xl font-bold tracking-tight text-slate-900">Welcome to Bismillah ERP</h2>
+                    <p className="mt-2 text-slate-600">Please select a module from the sidebar to get started.</p>
+                </div>
+            }
+        >
+            <DashboardContent />
+        </PermissionGuard>
+    )
+}
 
-    // Get current date for filtering
-    const today = new Date().toISOString().split('T')[0]
-    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
+function DashboardContent() {
+    const { allowedLocationIds, currentLocationId } = useLocation()
+    const { hasPermission } = useAuth()
+    const [metrics, setMetrics] = useState<any>({})
+    const [loading, setLoading] = useState(true)
 
-    // === INVENTORY METRICS ===
-    const { count: productCount } = await supabase
-        .from('products')
-        .select('*', { count: 'exact', head: true })
+    useEffect(() => {
+        if (allowedLocationIds.length === 0) return
+        loadDashboardData()
+    }, [allowedLocationIds, currentLocationId])
 
-    const { count: lowStockCount } = await supabase
-        .from('inventory_stock')
-        .select('product_id', { count: 'exact', head: true })
-        .lt('quantity_on_hand', 10)
+    const loadDashboardData = async () => {
+        const supabase = createClient()
 
-    const { data: totalInventoryValue } = await supabase
-        .from('inventory_stock')
-        .select('quantity_on_hand, products(cost_price)')
+        // Determine which locations to query
+        const locationsToQuery = currentLocationId ? [currentLocationId] : allowedLocationIds
 
-    const inventoryValue = totalInventoryValue?.reduce((sum, item: any) => {
-        return sum + (item.quantity_on_hand * (item.products?.cost_price || 0))
-    }, 0) || 0
+        // Get current date for filtering
+        const today = new Date().toISOString().split('T')[0]
+        const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 
-    // === SALES METRICS ===
-    const { count: customerCount } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true })
+        // === INVENTORY METRICS (LBAC Filtered) ===
+        const { count: productCount } = await supabase
+            .from('products')
+            .select('*', { count: 'exact', head: true })
 
-    // Today's POS Sales
-    const { data: todaySales } = await supabase
-        .from('pos_sales')
-        .select('total_amount')
-        .gte('sale_date', today)
+        const { data: stockData } = await supabase
+            .from('inventory_stock')
+            .select('quantity_on_hand, location_id, products(cost_price)')
+            .in('location_id', locationsToQuery)
 
-    const todaySalesTotal = todaySales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
+        const lowStockCount = stockData?.filter(s => s.quantity_on_hand < 10).length || 0
 
-    // This Month's POS Sales
-    const { data: monthSales } = await supabase
-        .from('pos_sales')
-        .select('total_amount')
-        .gte('sale_date', firstDayOfMonth)
+        const inventoryValue = stockData?.reduce((sum, item: any) => {
+            return sum + (item.quantity_on_hand * (item.products?.cost_price || 0))
+        }, 0) || 0
 
-    const monthSalesTotal = monthSales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
+        // === SALES METRICS (LBAC Filtered) ===
+        const { count: customerCount } = await supabase
+            .from('customers')
+            .select('*', { count: 'exact', head: true })
 
-    // Pending Sales Orders
-    const { count: pendingOrdersCount } = await supabase
-        .from('sales_orders')
-        .select('*', { count: 'exact', head: true })
-        .in('status', ['confirmed', 'processing'])
+        // Today's POS Sales (filtered by location)
+        const { data: todaySales } = await supabase
+            .from('pos_sales')
+            .select('total_amount, location_id')
+            .gte('sale_date', today)
+            .in('location_id', locationsToQuery)
 
-    // === PURCHASE METRICS ===
-    const { count: vendorCount } = await supabase
-        .from('vendors')
-        .select('*', { count: 'exact', head: true })
+        const todaySalesTotal = todaySales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
 
-    const { count: pendingPOCount } = await supabase
-        .from('purchase_orders')
-        .select('*', { count: 'exact', head: true })
-        .in('status', ['DRAFT', 'PENDING_APPROVAL'])
+        // This Month's POS Sales (filtered by location)
+        const { data: monthSales } = await supabase
+            .from('pos_sales')
+            .select('total_amount, location_id')
+            .gte('sale_date', firstDayOfMonth)
+            .in('location_id', locationsToQuery)
 
-    const { count: approvedPOCount } = await supabase
-        .from('purchase_orders')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'APPROVED')
+        const monthSalesTotal = monthSales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
 
-    // === ACCOUNTING METRICS ===
-    const { data: accountsData } = await supabase
-        .from('chart_of_accounts')
-        .select('account_type, current_balance')
+        // Pending Sales Orders
+        const { count: pendingOrdersCount } = await supabase
+            .from('sales_orders')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['confirmed', 'processing'])
 
-    const cashBalance = accountsData?.find(a => a.account_type === 'ASSET')?.current_balance || 0
+        // === PURCHASE METRICS ===
+        const { count: vendorCount } = await supabase
+            .from('vendors')
+            .select('*', { count: 'exact', head: true })
 
-    const { data: bankAccounts } = await supabase
-        .from('bank_accounts')
-        .select('current_balance')
+        const { count: pendingPOCount } = await supabase
+            .from('purchase_orders')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['DRAFT', 'PENDING_APPROVAL'])
 
-    const totalBankBalance = bankAccounts?.reduce((sum, acc) => sum + acc.current_balance, 0) || 0
+        const { count: approvedPOCount } = await supabase
+            .from('purchase_orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'APPROVED')
 
-    const { count: unpaidInvoicesCount } = await supabase
-        .from('customer_invoices_accounting')
-        .select('*', { count: 'exact', head: true })
-        .in('status', ['draft', 'posted'])
+        // === ACCOUNTING METRICS ===
+        const { data: bankAccounts } = await supabase
+            .from('bank_accounts')
+            .select('current_balance')
 
-    // === NEW ANALYTICS (Guide v2) ===
-    // 1. Credit Risk Monitor (Customers near limit)
-    const { data: creditRiskData } = await supabase.rpc('get_customers_near_credit_limit', {
-        p_threshold_pct: 0.7 // Show customers using > 70% of credit
-    })
+        const totalBankBalance = bankAccounts?.reduce((sum, acc) => sum + acc.current_balance, 0) || 0
 
-    // 2. Transaction Register Summary (Monthly)
-    const { data: salesSummary } = await supabase.rpc('get_sales_register_summary', {
-        p_start_date: firstDayOfMonth,
-        p_end_date: today
-    })
+        const { count: unpaidInvoicesCount } = await supabase
+            .from('customer_invoices_accounting')
+            .select('*', { count: 'exact', head: true })
+            .in('status', ['draft', 'posted'])
 
-    // 3. Top Products
-    const { data: topProducts } = await supabase.rpc('get_sales_by_product', {
-        p_start_date: firstDayOfMonth,
-        p_end_date: today
-    })
-    const displayProducts = (topProducts || [])
-        .sort((a: any, b: any) => b.total_sales - a.total_sales)
-        .slice(0, 5)
+        // === ANALYTICS ===
+        const { data: creditRiskData } = await supabase.rpc('get_customers_near_credit_limit', {
+            p_threshold_pct: 0.7
+        })
 
-    // === LOCATIONS ===
-    const { count: locationCount } = await supabase
-        .from('locations')
-        .select('*', { count: 'exact', head: true })
+        const { data: topProducts } = await supabase.rpc('get_sales_by_product', {
+            p_start_date: firstDayOfMonth,
+            p_end_date: today
+        })
+
+        const displayProducts = (topProducts || [])
+            .sort((a: any, b: any) => b.total_sales - a.total_sales)
+            .slice(0, 5)
+
+        // === LOCATION INFO ===
+        const { data: userLocations } = await supabase
+            .from('locations')
+            .select('id, name, code')
+            .in('id', allowedLocationIds)
+
+        setMetrics({
+            productCount,
+            lowStockCount,
+            inventoryValue,
+            customerCount,
+            todaySalesTotal,
+            todaySalesCount: todaySales?.length || 0,
+            monthSalesTotal,
+            monthSalesCount: monthSales?.length || 0,
+            pendingOrdersCount,
+            vendorCount,
+            pendingPOCount,
+            approvedPOCount,
+            totalBankBalance,
+            bankAccountsCount: bankAccounts?.length || 0,
+            unpaidInvoicesCount,
+            creditRiskData,
+            displayProducts,
+            userLocations,
+            locationsCount: userLocations?.length || 0
+        })
+
+        setLoading(false)
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                    <p className="text-slate-600">Loading dashboard...</p>
+                </div>
+            </div>
+        )
+    }
+
+    const locationContext = currentLocationId
+        ? metrics.userLocations?.find((l: any) => l.id === currentLocationId)?.name
+        : `All ${metrics.locationsCount} Locations`
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div>
-                <h2 className="text-3xl font-bold text-slate-900">Dashboard Overview</h2>
-                <p className="text-slate-600 mt-1">Welcome to Bismillah Oil Agency ERP - Your complete business management system</p>
+            {/* Header with Location Context */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-3xl font-bold text-slate-900">Dashboard Overview</h2>
+                    <p className="text-slate-600 mt-1 flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        Showing data for: <span className="font-semibold text-blue-600">{locationContext}</span>
+                    </p>
+                </div>
+                <Link href="/dashboard/accounting/reports/financial">
+                    <Badge variant="outline" className="gap-2 px-4 py-2 cursor-pointer hover:bg-blue-50">
+                        <BarChart3 className="h-4 w-4" />
+                        Financial Reports
+                    </Badge>
+                </Link>
             </div>
 
             {/* Key Metrics Grid */}
@@ -144,8 +221,8 @@ export default async function DashboardPage() {
                         <TrendingUp className="h-4 w-4 text-green-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-600">PKR {todaySalesTotal.toLocaleString()}</div>
-                        <p className="text-xs text-slate-500 mt-1">POS transactions</p>
+                        <div className="text-2xl font-bold text-green-600">PKR {metrics.todaySalesTotal?.toLocaleString()}</div>
+                        <p className="text-xs text-slate-500 mt-1">{metrics.todaySalesCount} transactions</p>
                     </CardContent>
                 </Card>
 
@@ -156,8 +233,8 @@ export default async function DashboardPage() {
                         <ShoppingCart className="h-4 w-4 text-blue-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">PKR {monthSalesTotal.toLocaleString()}</div>
-                        <p className="text-xs text-slate-500 mt-1">{monthSales?.length || 0} sales</p>
+                        <div className="text-2xl font-bold text-blue-600">PKR {metrics.monthSalesTotal?.toLocaleString()}</div>
+                        <p className="text-xs text-slate-500 mt-1">{metrics.monthSalesCount} sales</p>
                     </CardContent>
                 </Card>
 
@@ -168,8 +245,8 @@ export default async function DashboardPage() {
                         <Package className="h-4 w-4 text-purple-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-purple-600">PKR {inventoryValue.toLocaleString()}</div>
-                        <p className="text-xs text-slate-500 mt-1">{productCount || 0} products</p>
+                        <div className="text-2xl font-bold text-purple-600">PKR {metrics.inventoryValue?.toLocaleString()}</div>
+                        <p className="text-xs text-slate-500 mt-1">{metrics.productCount || 0} products</p>
                     </CardContent>
                 </Card>
 
@@ -180,8 +257,8 @@ export default async function DashboardPage() {
                         <Calculator className="h-4 w-4 text-orange-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-orange-600">PKR {totalBankBalance.toLocaleString()}</div>
-                        <p className="text-xs text-slate-500 mt-1">{bankAccounts?.length || 0} accounts</p>
+                        <div className="text-2xl font-bold text-orange-600">PKR {metrics.totalBankBalance?.toLocaleString()}</div>
+                        <p className="text-xs text-slate-500 mt-1">{metrics.bankAccountsCount} accounts</p>
                     </CardContent>
                 </Card>
             </div>
@@ -194,7 +271,7 @@ export default async function DashboardPage() {
                         <Users className="h-4 w-4 text-slate-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{customerCount || 0}</div>
+                        <div className="text-2xl font-bold">{metrics.customerCount || 0}</div>
                         <p className="text-xs text-slate-500">Registered</p>
                     </CardContent>
                 </Card>
@@ -205,19 +282,19 @@ export default async function DashboardPage() {
                         <Truck className="h-4 w-4 text-slate-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{vendorCount || 0}</div>
+                        <div className="text-2xl font-bold">{metrics.vendorCount || 0}</div>
                         <p className="text-xs text-slate-500">Suppliers</p>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Locations</CardTitle>
+                        <CardTitle className="text-sm font-medium">My Locations</CardTitle>
                         <MapPin className="h-4 w-4 text-slate-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{locationCount || 0}</div>
-                        <p className="text-xs text-slate-500">Warehouses</p>
+                        <div className="text-2xl font-bold">{metrics.locationsCount}</div>
+                        <p className="text-xs text-slate-500">Authorized access</p>
                     </CardContent>
                 </Card>
 
@@ -227,13 +304,13 @@ export default async function DashboardPage() {
                         <AlertCircle className="h-4 w-4 text-red-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-red-600">{lowStockCount || 0}</div>
+                        <div className="text-2xl font-bold text-red-600">{metrics.lowStockCount || 0}</div>
                         <p className="text-xs text-slate-500">Need reorder</p>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* New Analytics Grid */}
+            {/* Analytics Grid */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {/* Credit Risk Monitor */}
                 <Card className="border-l-4 border-l-red-500">
@@ -245,8 +322,8 @@ export default async function DashboardPage() {
                         <CardDescription>Customers exceeding 70% credit utilization</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        {creditRiskData && creditRiskData.length > 0 ? (
-                            creditRiskData.map((risk: any) => (
+                        {metrics.creditRiskData && metrics.creditRiskData.length > 0 ? (
+                            metrics.creditRiskData.map((risk: any) => (
                                 <div key={risk.customer_id} className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-100">
                                     <div className="flex-1">
                                         <div className="flex items-center justify-between mb-1">
@@ -279,7 +356,7 @@ export default async function DashboardPage() {
                     </CardContent>
                 </Card>
 
-                {/* Top Products Analytics */}
+                {/* Top Products */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
@@ -290,8 +367,8 @@ export default async function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="space-y-4">
-                            {displayProducts.length > 0 ? (
-                                displayProducts.map((p: any, i: number) => (
+                            {metrics.displayProducts?.length > 0 ? (
+                                metrics.displayProducts.map((p: any, i: number) => (
                                     <div key={p.product_id} className="flex items-center gap-3">
                                         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold text-xs shrink-0">
                                             #{i + 1}
@@ -340,7 +417,7 @@ export default async function DashboardPage() {
                                     <p className="text-sm text-slate-500">Pending approval</p>
                                 </div>
                                 <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                                    {pendingPOCount || 0}
+                                    {metrics.pendingPOCount || 0}
                                 </Badge>
                             </div>
                         </Link>
@@ -352,7 +429,7 @@ export default async function DashboardPage() {
                                     <p className="text-sm text-slate-500">Ready to send to vendor</p>
                                 </div>
                                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                                    {approvedPOCount || 0}
+                                    {metrics.approvedPOCount || 0}
                                 </Badge>
                             </div>
                         </Link>
@@ -364,7 +441,7 @@ export default async function DashboardPage() {
                                     <p className="text-sm text-slate-500">In progress</p>
                                 </div>
                                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                    {pendingOrdersCount || 0}
+                                    {metrics.pendingOrdersCount || 0}
                                 </Badge>
                             </div>
                         </Link>
@@ -376,7 +453,7 @@ export default async function DashboardPage() {
                                     <p className="text-sm text-slate-500">Awaiting payment</p>
                                 </div>
                                 <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                    {unpaidInvoicesCount || 0}
+                                    {metrics.unpaidInvoicesCount || 0}
                                 </Badge>
                             </div>
                         </Link>
@@ -443,6 +520,6 @@ export default async function DashboardPage() {
                     </CardContent>
                 </Card>
             </div>
-        </div >
+        </div>
     )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useGoodsReceipts } from '@/lib/queries/goods-receipts'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,8 +16,17 @@ import {
 import { Plus } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import { useLocation } from '@/components/providers/location-provider'
 
 export default function GoodsReceiptsPage() {
+    return (
+        <PermissionGuard permission="procurement.grn.read">
+            <GoodsReceiptsContent />
+        </PermissionGuard>
+    )
+}
+
+function GoodsReceiptsContent() {
     const { data: grns, isLoading } = useGoodsReceipts()
 
     if (isLoading) {

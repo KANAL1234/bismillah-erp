@@ -3,10 +3,19 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { usePaymentVouchers } from '@/lib/queries/payment-vouchers'
+import { PermissionGuard } from '@/components/permission-guard'
 import { DollarSign, Calendar, Building2 } from 'lucide-react'
 import { format } from 'date-fns'
 
 export default function PaymentVouchersPage() {
+    return (
+        <PermissionGuard permission="accounting.payment_vouchers.read">
+            <PaymentVouchersContent />
+        </PermissionGuard>
+    )
+}
+
+function PaymentVouchersContent() {
     const { data: vouchers, isLoading } = usePaymentVouchers()
 
     const totalPaid = vouchers?.reduce((sum, v) => sum + v.amount, 0) || 0

@@ -5,6 +5,7 @@ import { Calendar, Download, FileText, TrendingUp, Users, Package, DollarSign, F
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { useLocation } from '@/components/providers/location-provider';
 
 const supabase = createClient();
 
@@ -15,6 +16,7 @@ export default function TransactionRegisters() {
     const [loading, setLoading] = useState(false);
     const [dateFrom, setDateFrom] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]); // First day of month
     const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
+    const { allowedLocationIds } = useLocation();
 
     // Filters
     const [customerFilter, setCustomerFilter] = useState('');
@@ -51,7 +53,10 @@ export default function TransactionRegisters() {
 
         if (customersRes.data) setCustomers(customersRes.data);
         if (vendorsRes.data) setVendors(vendorsRes.data);
-        if (locationsRes.data) setLocations(locationsRes.data);
+        // Filter locations by LBAC
+        if (locationsRes.data) {
+            setLocations(locationsRes.data.filter(loc => allowedLocationIds.includes(loc.id)));
+        }
     };
 
     const loadReport = async () => {

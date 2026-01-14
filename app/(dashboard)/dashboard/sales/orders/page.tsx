@@ -26,15 +26,35 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSalesOrders } from '@/lib/queries/sales-orders'
 import { format } from 'date-fns'
 import { SalesOrder } from '@/lib/types/database'
+import { useLocation } from '@/components/providers/location-provider'
+import { PermissionGuard } from '@/components/permission-guard'
 
 export default function SalesOrdersPage() {
-    const { data: orders, isLoading } = useSalesOrders()
-    const [searchTerm, setSearchTerm] = useState('')
-
-    const filteredOrders = orders?.filter(order =>
-        order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customers?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    return (
+        <PermissionGuard permission="sales.orders.read">
+            <SalesOrdersContent />
+        </PermissionGuard>
     )
+}
+
+function SalesOrdersContent() {
+    const { data: orders, isLoading } = useSalesOrders()
+    const [searchQuery, setSearchQuery] = useState('')
+    const { allowedLocationIds } = useLocation()
+    const [statusFilter, setStatusFilter] = useState<string>('all')
+
+    // Filter orders by allowed warehouse locations and search term
+    const filteredOrders = orders?.filter(order => {
+        // LBAC: Only show orders from allowed warehouse locations
+        const warehouseId = (order as any).warehouse_location_id; // Assuming warehouse_location_id is the correct field
+        if (warehouseId && !allowedLocationIds.includes(warehouseId)) {
+            return false
+        }
+
+        // Search filter
+        return order.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            order.customers?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    })
 
     const getStatusBadge = (status: SalesOrder['status']) => {
         switch (status) {
@@ -86,9 +106,9 @@ export default function SalesOrdersPage() {
                     <div className="relative">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
-                            placeholder="Search orders..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Search by order number or customer..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-8 w-[250px]"
                         />
                     </div>

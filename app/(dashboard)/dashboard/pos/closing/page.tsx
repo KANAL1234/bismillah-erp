@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useTodaySales, useSalesSummary } from '@/lib/queries/pos-sales'
 import { useLocations } from '@/lib/queries/locations'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,14 @@ import { ArrowLeft, DollarSign, AlertCircle, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 
 export default function DailyClosingPage() {
+    return (
+        <PermissionGuard permission="pos.closing.view">
+            <DailyClosingContent />
+        </PermissionGuard>
+    )
+}
+
+function DailyClosingContent() {
     const today = new Date().toISOString().split('T')[0]
 
     const [locationId, setLocationId] = useState('')

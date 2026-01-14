@@ -7,10 +7,19 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useChartOfAccounts } from '@/lib/queries/chart-of-accounts'
+import { PermissionGuard } from '@/components/permission-guard'
 import { Search, Plus, FileDown } from 'lucide-react'
 import Link from 'next/link'
 
 export default function ChartOfAccountsPage() {
+    return (
+        <PermissionGuard permission="accounting.chart_of_accounts.read">
+            <ChartOfAccountsContent />
+        </PermissionGuard>
+    )
+}
+
+function ChartOfAccountsContent() {
     const { data: accounts, isLoading } = useChartOfAccounts()
     const [searchTerm, setSearchTerm] = useState('')
 
@@ -32,10 +41,11 @@ export default function ChartOfAccountsPage() {
     }
 
     const groupedAccounts = filteredAccounts?.reduce((acc, account) => {
-        if (!acc[account.account_type]) {
-            acc[account.account_type] = []
+        const type = account.account_type || 'Other';
+        if (!acc[type]) {
+            acc[type] = []
         }
-        acc[account.account_type].push(account)
+        acc[type]?.push(account)
         return acc
     }, {} as Record<string, typeof accounts>)
 
@@ -86,7 +96,7 @@ export default function ChartOfAccountsPage() {
                                 <div key={type}>
                                     <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
                                         <Badge className={getAccountTypeBadge(type)}>{type}</Badge>
-                                        <span className="text-sm text-muted-foreground">({typeAccounts.length} accounts)</span>
+                                        <span className="text-sm text-muted-foreground">({typeAccounts?.length || 0} accounts)</span>
                                     </h3>
                                     <Table>
                                         <TableHeader>
@@ -99,7 +109,7 @@ export default function ChartOfAccountsPage() {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {typeAccounts.map((account) => (
+                                            {(typeAccounts || []).map((account) => (
                                                 <TableRow key={account.id}>
                                                     <TableCell className="font-mono font-medium">{account.account_code}</TableCell>
                                                     <TableCell>{account.account_name}</TableCell>

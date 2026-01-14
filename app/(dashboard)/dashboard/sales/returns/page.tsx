@@ -22,11 +22,20 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { PermissionGuard } from '@/components/permission-guard'
 import { useSalesReturns } from '@/lib/queries/sales-returns'
 import { format } from 'date-fns'
 import { SalesReturn } from '@/lib/types/database'
 
 export default function SalesReturnsPage() {
+    return (
+        <PermissionGuard permission="sales.returns.read">
+            <SalesReturnsContent />
+        </PermissionGuard>
+    )
+}
+
+function SalesReturnsContent() {
     const { data: returns, isLoading } = useSalesReturns()
     const [searchTerm, setSearchTerm] = useState('')
 

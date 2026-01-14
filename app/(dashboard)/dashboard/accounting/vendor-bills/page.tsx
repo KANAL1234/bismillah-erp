@@ -5,11 +5,20 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useVendorBills, useApproveVendorBill } from '@/lib/queries/vendor-bills'
+import { PermissionGuard } from '@/components/permission-guard'
 import { FileText, Plus, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 
 export default function VendorBillsPage() {
+    return (
+        <PermissionGuard permission="accounting.vendor_bills.read">
+            <VendorBillsContent />
+        </PermissionGuard>
+    )
+}
+
+function VendorBillsContent() {
     const { data: bills, isLoading } = useVendorBills()
     const approveBill = useApproveVendorBill()
 

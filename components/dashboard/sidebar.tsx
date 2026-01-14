@@ -10,13 +10,19 @@ import {
     Truck,
     Calculator,
     ChevronRight,
-    ChevronDown
+    ChevronDown,
+    Settings,
+    UserCog,
+    ShieldCheck
 } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '@/components/providers/auth-provider'
+import { NavLink } from '@/components/nav-link'
 
 export function Sidebar() {
     const pathname = usePathname()
-    const [expandedSections, setExpandedSections] = useState<string[]>(['sales', 'inventory', 'procurement', 'accounting'])
+    const { isAdmin } = useAuth()
+    const [expandedSections, setExpandedSections] = useState<string[]>(['sales', 'inventory', 'procurement', 'accounting', 'settings'])
 
     const toggleSection = (section: string) => {
         setExpandedSections(prev =>
@@ -28,6 +34,20 @@ export function Sidebar() {
 
     const isActive = (path: string) => pathname?.startsWith(path)
 
+    const linkClass = (path: string) => cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors w-full",
+        pathname === path
+            ? "bg-slate-900 text-white"
+            : "text-slate-700 hover:bg-slate-200"
+    )
+
+    const subLinkClass = (path: string, exact = true) => cn(
+        "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
+        (exact ? pathname === path : pathname?.startsWith(path))
+            ? "bg-slate-200 font-medium text-slate-900"
+            : "text-slate-600 hover:bg-slate-100"
+    )
+
     return (
         <div className="flex h-full w-64 flex-col border-r bg-slate-50">
             {/* Logo/Brand */}
@@ -38,18 +58,14 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="flex-1 space-y-1 overflow-y-auto p-4">
                 {/* Dashboard */}
-                <Link
+                <NavLink
                     href="/dashboard"
-                    className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                        pathname === '/dashboard'
-                            ? "bg-slate-900 text-white"
-                            : "text-slate-700 hover:bg-slate-200"
-                    )}
+                    permission="dashboard.overview.view"
+                    className={linkClass('/dashboard')}
                 >
                     <LayoutDashboard className="h-4 w-4" />
                     Dashboard
-                </Link>
+                </NavLink>
 
                 {/* Sales & POS */}
                 <div>
@@ -74,31 +90,31 @@ export function Sidebar() {
                     </button>
                     {expandedSections.includes('sales') && (
                         <div className="ml-4 mt-1 space-y-1 border-l pl-4">
-                            <Link href="/dashboard/pos" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/pos' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="pos.sales.create" href="/dashboard/pos" className={subLinkClass('/dashboard/pos')}>
                                 POS Terminal
-                            </Link>
-                            <Link href="/dashboard/pos/history" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/pos/history' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="pos.sales.view" href="/dashboard/pos/history" className={subLinkClass('/dashboard/pos/history')}>
                                 Sales History
-                            </Link>
-                            <Link href="/dashboard/pos/closing" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/pos/closing' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="pos.closing.view" href="/dashboard/pos/closing" className={subLinkClass('/dashboard/pos/closing')}>
                                 Daily Closing
-                            </Link>
+                            </NavLink>
                             <div className="my-2 border-t"></div>
-                            <Link href="/dashboard/sales/quotations" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/sales/quotations') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="sales.quotations.read" href="/dashboard/sales/quotations" className={subLinkClass('/dashboard/sales/quotations', false)}>
                                 Quotations
-                            </Link>
-                            <Link href="/dashboard/sales/orders" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/sales/orders') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="sales.orders.read" href="/dashboard/sales/orders" className={subLinkClass('/dashboard/sales/orders', false)}>
                                 Sales Orders
-                            </Link>
-                            <Link href="/dashboard/sales/invoices" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/sales/invoices') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="sales.invoices.read" href="/dashboard/sales/invoices" className={subLinkClass('/dashboard/sales/invoices', false)}>
                                 Sales Invoices
-                            </Link>
-                            <Link href="/dashboard/sales/deliveries" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/sales/deliveries') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="sales.deliveries.read" href="/dashboard/sales/deliveries" className={subLinkClass('/dashboard/sales/deliveries', false)}>
                                 Delivery Notes
-                            </Link>
-                            <Link href="/dashboard/sales/returns" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/sales/returns') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="sales.returns.read" href="/dashboard/sales/returns" className={subLinkClass('/dashboard/sales/returns', false)}>
                                 Sales Returns
-                            </Link>
+                            </NavLink>
                         </div>
                     )}
                 </div>
@@ -126,19 +142,19 @@ export function Sidebar() {
                     </button>
                     {expandedSections.includes('inventory') && (
                         <div className="ml-4 mt-1 space-y-1 border-l pl-4">
-                            <Link href="/dashboard/inventory" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/inventory' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="inventory.stock.view" href="/dashboard/inventory" className={subLinkClass('/dashboard/inventory')}>
                                 Stock Overview
-                            </Link>
-                            <Link href="/dashboard/products" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/products' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="inventory.products.read" href="/dashboard/products" className={subLinkClass('/dashboard/products')}>
                                 Product List
-                            </Link>
+                            </NavLink>
                             <div className="my-2 border-t"></div>
-                            <Link href="/dashboard/inventory/transfers" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/inventory/transfers') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="inventory.stock.transfer" href="/dashboard/inventory/transfers" className={subLinkClass('/dashboard/inventory/transfers', false)}>
                                 Stock Transfers
-                            </Link>
-                            <Link href="/dashboard/inventory/adjustments" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/inventory/adjustments') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="inventory.stock.adjust" href="/dashboard/inventory/adjustments" className={subLinkClass('/dashboard/inventory/adjustments', false)}>
                                 Stock Adjustments
-                            </Link>
+                            </NavLink>
                         </div>
                     )}
                 </div>
@@ -166,16 +182,16 @@ export function Sidebar() {
                     </button>
                     {expandedSections.includes('procurement') && (
                         <div className="ml-4 mt-1 space-y-1 border-l pl-4">
-                            <Link href="/dashboard/vendors" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/vendors' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="procurement.vendors.read" href="/dashboard/vendors" className={subLinkClass('/dashboard/vendors')}>
                                 Vendor List
-                            </Link>
+                            </NavLink>
                             <div className="my-2 border-t"></div>
-                            <Link href="/dashboard/purchases/orders" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/purchases/orders') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="procurement.purchase_orders.read" href="/dashboard/purchases/orders" className={subLinkClass('/dashboard/purchases/orders', false)}>
                                 Purchase Orders
-                            </Link>
-                            <Link href="/dashboard/purchases/grn" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/purchases/grn') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="procurement.grn.read" href="/dashboard/purchases/grn" className={subLinkClass('/dashboard/purchases/grn', false)}>
                                 Goods Receipts (GRN)
-                            </Link>
+                            </NavLink>
                         </div>
                     )}
                 </div>
@@ -203,43 +219,78 @@ export function Sidebar() {
                     </button>
                     {expandedSections.includes('accounting') && (
                         <div className="ml-4 mt-1 space-y-1 border-l pl-4">
-                            <Link href="/setup" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/setup' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="settings.company.manage" href="/setup" className={subLinkClass('/setup')}>
                                 Setup Wizard
-                            </Link>
+                            </NavLink>
                             <div className="my-2 border-t"></div>
-                            <Link href="/dashboard/accounting/chart-of-accounts" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/accounting/chart-of-accounts') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="accounting.chart_of_accounts.read" href="/dashboard/accounting/chart-of-accounts" className={subLinkClass('/dashboard/accounting/chart-of-accounts', false)}>
                                 Chart of Accounts
-                            </Link>
-                            <Link href="/dashboard/accounting/bank-accounts" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/accounting/bank-accounts') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="accounting.bank_accounts.read" href="/dashboard/accounting/bank-accounts" className={subLinkClass('/dashboard/accounting/bank-accounts', false)}>
                                 Bank Accounts
-                            </Link>
-                            <Link href="/dashboard/accounting/journal-entries" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/accounting/journal-entries') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="accounting.journal_entries.read" href="/dashboard/accounting/journal-entries" className={subLinkClass('/dashboard/accounting/journal-entries', false)}>
                                 Journal Entries
-                            </Link>
+                            </NavLink>
                             <div className="my-2 border-t"></div>
-                            <Link href="/dashboard/accounting/vendor-bills" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/accounting/vendor-bills') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="accounting.vendor_bills.read" href="/dashboard/accounting/vendor-bills" className={subLinkClass('/dashboard/accounting/vendor-bills', false)}>
                                 Vendor Bills
-                            </Link>
-                            <Link href="/dashboard/accounting/payment-vouchers" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/accounting/payment-vouchers') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="accounting.payment_vouchers.read" href="/dashboard/accounting/payment-vouchers" className={subLinkClass('/dashboard/accounting/payment-vouchers', false)}>
                                 Payment Vouchers
-                            </Link>
+                            </NavLink>
                             <div className="my-2 border-t"></div>
-                            <Link href="/dashboard/accounting/customer-invoices" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/accounting/customer-invoices') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="accounting.customer_invoices.read" href="/dashboard/accounting/customer-invoices" className={subLinkClass('/dashboard/accounting/customer-invoices', false)}>
                                 Customer Invoices
-                            </Link>
-                            <Link href="/dashboard/accounting/receipt-vouchers" className={cn("block rounded px-3 py-1.5 text-sm", pathname?.startsWith('/dashboard/accounting/receipt-vouchers') ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="accounting.receipt_vouchers.read" href="/dashboard/accounting/receipt-vouchers" className={subLinkClass('/dashboard/accounting/receipt-vouchers', false)}>
                                 Receipt Vouchers
-                            </Link>
+                            </NavLink>
                             <div className="my-2 border-t"></div>
-                            <Link href="/dashboard/accounting/reports/trial-balance" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/accounting/reports/trial-balance' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            <NavLink permission="accounting.reports.read" href="/dashboard/accounting/reports/trial-balance" className={subLinkClass('/dashboard/accounting/reports/trial-balance')}>
                                 Trial Balance
-                            </Link>
-                            <Link href="/dashboard/accounting/reports/registers" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/accounting/reports/registers' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="accounting.reports.read" href="/dashboard/accounting/reports/registers" className={subLinkClass('/dashboard/accounting/reports/registers')}>
                                 Transaction Registers
-                            </Link>
-                            <Link href="/dashboard/accounting/reports/financial" className={cn("block rounded px-3 py-1.5 text-sm", pathname === '/dashboard/accounting/reports/financial' ? "bg-slate-200 font-medium" : "text-slate-600 hover:bg-slate-100")}>
+                            </NavLink>
+                            <NavLink permission="accounting.reports.read" href="/dashboard/accounting/reports/financial" className={subLinkClass('/dashboard/accounting/reports/financial')}>
                                 Financial Reports
-                            </Link>
+                            </NavLink>
+                        </div>
+                    )}
+                </div>
+
+                {/* Settings */}
+                <div>
+                    <button
+                        onClick={() => toggleSection('settings')}
+                        className={cn(
+                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            isActive('/dashboard/settings')
+                                ? "bg-slate-200 text-slate-900"
+                                : "text-slate-700 hover:bg-slate-200"
+                        )}
+                    >
+                        <div className="flex items-center gap-3">
+                            <Settings className="h-4 w-4" />
+                            Settings
+                        </div>
+                        {expandedSections.includes('settings') ? (
+                            <ChevronDown className="h-4 w-4" />
+                        ) : (
+                            <ChevronRight className="h-4 w-4" />
+                        )}
+                    </button>
+                    {expandedSections.includes('settings') && (
+                        <div className="ml-4 mt-1 space-y-1 border-l pl-4">
+                            <NavLink permission="settings.users.read" href="/dashboard/settings/users" className={subLinkClass('/dashboard/settings/users')}>
+                                <UserCog className="h-3 w-3 mr-2" />
+                                User Management
+                            </NavLink>
+                            <NavLink permission="settings.roles.manage" href="/dashboard/settings/roles" className={subLinkClass('/dashboard/settings/roles')}>
+                                <ShieldCheck className="h-3 w-3 mr-2" />
+                                Role Management
+                            </NavLink>
                         </div>
                     )}
                 </div>

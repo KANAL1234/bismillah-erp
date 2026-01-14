@@ -24,10 +24,19 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSalesQuotations, useDeleteSalesQuotation } from '@/lib/queries/sales-quotations'
+import { PermissionGuard } from '@/components/permission-guard'
 import { format } from 'date-fns'
 import { SalesQuotation } from '@/lib/types/database'
 
 export default function SalesQuotationsPage() {
+    return (
+        <PermissionGuard permission="sales.quotations.read">
+            <SalesQuotationsContent />
+        </PermissionGuard>
+    )
+}
+
+function SalesQuotationsContent() {
     const { data: quotations, isLoading } = useSalesQuotations()
     const deleteQuotation = useDeleteSalesQuotation()
     const [searchTerm, setSearchTerm] = useState('')

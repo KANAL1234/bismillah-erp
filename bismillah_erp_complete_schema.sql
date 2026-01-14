@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict pEibmVwLuSfperebV6f5WdtHocsli2QViRBYTlidzpBcUOQY4DwiLthUesKLuKd
+\restrict lnyXBwJ6jnfa6NT3m3hs7SJMnW8wSSIOlHNzR7ks4obM8GyXax8TbsCdFzIp1ZP
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.7 (Homebrew)
@@ -77,6 +77,95 @@ BEGIN
       RAISE EXCEPTION 'Cannot create negative stock for new location';
     END IF;
   END IF;
+END;
+$$;
+
+
+--
+-- Name: assign_permissions_to_role(uuid, uuid[], uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.assign_permissions_to_role(p_role_id uuid, p_permission_ids uuid[], p_assigned_by uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_permission_id uuid;
+BEGIN
+    -- Clear existing permissions
+    DELETE FROM role_permissions WHERE role_id = p_role_id;
+
+    -- Assign new permissions
+    FOREACH v_permission_id IN ARRAY p_permission_ids
+    LOOP
+        INSERT INTO role_permissions (role_id, permission_id)
+        VALUES (p_role_id, v_permission_id)
+        ON CONFLICT DO NOTHING;
+    END LOOP;
+
+    -- Log action
+    INSERT INTO audit_logs (user_id, action, module, resource, new_values)
+    VALUES (
+        p_assigned_by,
+        'update_role_permissions',
+        'settings',
+        'roles',
+        json_build_object(
+            'role_id', p_role_id,
+            'permission_count', array_length(p_permission_ids, 1)
+        )
+    );
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Permissions updated successfully',
+        'count', array_length(p_permission_ids, 1)
+    );
+END;
+$$;
+
+
+--
+-- Name: assign_role_to_user(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.assign_role_to_user(p_user_id uuid, p_role_id uuid, p_assigned_by uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_result json;
+BEGIN
+    -- Check if role is already assigned
+    IF EXISTS (
+        SELECT 1 FROM user_roles 
+        WHERE user_id = p_user_id AND role_id = p_role_id
+    ) THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Role already assigned to user'
+        );
+    END IF;
+
+    -- Assign role
+    INSERT INTO user_roles (user_id, role_id, assigned_by)
+    VALUES (p_user_id, p_role_id, p_assigned_by);
+
+    -- Log action
+    INSERT INTO audit_logs (user_id, action, module, resource, new_values)
+    VALUES (
+        p_assigned_by,
+        'assign_role',
+        'settings',
+        'users',
+        json_build_object(
+            'user_id', p_user_id,
+            'role_id', p_role_id
+        )
+    );
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Role assigned successfully'
+    );
 END;
 $$;
 
@@ -251,6 +340,120 @@ CREATE FUNCTION public.check_stock_availability(p_location_id uuid, p_product_id
     AS $$
 BEGIN
     RETURN public.get_stock_level(p_location_id, p_product_id) >= p_required_quantity;
+END;
+$$;
+
+
+--
+-- Name: check_user_permission(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_user_permission(p_user_id uuid, p_permission_code text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_has_permission boolean;
+BEGIN
+    -- Check if user has the permission through any of their roles
+    SELECT EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        JOIN role_permissions rp ON rp.role_id = ur.role_id
+        JOIN permissions p ON p.id = rp.permission_id
+        JOIN roles r ON r.id = ur.role_id
+        WHERE ur.user_id = p_user_id
+          AND p.permission_code = p_permission_code
+          AND r.is_active = true
+    ) INTO v_has_permission;
+
+    RETURN v_has_permission;
+END;
+$$;
+
+
+--
+-- Name: create_user_profile(uuid, text, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_user_profile(p_user_id uuid, p_full_name text, p_email text, p_employee_code text DEFAULT NULL::text, p_phone text DEFAULT NULL::text, p_location_id uuid DEFAULT NULL::uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    INSERT INTO user_profiles (
+        id,
+        full_name,
+        email,
+        employee_code,
+        phone,
+        location_id
+    ) VALUES (
+        p_user_id,
+        p_full_name,
+        p_email,
+        p_employee_code,
+        p_phone,
+        p_location_id
+    );
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'User profile created successfully'
+    );
+EXCEPTION
+    WHEN unique_violation THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Employee code already exists'
+        );
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', SQLERRM
+        );
+END;
+$$;
+
+
+--
+-- Name: get_all_users_with_roles(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_all_users_with_roles() RETURNS TABLE(user_id uuid, full_name text, email text, employee_code text, phone text, is_active boolean, last_login timestamp with time zone, roles json, allowed_locations json, created_at timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        up.id,
+        up.full_name,
+        up.email,
+        up.employee_code,
+        up.phone,
+        up.is_active,
+        up.last_login,
+        (
+            SELECT COALESCE(json_agg(json_build_object(
+                'role_id', r.id,
+                'role_code', r.role_code,
+                'role_name', r.role_name
+            )), '[]'::json)
+            FROM user_roles ur
+            JOIN roles r ON r.id = ur.role_id
+            WHERE ur.user_id = up.id AND r.is_active = true
+        ) as roles,
+        (
+            SELECT COALESCE(json_agg(json_build_object(
+                'location_id', loc.id,
+                'location_name', loc.name,
+                'location_code', loc.code
+            )), '[]'::json)
+            FROM user_allowed_locations ual
+            JOIN locations loc ON loc.id = ual.location_id
+            WHERE ual.user_id = up.id
+        ) as allowed_locations,
+        up.created_at
+    FROM user_profiles up
+    ORDER BY up.full_name;
 END;
 $$;
 
@@ -1023,6 +1226,43 @@ $$;
 
 
 --
+-- Name: get_role_with_permissions(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_role_with_permissions(p_role_id uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT json_build_object(
+        'role', row_to_json(r.*),
+        'permissions', COALESCE(
+            json_agg(
+                json_build_object(
+                    'id', p.id,
+                    'permission_code', p.permission_code,
+                    'module', p.module,
+                    'resource', p.resource,
+                    'action', p.action,
+                    'description', p.description
+                )
+            ) FILTER (WHERE p.id IS NOT NULL),
+            '[]'::json
+        )
+    ) INTO v_result
+    FROM roles r
+    LEFT JOIN role_permissions rp ON rp.role_id = r.id
+    LEFT JOIN permissions p ON p.id = rp.permission_id
+    WHERE r.id = p_role_id
+    GROUP BY r.id, r.role_name, r.role_code, r.description, r.is_active, r.is_system_role;
+
+    RETURN v_result;
+END;
+$$;
+
+
+--
 -- Name: get_sales_by_customer(date, date, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1321,6 +1561,87 @@ $$;
 
 
 --
+-- Name: get_user_audit_logs(uuid, text, date, date, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_user_audit_logs(p_user_id uuid DEFAULT NULL::uuid, p_module text DEFAULT NULL::text, p_date_from date DEFAULT NULL::date, p_date_to date DEFAULT NULL::date, p_limit integer DEFAULT 100) RETURNS TABLE(id uuid, user_email text, full_name text, action text, module text, resource text, resource_id uuid, old_values jsonb, new_values jsonb, status text, created_at timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        al.id,
+        up.email,
+        up.full_name,
+        al.action,
+        al.module,
+        al.resource,
+        al.resource_id,
+        al.old_values,
+        al.new_values,
+        al.status,
+        al.created_at
+    FROM audit_logs al
+    LEFT JOIN user_profiles up ON up.id = al.user_id
+    WHERE (p_user_id IS NULL OR al.user_id = p_user_id)
+      AND (p_module IS NULL OR al.module = p_module)
+      AND (p_date_from IS NULL OR al.created_at::date >= p_date_from)
+      AND (p_date_to IS NULL OR al.created_at::date <= p_date_to)
+    ORDER BY al.created_at DESC
+    LIMIT p_limit;
+END;
+$$;
+
+
+--
+-- Name: get_user_permissions(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_user_permissions(p_user_id uuid) RETURNS TABLE(permission_code text, module text, resource text, action text, role_name text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT DISTINCT
+        p.permission_code,
+        p.module,
+        p.resource,
+        p.action,
+        r.role_name
+    FROM user_roles ur
+    JOIN roles r ON r.id = ur.role_id
+    JOIN role_permissions rp ON rp.role_id = r.id
+    JOIN permissions p ON p.id = rp.permission_id
+    WHERE ur.user_id = p_user_id
+      AND r.is_active = true
+    ORDER BY p.module, p.resource, p.action;
+END;
+$$;
+
+
+--
+-- Name: get_user_roles(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_user_roles(p_user_id uuid) RETURNS TABLE(role_id uuid, role_code text, role_name text, description text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        r.id,
+        r.role_code,
+        r.role_name,
+        r.description
+    FROM user_roles ur
+    JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = p_user_id
+      AND r.is_active = true;
+END;
+$$;
+
+
+--
 -- Name: get_vendor_aging_report(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1552,6 +1873,44 @@ $$;
 
 COMMENT ON FUNCTION public.handle_transfer_completion() IS 'Automatically updates inventory stock levels when a transfer status changes to COMPLETED. 
 Reduces stock at FROM location and increases stock at TO location.';
+
+
+--
+-- Name: log_user_action(uuid, text, text, text, uuid, jsonb, jsonb, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.log_user_action(p_user_id uuid, p_action text, p_module text, p_resource text, p_resource_id uuid DEFAULT NULL::uuid, p_old_values jsonb DEFAULT NULL::jsonb, p_new_values jsonb DEFAULT NULL::jsonb, p_status text DEFAULT 'success'::text, p_error_message text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_log_id uuid;
+BEGIN
+    INSERT INTO audit_logs (
+        user_id,
+        action,
+        module,
+        resource,
+        resource_id,
+        old_values,
+        new_values,
+        status,
+        error_message
+    ) VALUES (
+        p_user_id,
+        p_action,
+        p_module,
+        p_resource,
+        p_resource_id,
+        p_old_values,
+        p_new_values,
+        p_status,
+        p_error_message
+    )
+    RETURNING id INTO v_log_id;
+
+    RETURN v_log_id;
+END;
+$$;
 
 
 --
@@ -2163,6 +2522,64 @@ $$;
 
 
 --
+-- Name: remove_role_from_user(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.remove_role_from_user(p_user_id uuid, p_role_id uuid, p_removed_by uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    -- Remove role
+    DELETE FROM user_roles
+    WHERE user_id = p_user_id AND role_id = p_role_id;
+
+    IF NOT FOUND THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Role assignment not found'
+        );
+    END IF;
+
+    -- Log action
+    INSERT INTO audit_logs (user_id, action, module, resource, old_values)
+    VALUES (
+        p_removed_by,
+        'remove_role',
+        'settings',
+        'users',
+        json_build_object(
+            'user_id', p_user_id,
+            'role_id', p_role_id
+        )
+    );
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Role removed successfully'
+    );
+END;
+$$;
+
+
+--
+-- Name: toggle_user_location_access(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.toggle_user_location_access(p_user_id uuid, p_location_id uuid, p_assigned_by uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM user_allowed_locations WHERE user_id = p_user_id AND location_id = p_location_id) THEN
+        DELETE FROM user_allowed_locations WHERE user_id = p_user_id AND location_id = p_location_id;
+    ELSE
+        INSERT INTO user_allowed_locations (user_id, location_id, assigned_by)
+        VALUES (p_user_id, p_location_id, p_assigned_by);
+    END IF;
+END;
+$$;
+
+
+--
 -- Name: trigger_vendor_bill_on_items(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2379,6 +2796,37 @@ $$;
 
 
 --
+-- Name: update_user_status(uuid, boolean, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_user_status(p_user_id uuid, p_is_active boolean, p_updated_by uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    UPDATE user_profiles
+    SET is_active = p_is_active,
+        updated_at = now()
+    WHERE id = p_user_id;
+
+    -- Log action
+    INSERT INTO audit_logs (user_id, action, module, resource, new_values)
+    VALUES (
+        p_updated_by,
+        CASE WHEN p_is_active THEN 'activate_user' ELSE 'deactivate_user' END,
+        'settings',
+        'users',
+        json_build_object('user_id', p_user_id, 'is_active', p_is_active)
+    );
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'User status updated successfully'
+    );
+END;
+$$;
+
+
+--
 -- Name: update_vendor_balance(uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2503,6 +2951,27 @@ CREATE TABLE public.approval_workflows (
     entity_type text NOT NULL,
     approval_levels jsonb NOT NULL,
     is_active boolean DEFAULT true,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid,
+    action text NOT NULL,
+    module text NOT NULL,
+    resource text NOT NULL,
+    resource_id uuid,
+    old_values jsonb,
+    new_values jsonb,
+    ip_address inet,
+    user_agent text,
+    status text DEFAULT 'success'::text,
+    error_message text,
     created_at timestamp with time zone DEFAULT now()
 );
 
@@ -3213,6 +3682,21 @@ CREATE TABLE public.payslips (
 
 
 --
+-- Name: permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.permissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    module text NOT NULL,
+    resource text NOT NULL,
+    action text NOT NULL,
+    permission_code text NOT NULL,
+    description text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: pos_sale_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3422,15 +3906,30 @@ CREATE TABLE public.receipt_vouchers (
 
 
 --
+-- Name: role_permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.role_permissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    role_id uuid NOT NULL,
+    permission_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: roles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.roles (
-    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
-    name text NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    role_name text NOT NULL,
+    role_code text NOT NULL,
     description text,
-    permissions jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now()
+    is_active boolean DEFAULT true,
+    is_system_role boolean DEFAULT false,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -3798,19 +4297,45 @@ CREATE TABLE public.units_of_measure (
 
 
 --
+-- Name: user_allowed_locations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_allowed_locations (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    user_id uuid,
+    location_id uuid,
+    assigned_by uuid,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: user_profiles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_profiles (
     id uuid NOT NULL,
-    role_id uuid,
     full_name text NOT NULL,
+    employee_code text,
     email text NOT NULL,
     phone text,
-    location_id uuid,
     is_active boolean DEFAULT true,
+    last_login timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: user_roles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_roles (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    role_id uuid NOT NULL,
+    assigned_by uuid,
+    assigned_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -4025,6 +4550,14 @@ ALTER TABLE ONLY public.approval_workflows
 
 ALTER TABLE ONLY public.approval_workflows
     ADD CONSTRAINT approval_workflows_workflow_name_key UNIQUE (workflow_name);
+
+
+--
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
 
 
 --
@@ -4460,6 +4993,22 @@ ALTER TABLE ONLY public.payslips
 
 
 --
+-- Name: permissions permissions_permission_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions
+    ADD CONSTRAINT permissions_permission_code_key UNIQUE (permission_code);
+
+
+--
+-- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions
+    ADD CONSTRAINT permissions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pos_sale_items pos_sale_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4604,11 +5153,11 @@ ALTER TABLE ONLY public.receipt_vouchers
 
 
 --
--- Name: roles roles_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.roles
-    ADD CONSTRAINT roles_name_key UNIQUE (name);
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT role_permissions_pkey PRIMARY KEY (id);
 
 
 --
@@ -4617,6 +5166,22 @@ ALTER TABLE ONLY public.roles
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: roles roles_role_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.roles
+    ADD CONSTRAINT roles_role_code_key UNIQUE (role_code);
+
+
+--
+-- Name: roles roles_role_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.roles
+    ADD CONSTRAINT roles_role_name_key UNIQUE (role_name);
 
 
 --
@@ -4852,6 +5417,30 @@ ALTER TABLE ONLY public.transaction_types
 
 
 --
+-- Name: permissions unique_permission; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions
+    ADD CONSTRAINT unique_permission UNIQUE (module, resource, action);
+
+
+--
+-- Name: role_permissions unique_role_permission; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT unique_role_permission UNIQUE (role_id, permission_id);
+
+
+--
+-- Name: user_roles unique_user_role; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT unique_user_role UNIQUE (user_id, role_id);
+
+
+--
 -- Name: units_of_measure units_of_measure_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4868,11 +5457,43 @@ ALTER TABLE ONLY public.units_of_measure
 
 
 --
+-- Name: user_allowed_locations user_allowed_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_allowed_locations
+    ADD CONSTRAINT user_allowed_locations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_allowed_locations user_allowed_locations_user_id_location_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_allowed_locations
+    ADD CONSTRAINT user_allowed_locations_user_id_location_id_key UNIQUE (user_id, location_id);
+
+
+--
+-- Name: user_profiles user_profiles_employee_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_profiles
+    ADD CONSTRAINT user_profiles_employee_code_key UNIQUE (employee_code);
+
+
+--
 -- Name: user_profiles user_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_profiles
     ADD CONSTRAINT user_profiles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_pkey PRIMARY KEY (id);
 
 
 --
@@ -4990,6 +5611,34 @@ CREATE INDEX idx_activity_logs_entity ON public.activity_logs USING btree (entit
 --
 
 CREATE INDEX idx_activity_logs_user ON public.activity_logs USING btree (user_id);
+
+
+--
+-- Name: idx_audit_logs_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_created ON public.audit_logs USING btree (created_at);
+
+
+--
+-- Name: idx_audit_logs_module; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_module ON public.audit_logs USING btree (module);
+
+
+--
+-- Name: idx_audit_logs_resource; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_resource ON public.audit_logs USING btree (resource, resource_id);
+
+
+--
+-- Name: idx_audit_logs_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_user ON public.audit_logs USING btree (user_id);
 
 
 --
@@ -5280,6 +5929,20 @@ CREATE INDEX idx_purchase_orders_vendor ON public.purchase_orders USING btree (v
 
 
 --
+-- Name: idx_role_permissions_permission; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_role_permissions_permission ON public.role_permissions USING btree (permission_id);
+
+
+--
+-- Name: idx_role_permissions_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_role_permissions_role ON public.role_permissions USING btree (role_id);
+
+
+--
 -- Name: idx_sales_orders_customer; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5291,6 +5954,27 @@ CREATE INDEX idx_sales_orders_customer ON public.sales_orders USING btree (custo
 --
 
 CREATE INDEX idx_sales_orders_date ON public.sales_orders USING btree (order_date);
+
+
+--
+-- Name: idx_user_profiles_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_profiles_active ON public.user_profiles USING btree (is_active);
+
+
+--
+-- Name: idx_user_roles_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_roles_role ON public.user_roles USING btree (role_id);
+
+
+--
+-- Name: idx_user_roles_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_roles_user ON public.user_roles USING btree (user_id);
 
 
 --
@@ -5490,13 +6174,6 @@ CREATE TRIGGER update_sales_returns_updated_at BEFORE UPDATE ON public.sales_ret
 
 
 --
--- Name: user_profiles update_user_profiles_updated_at; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON public.user_profiles FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
-
---
 -- Name: vehicles update_vehicles_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5542,35 +6219,19 @@ ALTER TABLE ONLY public.activity_logs
 
 
 --
--- Name: approval_requests approval_requests_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.approval_requests
-    ADD CONSTRAINT approval_requests_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.user_profiles(id);
-
-
---
--- Name: approval_requests approval_requests_rejected_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.approval_requests
-    ADD CONSTRAINT approval_requests_rejected_by_fkey FOREIGN KEY (rejected_by) REFERENCES public.user_profiles(id);
-
-
---
--- Name: approval_requests approval_requests_requested_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.approval_requests
-    ADD CONSTRAINT approval_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.user_profiles(id);
-
-
---
 -- Name: approval_requests approval_requests_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_requests
     ADD CONSTRAINT approval_requests_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES public.approval_workflows(id);
+
+
+--
+-- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
 
 
 --
@@ -5667,14 +6328,6 @@ ALTER TABLE ONLY public.customer_payments
 
 ALTER TABLE ONLY public.customer_payments
     ADD CONSTRAINT customer_payments_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.sales_invoices(id);
-
-
---
--- Name: customer_payments customer_payments_received_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.customer_payments
-    ADD CONSTRAINT customer_payments_received_by_fkey FOREIGN KEY (received_by) REFERENCES public.user_profiles(id);
 
 
 --
@@ -5827,14 +6480,6 @@ ALTER TABLE ONLY public.pos_sale_items
 
 ALTER TABLE ONLY public.product_suppliers
     ADD CONSTRAINT fk_product_supplier_vendor FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
-
-
---
--- Name: user_profiles fk_user_location; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.user_profiles
-    ADD CONSTRAINT fk_user_location FOREIGN KEY (location_id) REFERENCES public.locations(id);
 
 
 --
@@ -6254,6 +6899,22 @@ ALTER TABLE ONLY public.receipt_vouchers
 
 
 --
+-- Name: role_permissions role_permissions_permission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT role_permissions_permission_id_fkey FOREIGN KEY (permission_id) REFERENCES public.permissions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: sales_commissions sales_commissions_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6574,6 +7235,30 @@ ALTER TABLE ONLY public.stock_transfers
 
 
 --
+-- Name: user_allowed_locations user_allowed_locations_assigned_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_allowed_locations
+    ADD CONSTRAINT user_allowed_locations_assigned_by_fkey FOREIGN KEY (assigned_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: user_allowed_locations user_allowed_locations_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_allowed_locations
+    ADD CONSTRAINT user_allowed_locations_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_allowed_locations user_allowed_locations_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_allowed_locations
+    ADD CONSTRAINT user_allowed_locations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: user_profiles user_profiles_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6582,11 +7267,27 @@ ALTER TABLE ONLY public.user_profiles
 
 
 --
--- Name: user_profiles user_profiles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: user_roles user_roles_assigned_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.user_profiles
-    ADD CONSTRAINT user_profiles_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_assigned_by_fkey FOREIGN KEY (assigned_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: user_roles user_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -6750,13 +7451,6 @@ CREATE POLICY "Allow public select" ON public.products FOR SELECT USING (true);
 
 
 --
--- Name: roles Allow public select; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow public select" ON public.roles FOR SELECT USING (true);
-
-
---
 -- Name: units_of_measure Allow public select; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -6890,13 +7584,6 @@ CREATE POLICY "Anyone can read purchase orders" ON public.purchase_orders FOR SE
 
 
 --
--- Name: roles Anyone can read roles; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Anyone can read roles" ON public.roles FOR SELECT TO authenticated USING (true);
-
-
---
 -- Name: sales_commissions Anyone can read sales commissions; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -6964,6 +7651,34 @@ CREATE POLICY "Anyone can read vendor payments" ON public.vendor_payments FOR SE
 --
 
 CREATE POLICY "Anyone can read vendors" ON public.vendors FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: permissions Anyone can view permissions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Anyone can view permissions" ON public.permissions FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: role_permissions Anyone can view role_permissions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Anyone can view role_permissions" ON public.role_permissions FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: roles Anyone can view roles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Anyone can view roles" ON public.roles FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: user_roles Anyone can view user_roles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Anyone can view user_roles" ON public.user_roles FOR SELECT TO authenticated USING (true);
 
 
 --
@@ -7149,17 +7864,24 @@ CREATE POLICY "Authenticated users can update products" ON public.products FOR U
 
 
 --
--- Name: user_profiles Users can read all profiles; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Users can read all profiles" ON public.user_profiles FOR SELECT TO authenticated USING (true);
-
-
---
 -- Name: user_profiles Users can update own profile; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can update own profile" ON public.user_profiles FOR UPDATE TO authenticated USING ((auth.uid() = id));
+CREATE POLICY "Users can update own profile" ON public.user_profiles FOR UPDATE TO authenticated USING ((id = auth.uid()));
+
+
+--
+-- Name: user_profiles Users can view all profiles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view all profiles" ON public.user_profiles FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: audit_logs Users can view audit logs; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view audit logs" ON public.audit_logs FOR SELECT TO authenticated USING (true);
 
 
 --
@@ -7173,6 +7895,12 @@ ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: customer_payments; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7259,6 +7987,12 @@ ALTER TABLE public.maintenance_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payslips ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: permissions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.permissions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: pos_sale_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7299,6 +8033,12 @@ ALTER TABLE public.purchase_order_items ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: role_permissions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: roles; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7355,6 +8095,12 @@ ALTER TABLE public.units_of_measure ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: user_roles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: vehicles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7376,5 +8122,5 @@ ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict pEibmVwLuSfperebV6f5WdtHocsli2QViRBYTlidzpBcUOQY4DwiLthUesKLuKd
+\unrestrict lnyXBwJ6jnfa6NT3m3hs7SJMnW8wSSIOlHNzR7ks4obM8GyXax8TbsCdFzIp1ZP
 

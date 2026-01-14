@@ -6,6 +6,7 @@ import { useLocations } from '@/lib/queries/locations'
 import { useProducts } from '@/lib/queries/products'
 import { useLocationStock } from '@/lib/queries/inventory'
 import { useCreateTransfer } from '@/lib/queries/stock-transfers'
+import { useAuth } from '@/components/providers/auth-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -58,6 +59,9 @@ export default function NewStockTransferPage() {
     const { data: products } = useProducts()
     const { data: fromStock } = useLocationStock(fromLocationId)
     const createTransfer = useCreateTransfer()
+    const { hasLocationAccess } = useAuth()
+
+    const userAllowedLocations = locations?.filter(loc => hasLocationAccess(loc.id))
 
     const availableProducts = fromStock?.filter(stock =>
         stock.quantity_available > 0 &&
@@ -185,7 +189,7 @@ export default function NewStockTransferPage() {
                                         <SelectValue placeholder="Select origin" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {locations?.map((location) => (
+                                        {userAllowedLocations?.map((location) => (
                                             <SelectItem key={location.id} value={location.id}>
                                                 {location.name} ({location.code})
                                             </SelectItem>

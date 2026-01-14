@@ -32,19 +32,38 @@ import { Receipt as ReceiptComponent } from '@/components/pos/receipt'
 import { ArrowLeft, Receipt, Search, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import { useLocation } from '@/components/providers/location-provider'
+import { PermissionGuard } from '@/components/permission-guard'
 
 export default function SalesHistoryPage() {
+    return (
+        <PermissionGuard permission="pos.sales.view">
+            <SalesHistoryContent />
+        </PermissionGuard>
+    )
+}
+
+function SalesHistoryContent() {
     const [locationId, setLocationId] = useState('')
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null)
+    const { allowedLocationIds } = useLocation()
 
     const { data: locations } = useLocations()
     const { data: sales, isLoading } = usePOSSales(locationId, startDate, endDate)
 
+    // Filter locations by LBAC
+    const allowedLocations = locations?.filter(loc => allowedLocationIds.includes(loc.id))
+
+    // Filter sales by LBAC - only show sales from allowed locations
+    const accessibleSales = sales?.filter(sale =>
+        allowedLocationIds.includes(sale.location_id)
+    )
+
     // Filter by search
-    const filteredSales = sales?.filter(sale => {
+    const filteredSales = accessibleSales?.filter(sale => {
         const query = searchQuery.toLowerCase()
         return (
             sale.sale_number.toLowerCase().includes(query) ||
@@ -124,11 +143,11 @@ export default function SalesHistoryPage() {
                             <label className="text-sm font-medium">Location</label>
                             <Select value={locationId || "ALL"} onValueChange={(val) => setLocationId(val === "ALL" ? "" : val)}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="All Locations" />
+                                    <SelectValue placeholder="All My Locations" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="ALL">All Locations</SelectItem>
-                                    {locations?.map((location) => (
+                                    <SelectItem value="ALL">All My Locations</SelectItem>
+                                    {allowedLocations?.map((location) => (
                                         <SelectItem key={location.id} value={location.id}>
                                             {location.name}
                                         </SelectItem>

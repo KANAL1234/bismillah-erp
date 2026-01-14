@@ -5,11 +5,20 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useCustomerInvoices, useApproveCustomerInvoice } from '@/lib/queries/customer-invoices-accounting'
+import { PermissionGuard } from '@/components/permission-guard'
 import { FileText, Plus, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 
 export default function CustomerInvoicesPage() {
+    return (
+        <PermissionGuard permission="accounting.customer_invoices.read">
+            <CustomerInvoicesContent />
+        </PermissionGuard>
+    )
+}
+
+function CustomerInvoicesContent() {
     const { data: invoices, isLoading } = useCustomerInvoices()
     const approveInvoice = useApproveCustomerInvoice()
 

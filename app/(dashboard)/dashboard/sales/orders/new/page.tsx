@@ -30,6 +30,7 @@ import { useCustomers } from '@/lib/queries/customers'
 import { useProducts } from '@/lib/queries/products'
 import { useLocations } from '@/lib/queries/locations'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/providers/auth-provider'
 
 type OrderItem = {
     id: string
@@ -46,10 +47,15 @@ type OrderItem = {
 
 export default function NewSalesOrderPage() {
     const router = useRouter()
+    const { user, allowedLocations } = useAuth()
     const createOrder = useCreateSalesOrder()
     const { data: customers } = useCustomers()
     const { data: products } = useProducts()
     const { data: locations } = useLocations()
+
+    // Filter locations by user's allowed locations
+    const allowedLocationIds = allowedLocations?.map(l => l.location_id) || []
+    const filteredLocations = locations?.filter(l => allowedLocationIds.includes(l.id)) || []
 
     // Form State
     const [customerId, setCustomerId] = useState('')
@@ -223,7 +229,7 @@ export default function NewSalesOrderPage() {
                                             <SelectValue placeholder="Select Warehouse" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {locations?.map(l => (
+                                            {filteredLocations?.map(l => (
                                                 <SelectItem key={l.id} value={l.id}>
                                                     {l.name}
                                                 </SelectItem>

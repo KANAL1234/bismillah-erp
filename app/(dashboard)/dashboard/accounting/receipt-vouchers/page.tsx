@@ -3,10 +3,19 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useReceiptVouchers } from '@/lib/queries/receipt-vouchers'
+import { PermissionGuard } from '@/components/permission-guard'
 import { DollarSign, Calendar, Users } from 'lucide-react'
 import { format } from 'date-fns'
 
 export default function ReceiptVouchersPage() {
+    return (
+        <PermissionGuard permission="accounting.receipt_vouchers.read">
+            <ReceiptVouchersContent />
+        </PermissionGuard>
+    )
+}
+
+function ReceiptVouchersContent() {
     const { data: vouchers, isLoading } = useReceiptVouchers()
 
     const totalReceived = vouchers?.reduce((sum, v) => sum + v.amount, 0) || 0

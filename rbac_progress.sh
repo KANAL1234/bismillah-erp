@@ -1,0 +1,20 @@
+#!/bin/bash
+# Script to track RBAC implementation progress
+
+echo "=== RBAC Implementation Progress ==="
+echo ""
+echo "✅ Completed (5):"
+echo "  - Dashboard (dashboard.overview.view)"
+echo "  - Inventory (inventory.stock.view)"
+echo "  - POS Terminal (pos.sales.create)"
+echo "  - POS History (pos.sales.view)"
+echo "  - Sales Orders (sales.orders.read)"
+echo ""
+echo "⏳ In Progress (20):"
+echo "  - Products, Vendors, Purchase Orders, GRN"
+echo "  - Stock Transfers, Adjustments"
+echo "  - Sales: Quotations, Invoices, Deliveries, Returns"
+echo "  - Accounting: 8 pages"
+echo "  - Settings: Users, Roles"
+echo ""
+echo "Progress: 5/25 (20%)"

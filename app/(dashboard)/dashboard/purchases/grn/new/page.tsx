@@ -31,6 +31,7 @@ import {
 import { toast } from 'sonner'
 import { ArrowLeft, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { useLocation } from '@/components/providers/location-provider'
 
 type GRNItem = {
     id: string
@@ -56,6 +57,10 @@ export default function NewGoodsReceiptPage() {
     const { data: products } = useProducts()
     const { data: locations } = useLocations()
     const createGRN = useCreateGoodsReceipt()
+    const { allowedLocationIds } = useLocation()
+
+    // Filter locations by LBAC
+    const allowedLocations = locations?.filter(loc => allowedLocationIds.includes(loc.id))
 
     // State
     const [vendorId, setVendorId] = useState('')
@@ -210,7 +215,7 @@ export default function NewGoodsReceiptPage() {
                                         <SelectValue placeholder="Select location" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {locations?.map(l => (
+                                        {allowedLocations?.map(l => (
                                             <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
                                         ))}
                                     </SelectContent>
