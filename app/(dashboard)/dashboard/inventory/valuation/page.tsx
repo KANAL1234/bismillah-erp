@@ -45,10 +45,10 @@ function InventoryValuationContent() {
         selectedLocation === 'all' ? undefined : selectedLocation
     )
 
-    const totalValue = valuation?.reduce((sum, item) => sum + Number(item.total_value || 0), 0) || 0
-    const totalQuantity = valuation?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0
-    const fifoProducts = valuation?.filter(v => v.costing_method === 'FIFO').length || 0
-    const avcoProducts = valuation?.filter(v => v.costing_method === 'AVCO').length || 0
+    const totalValue = valuation?.reduce((sum: number, item: any) => sum + Number(item.total_value || 0), 0) || 0
+    const totalQuantity = valuation?.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0) || 0
+    const fifoProducts = valuation?.filter((v: any) => v.costing_method === 'FIFO').length || 0
+    const avcoProducts = valuation?.filter((v: any) => v.costing_method === 'AVCO').length || 0
 
     return (
         <div className="space-y-6">
@@ -162,7 +162,7 @@ function InventoryValuationContent() {
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            valuation?.map((item, idx) => (
+                                            valuation?.map((item: any, idx: number) => (
                                                 <TableRow key={idx}>
                                                     <TableCell>
                                                         <div className="font-medium">{item.product_name}</div>
@@ -229,7 +229,7 @@ function InventoryValuationContent() {
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            costLayers?.map((layer, idx) => (
+                                            costLayers?.map((layer: any, idx: number) => (
                                                 <TableRow key={idx}>
                                                     <TableCell>
                                                         <div className="font-medium">{layer.product_name}</div>
