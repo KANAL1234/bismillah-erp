@@ -14,12 +14,23 @@ export function useProducts() {
                 .select(`
           *,
           product_categories(id, code, name, costing_method),
-          units_of_measure(id, code, name)
+          units_of_measure(id, code, name),
+          inventory_stock(quantity_available)
         `)
                 .order('created_at', { ascending: false })
 
             if (error) throw error
-            return data as ProductWithDetails[]
+
+            // Aggregate stock across all locations
+            const productsWithStock = data?.map((product: any) => ({
+                ...product,
+                total_stock: product.inventory_stock?.reduce(
+                    (sum: number, stock: any) => sum + (stock.quantity_available || 0),
+                    0
+                ) || 0
+            }))
+
+            return productsWithStock as ProductWithDetails[]
         },
     })
 }

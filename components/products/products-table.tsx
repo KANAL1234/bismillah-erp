@@ -48,7 +48,7 @@ export function ProductsTable({ products, isLoading }: { products: any[], isLoad
                                 <TableCell>{product.category?.name || '-'}</TableCell>
                                 <TableCell>{product.unit_of_measure?.code || product.uom_id}</TableCell>
                                 <TableCell className="text-right">{product.selling_price?.toFixed(2)}</TableCell>
-                                <TableCell className="text-right font-bold">{product.available_quantity || product.quantity_in_stock || 0}</TableCell>
+                                <TableCell className="text-right font-bold">{product.total_stock || 0}</TableCell>
                                 <TableCell>
                                     <Badge variant={product.is_active ? 'default' : 'secondary'}>
                                         {product.is_active ? 'Active' : 'Inactive'}

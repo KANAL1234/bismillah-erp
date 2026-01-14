@@ -1438,25 +1438,34 @@ export default function SystemHealthPage() {
             // 4. TEST PAYMENT & BALANCE TRIGGER
             log(id, 'Step 4: Testing payment & balance trigger...')
             const payAmount = 500
-            const { data: payment, error: payErr } = await supabase.from('receipt_vouchers').insert({
-                customer_id: testCustomerId,
-                voucher_number: `HEALTH-TEST-RV-${Date.now()}`,
-                receipt_date: new Date().toISOString().split('T')[0],
-                amount: payAmount,
-                status: 'posted',
-                notes: 'System Health Test Payment'
-            }).select().single()
 
-            if (payErr) throw new Error(`Payment insertion failed: ${payErr.message}`)
-            log(id, `✅ Recorded payment of PKR ${payAmount}`, 'success')
+            // Get a bank account for the receipt voucher
+            const { data: bankAccounts } = await supabase.from('bank_accounts').select('id').limit(1).single()
+            if (!bankAccounts) {
+                log(id, '⚠️ No bank account found, skipping balance trigger test', 'warn')
+            } else {
+                const { data: payment, error: payErr } = await supabase.from('receipt_vouchers').insert({
+                    customer_id: testCustomerId,
+                    bank_account_id: bankAccounts.id,
+                    voucher_number: `HEALTH-TEST-RV-${Date.now()}`,
+                    receipt_date: new Date().toISOString().split('T')[0],
+                    amount: payAmount,
+                    payment_method: 'CASH',
+                    status: 'cleared',
+                    notes: 'System Health Test Payment'
+                }).select().single()
 
-            // Verify Balance Change
-            // Balance was 0, after payment of 500, it should be -500
-            const { data: finalCust } = await supabase.from('customers').select('current_balance').eq('id', testCustomerId).single()
-            if (Number(finalCust?.current_balance) !== -payAmount) {
-                throw new Error(`Balance trigger failed. Expected -${payAmount}, got ${finalCust?.current_balance}`)
+                if (payErr) throw new Error(`Payment insertion failed: ${payErr.message}`)
+                log(id, `✅ Recorded payment of PKR ${payAmount}`, 'success')
+
+                // Verify Balance Change
+                // Balance was 0, after payment of 500, it should be -500
+                const { data: finalCust } = await supabase.from('customers').select('current_balance').eq('id', testCustomerId).single()
+                if (Number(finalCust?.current_balance) !== -payAmount) {
+                    throw new Error(`Balance trigger failed. Expected -${payAmount}, got ${finalCust?.current_balance}`)
+                }
+                log(id, `✅ Balance successfully updated to ${finalCust?.current_balance}`, 'success')
             }
-            log(id, `✅ Balance successfully updated to ${finalCust?.current_balance}`, 'success')
 
             // 5. TEST DEACTIVATION (Soft Delete)
             log(id, 'Step 5: Testing customer deactivation...')
@@ -1497,10 +1506,11 @@ export default function SystemHealthPage() {
             const { data: employee, error: empErr } = await supabase.from('employees').insert({
                 full_name: 'HEALTH-TEST-EMPLOYEE',
                 employee_code: empCode,
+                cnic: '12345-1234567-1',
                 designation: 'Software Tester',
                 basic_salary: 50000,
                 employment_status: 'ACTIVE',
-                join_date: new Date().toISOString().split('T')[0]
+                joining_date: new Date().toISOString().split('T')[0]
             }).select().single()
 
             if (empErr) throw empErr
