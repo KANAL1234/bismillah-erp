@@ -46,6 +46,7 @@ const INITIAL_MODULES: TestModule[] = [
     { id: 'user_mgmt', name: '14. User & Role Management', description: 'Verify role fetching and user integrity', status: 'pending', logs: [] },
     { id: 'customer_mgmt', name: '15. Customer Management', description: 'Verify full Customer CRUD lifecycle', status: 'pending', logs: [] },
     { id: 'hr', name: '16. HR & Payroll Module', description: 'Verify Employee, Attendance, and Leave workflows', status: 'pending', logs: [] },
+    { id: 'fleet', name: '17. Fleet Management', description: 'Vehicle -> Driver -> Trip -> Fuel -> Maintenance workflow', status: 'pending', logs: [] },
 ]
 
 export default function SystemHealthPage() {
@@ -101,6 +102,7 @@ export default function SystemHealthPage() {
             await runUserRoleManagementTest()
             await runCustomerManagementTest()
             await runHRWorkflowTest()
+            await runFleetTest()
         } catch (error) {
             console.error('Global Test Error:', error)
         } finally {
@@ -1593,6 +1595,129 @@ export default function SystemHealthPage() {
                 await supabase.from('payroll_periods').delete().eq('id', testPeriodId)
             }
             log(id, '✅ HR Cleanup complete', 'success')
+        }
+    }
+
+    // --- 17. FLEET MANAGEMENT TEST ---
+    const runFleetTest = async () => {
+        const id = 'fleet'
+        setCurrentTestId(id)
+        updateModule(id, { status: 'running' })
+
+        let vehicleId, driverId, tripId, employeeId
+
+        try {
+            // 1. Create Test Employee (for Driver)
+            log(id, 'Creating Test Employee for Driver...')
+            const { data: emp, error: empError } = await supabase.from('employees').insert({
+                full_name: 'System Health Driver',
+                email: `health_driver_${Date.now()}@test.com`,
+                employee_code: `HLT-DRV-${Date.now()}`,
+                cnic: `42201-${Date.now()}`,
+                designation: 'Driver',
+                employment_status: 'ACTIVE',
+                joining_date: new Date().toISOString().slice(0, 10),
+                basic_salary: 50000
+            }).select().single()
+
+            if (empError) throw new Error(`Employee creation failed: ${empError.message}`)
+            employeeId = emp.id
+            log(id, `Employee created: ${employeeId}`, 'success')
+
+            // 2. Create Vehicle
+            log(id, 'Creating Vehicle...')
+            const { data: veh, error: vehError } = await supabase.from('fleet_vehicles').insert({
+                registration_number: `HLT-${Date.now()}`,
+                make: 'Toyota',
+                model: 'Corolla',
+                year: 2024,
+                status: 'ACTIVE',
+                current_mileage: 5000
+            }).select().single()
+
+            if (vehError) throw new Error(`Vehicle creation failed: ${vehError.message}`)
+            vehicleId = veh.id
+            log(id, `Vehicle created: ${vehicleId}`, 'success')
+
+            // 3. Create Driver
+            log(id, 'Assigning Driver...')
+            const { data: drv, error: drvError } = await supabase.from('fleet_drivers').insert({
+                employee_id: employeeId,
+                license_number: `LIC-${Date.now()}`,
+                license_expiry: new Date(Date.now() + 31536000000).toISOString().slice(0, 10), // +1 year
+                status: 'ACTIVE'
+            }).select().single()
+
+            if (drvError) throw new Error(`Driver creation failed: ${drvError.message}`)
+            driverId = drv.id
+            log(id, `Driver assigned: ${driverId}`, 'success')
+
+            // 4. Create Trip
+            log(id, 'Creating Trip...')
+            const { data: trip, error: tripError } = await supabase.from('fleet_trips').insert({
+                vehicle_id: vehicleId,
+                driver_id: driverId,
+                start_time: new Date().toISOString(),
+                start_location: 'Health Check HQ',
+                start_mileage: 5000,
+                status: 'PLANNED'
+            }).select().single()
+
+            if (tripError) throw new Error(`Trip creation failed: ${tripError.message}`)
+            tripId = trip.id
+            log(id, `Trip created: ${tripId}`, 'success')
+
+            // 5. Log Fuel
+            log(id, 'Logging Fuel...')
+            const { error: fuelError } = await supabase.from('fleet_fuel_logs').insert({
+                vehicle_id: vehicleId,
+                trip_id: tripId,
+                liters: 10,
+                cost_per_liter: 2.5,
+                total_cost: 25,
+                odometer_reading: 5050,
+                log_date: new Date().toISOString().slice(0, 10)
+            })
+
+            if (fuelError) throw new Error(`Fuel logging failed: ${fuelError.message}`)
+            log(id, 'Fuel logged', 'success')
+
+            // 6. Log Maintenance
+            log(id, 'Logging Maintenance...')
+            const { error: maintError } = await supabase.from('fleet_maintenance').insert({
+                vehicle_id: vehicleId,
+                service_type: 'INSPECTION',
+                service_date: new Date().toISOString().slice(0, 10),
+                odometer_reading: 5100,
+                cost: 0,
+                description: 'System Health Check'
+            })
+
+            if (maintError) throw new Error(`Maintenance logging failed: ${maintError.message}`)
+            log(id, 'Maintenance logged', 'success')
+
+            updateModule(id, { status: 'success' })
+
+        } catch (error: any) {
+            log(id, `Fleet Test Failed: ${error.message}`, 'error')
+            updateModule(id, { status: 'failure' })
+        } finally {
+            log(id, 'Cleaning up fleet data...', 'info')
+            if (tripId) {
+                await supabase.from('fleet_fuel_logs').delete().eq('trip_id', tripId)
+                await supabase.from('fleet_trips').delete().eq('id', tripId)
+            }
+            if (vehicleId) {
+                await supabase.from('fleet_maintenance').delete().eq('vehicle_id', vehicleId)
+                await supabase.from('fleet_fuel_logs').delete().eq('vehicle_id', vehicleId)
+            }
+
+            // Drivers and Vehicles
+            if (driverId) await supabase.from('fleet_drivers').delete().eq('id', driverId)
+            if (vehicleId) await supabase.from('fleet_vehicles').delete().eq('id', vehicleId)
+            if (employeeId) await supabase.from('employees').delete().eq('id', employeeId)
+
+            log(id, 'Cleanup complete', 'success')
         }
     }
 

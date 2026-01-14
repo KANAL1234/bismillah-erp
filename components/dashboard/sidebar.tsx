@@ -23,7 +23,7 @@ import { NavLink } from '@/components/nav-link'
 export function Sidebar() {
     const pathname = usePathname()
     const { isAdmin } = useAuth()
-    const [expandedSections, setExpandedSections] = useState<string[]>(['sales', 'inventory', 'procurement', 'hr', 'accounting', 'settings'])
+    const [expandedSections, setExpandedSections] = useState<string[]>(['sales', 'inventory', 'procurement', 'hr', 'fleet', 'accounting', 'settings'])
 
     const toggleSection = (section: string) => {
         setExpandedSections(prev =>
@@ -241,6 +241,48 @@ export function Sidebar() {
                             <div className="my-2 border-t"></div>
                             <NavLink permission="hr.payroll.view" href="/dashboard/hr/payroll" className={subLinkClass('/dashboard/hr/payroll')}>
                                 Payroll Processing
+                            </NavLink>
+                        </div>
+                    )}
+                </div>
+
+                {/* Fleet Management */}
+                <div>
+                    <button
+                        onClick={() => toggleSection('fleet')}
+                        className={cn(
+                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            isActive('/dashboard/fleet')
+                                ? "bg-slate-200 text-slate-900"
+                                : "text-slate-700 hover:bg-slate-200"
+                        )}
+                    >
+                        <div className="flex items-center gap-3">
+                            <Truck className="h-4 w-4" />
+                            <span>Fleet Management</span>
+                        </div>
+                        {expandedSections.includes('fleet') ? (
+                            <ChevronDown className="h-4 w-4" />
+                        ) : (
+                            <ChevronRight className="h-4 w-4" />
+                        )}
+                    </button>
+                    {expandedSections.includes('fleet') && (
+                        <div className="ml-4 mt-1 space-y-1 border-l pl-4">
+                            <NavLink permission="fleet.view" href="/dashboard/fleet" className={subLinkClass('/dashboard/fleet')}>
+                                Dashboard
+                            </NavLink>
+                            <NavLink permission="fleet.vehicles.view" href="/dashboard/fleet/vehicles" className={subLinkClass('/dashboard/fleet/vehicles')}>
+                                Vehicles
+                            </NavLink>
+                            <NavLink permission="fleet.drivers.view" href="/dashboard/fleet/drivers" className={subLinkClass('/dashboard/fleet/drivers')}>
+                                Drivers
+                            </NavLink>
+                            <NavLink permission="fleet.trips.view" href="/dashboard/fleet/trips" className={subLinkClass('/dashboard/fleet/trips')}>
+                                Trips & Fuel
+                            </NavLink>
+                            <NavLink permission="fleet.maintenance.view" href="/dashboard/fleet/maintenance" className={subLinkClass('/dashboard/fleet/maintenance')}>
+                                Maintenance
                             </NavLink>
                         </div>
                     )}

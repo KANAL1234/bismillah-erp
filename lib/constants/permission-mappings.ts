@@ -40,4 +40,11 @@ export const permissionMappings = {
     // Settings Module
     '/dashboard/settings/roles': 'settings:roles:view',
     '/dashboard/settings/users': 'settings:users:view',
+
+    // Fleet Module
+    '/dashboard/fleet': 'fleet:overview:view',
+    '/dashboard/fleet/vehicles': 'fleet:vehicles:view',
+    '/dashboard/fleet/drivers': 'fleet:drivers:view',
+    '/dashboard/fleet/trips': 'fleet:trips:view',
+    '/dashboard/fleet/maintenance': 'fleet:maintenance:view',
 }
