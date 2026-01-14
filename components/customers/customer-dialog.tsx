@@ -18,7 +18,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { useCreateCustomer } from '@/lib/queries/customers'
+import { useCreateCustomer, useUpdateCustomer } from '@/lib/queries/customers'
 import { toast } from 'sonner'
 import type { Customer } from '@/lib/types/database'
 
@@ -31,6 +31,7 @@ interface CustomerDialogProps {
 export function CustomerDialog({ open, onOpenChange, customer }: CustomerDialogProps) {
     const isEditing = !!customer
     const createCustomer = useCreateCustomer()
+    const updateCustomer = useUpdateCustomer()
     const [loading, setLoading] = useState(false)
 
     async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -38,7 +39,7 @@ export function CustomerDialog({ open, onOpenChange, customer }: CustomerDialogP
         setLoading(true)
 
         const formData = new FormData(e.currentTarget)
-        const data = {
+        const data: any = {
             name: formData.get('name') as string,
             phone: formData.get('phone') as string,
             customer_type: formData.get('customer_type') as 'INDIVIDUAL' | 'BUSINESS',
@@ -48,13 +49,13 @@ export function CustomerDialog({ open, onOpenChange, customer }: CustomerDialogP
 
         try {
             if (isEditing) {
-                // To be implemented when update hook is available
-                toast.error('Update functionality coming soon')
+                await updateCustomer.mutateAsync({ id: customer!.id, ...data })
+                toast.success('Customer updated successfully')
             } else {
                 await createCustomer.mutateAsync(data)
                 toast.success('Customer created successfully')
-                onOpenChange(false)
             }
+            onOpenChange(false)
         } catch (error: any) {
             toast.error(error.message || 'Failed to save customer')
         } finally {

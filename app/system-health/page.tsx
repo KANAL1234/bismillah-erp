@@ -1433,13 +1433,47 @@ export default function SystemHealthPage() {
             if (checkUpdate?.name !== updatedName) throw new Error('Update failed: Name not changed')
             log(id, '✅ Update successful', 'success')
 
+            // 4. TEST PAYMENT & BALANCE TRIGGER
+            log(id, 'Step 4: Testing payment & balance trigger...')
+            const payAmount = 500
+            const { data: payment, error: payErr } = await supabase.from('receipt_vouchers').insert({
+                customer_id: testCustomerId,
+                voucher_number: `HEALTH-TEST-RV-${Date.now()}`,
+                receipt_date: new Date().toISOString().split('T')[0],
+                amount: payAmount,
+                status: 'posted',
+                notes: 'System Health Test Payment'
+            }).select().single()
+
+            if (payErr) throw new Error(`Payment insertion failed: ${payErr.message}`)
+            log(id, `✅ Recorded payment of PKR ${payAmount}`, 'success')
+
+            // Verify Balance Change
+            // Balance was 0, after payment of 500, it should be -500
+            const { data: finalCust } = await supabase.from('customers').select('current_balance').eq('id', testCustomerId).single()
+            if (Number(finalCust?.current_balance) !== -payAmount) {
+                throw new Error(`Balance trigger failed. Expected -${payAmount}, got ${finalCust?.current_balance}`)
+            }
+            log(id, `✅ Balance successfully updated to ${finalCust?.current_balance}`, 'success')
+
+            // 5. TEST DEACTIVATION (Soft Delete)
+            log(id, 'Step 5: Testing customer deactivation...')
+            const { error: deactivateErr } = await supabase.from('customers').update({ is_active: false }).eq('id', testCustomerId)
+            if (deactivateErr) throw deactivateErr
+
+            const { data: inactiveCust } = await supabase.from('customers').select('is_active').eq('id', testCustomerId).single()
+            if (inactiveCust?.is_active !== false) throw new Error('Deactivation failed')
+            log(id, '✅ Customer successfully deactivated', 'success')
+
             updateModule(id, { status: 'success' })
         } catch (error: any) {
             log(id, `Customer Test Failed: ${error.message}`, 'error')
             updateModule(id, { status: 'failure' })
         } finally {
             if (testCustomerId) {
-                log(id, 'Cleaning up test customer...')
+                log(id, 'Cleaning up test records...')
+                // Delete vouchers first due to FK
+                await supabase.from('receipt_vouchers').delete().eq('customer_id', testCustomerId)
                 await supabase.from('customers').delete().eq('id', testCustomerId)
                 log(id, '✅ Cleanup complete', 'success')
             }

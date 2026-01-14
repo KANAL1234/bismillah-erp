@@ -89,3 +89,79 @@ export function useCreateCustomer() {
         },
     })
 }
+// Update customer
+export function useUpdateCustomer() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, ...updates }: Partial<Customer> & { id: string }) => {
+            const { data, error } = await supabase
+                .from('customers')
+                .update(updates)
+                .eq('id', id)
+                .select()
+                .single()
+
+            if (error) throw error
+            return data as Customer
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['customers'] })
+            queryClient.invalidateQueries({ queryKey: ['customers', data.id] })
+        },
+    })
+}
+
+// Delete customer (soft delete)
+export function useDeleteCustomer() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const { error } = await supabase
+                .from('customers')
+                .update({ is_active: false })
+                .eq('id', id)
+
+            if (error) throw error
+            return id
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['customers'] })
+        },
+    })
+}
+
+// Create receipt voucher (payment)
+export function useCreateReceiptVoucher() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (payment: {
+            customer_id: string
+            amount: number
+            payment_method: 'CASH' | 'CHEQUE' | 'BANK_TRANSFER'
+            receipt_date: string
+            notes?: string
+        }) => {
+            const voucherNumber = `RV-${Date.now()}`
+
+            const { data, error } = await supabase
+                .from('receipt_vouchers')
+                .insert({
+                    ...payment,
+                    voucher_number: voucherNumber,
+                    status: 'posted', // Trigger update_customer_balance_on_payment
+                })
+                .select()
+                .single()
+
+            if (error) throw error
+            return data
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['customers'] })
+            queryClient.invalidateQueries({ queryKey: ['customers', variables.customer_id] })
+        },
+    })
+}
