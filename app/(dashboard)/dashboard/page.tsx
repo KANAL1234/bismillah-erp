@@ -143,6 +143,24 @@ function DashboardContent() {
             p_end_date: today
         })
 
+        // === HR METRICS ===
+        const { count: activeEmployeeCount } = await supabase
+            .from('employees')
+            .select('*', { count: 'exact', head: true })
+            .eq('employment_status', 'ACTIVE')
+
+        const { count: todayAttendanceCount } = await supabase
+            .from('attendance')
+            .select('*', { count: 'exact', head: true })
+            .eq('attendance_date', today)
+            .eq('status', 'PRESENT')
+            .in('location_id', locationsToQuery)
+
+        const { count: pendingLeavesCount } = await supabase
+            .from('leave_requests')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'PENDING')
+
         const displayProducts = (topProducts || [])
             .sort((a: any, b: any) => b.total_sales - a.total_sales)
             .slice(0, 5)
@@ -172,7 +190,10 @@ function DashboardContent() {
             creditRiskData,
             displayProducts,
             userLocations,
-            locationsCount: userLocations?.length || 0
+            locationsCount: userLocations?.length || 0,
+            activeEmployeeCount: activeEmployeeCount || 0,
+            todayAttendanceCount: todayAttendanceCount || 0,
+            pendingLeavesCount: pendingLeavesCount || 0
         })
 
         setLoading(false)
@@ -264,7 +285,7 @@ function DashboardContent() {
             </div>
 
             {/* Secondary Metrics */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Customers</CardTitle>
@@ -289,12 +310,23 @@ function DashboardContent() {
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">My Locations</CardTitle>
-                        <MapPin className="h-4 w-4 text-slate-500" />
+                        <CardTitle className="text-sm font-medium">Active Employees</CardTitle>
+                        <Users className="h-4 w-4 text-slate-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{metrics.locationsCount}</div>
-                        <p className="text-xs text-slate-500">Authorized access</p>
+                        <div className="text-2xl font-bold text-slate-900">{metrics.activeEmployeeCount}</div>
+                        <p className="text-xs text-slate-500">Staff members</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Attendance</CardTitle>
+                        <Clock className="h-4 w-4 text-emerald-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-emerald-600">{metrics.todayAttendanceCount}</div>
+                        <p className="text-xs text-slate-500">Present today</p>
                     </CardContent>
                 </Card>
 
@@ -457,6 +489,18 @@ function DashboardContent() {
                                 </Badge>
                             </div>
                         </Link>
+
+                        <Link href="/dashboard/hr/leaves" className="block p-3 rounded-lg hover:bg-slate-50 transition-colors border">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="font-medium text-slate-900">Leave Requests</p>
+                                    <p className="text-sm text-slate-500">Pending approval</p>
+                                </div>
+                                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                                    {metrics.pendingLeavesCount || 0}
+                                </Badge>
+                            </div>
+                        </Link>
                     </CardContent>
                 </Card>
 
@@ -502,6 +546,18 @@ function DashboardContent() {
                                 <div>
                                     <p className="font-medium text-slate-900">Transaction Registers</p>
                                     <p className="text-sm text-slate-500">Sales & Purchase registers</p>
+                                </div>
+                            </div>
+                        </Link>
+
+                        <Link href="/dashboard/hr/payroll" className="block p-3 rounded-lg hover:bg-emerald-50 transition-colors border border-emerald-200">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-emerald-100 rounded-lg">
+                                    <DollarSign className="h-5 w-5 text-emerald-700" />
+                                </div>
+                                <div>
+                                    <p className="font-medium text-slate-900">Payroll Management</p>
+                                    <p className="text-sm text-slate-500">Process monthly salaries</p>
                                 </div>
                             </div>
                         </Link>

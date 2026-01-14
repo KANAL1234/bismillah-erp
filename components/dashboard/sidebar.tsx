@@ -8,6 +8,7 @@ import {
     ShoppingCart,
     Package,
     Truck,
+    Users,
     Calculator,
     ChevronRight,
     ChevronDown,
@@ -22,7 +23,7 @@ import { NavLink } from '@/components/nav-link'
 export function Sidebar() {
     const pathname = usePathname()
     const { isAdmin } = useAuth()
-    const [expandedSections, setExpandedSections] = useState<string[]>(['sales', 'inventory', 'procurement', 'accounting', 'settings'])
+    const [expandedSections, setExpandedSections] = useState<string[]>(['sales', 'inventory', 'procurement', 'hr', 'accounting', 'settings'])
 
     const toggleSection = (section: string) => {
         setExpandedSections(prev =>
@@ -194,6 +195,49 @@ export function Sidebar() {
                             </NavLink>
                             <NavLink permission="procurement.grn.read" href="/dashboard/purchases/grn" className={subLinkClass('/dashboard/purchases/grn', false)}>
                                 Goods Receipts (GRN)
+                            </NavLink>
+                        </div>
+                    )}
+                </div>
+
+                {/* HR Management */}
+                <div>
+                    <button
+                        onClick={() => toggleSection('hr')}
+                        className={cn(
+                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            isActive('/dashboard/hr')
+                                ? "bg-slate-200 text-slate-900"
+                                : "text-slate-700 hover:bg-slate-200"
+                        )}
+                    >
+                        <div className="flex items-center gap-3">
+                            <Users className="h-4 w-4" />
+                            HR Management
+                        </div>
+                        {expandedSections.includes('hr') ? (
+                            <ChevronDown className="h-4 w-4" />
+                        ) : (
+                            <ChevronRight className="h-4 w-4" />
+                        )}
+                    </button>
+                    {expandedSections.includes('hr') && (
+                        <div className="ml-4 mt-1 space-y-1 border-l pl-4">
+                            <NavLink permission="hr.employees.read" href="/dashboard/hr/employees" className={subLinkClass('/dashboard/hr/employees')}>
+                                Employee Master
+                            </NavLink>
+                            <NavLink permission="hr.attendance.view" href="/dashboard/hr/attendance" className={subLinkClass('/dashboard/hr/attendance')}>
+                                Attendance
+                            </NavLink>
+                            <NavLink permission="hr.leaves.request" href="/dashboard/hr/leaves" className={subLinkClass('/dashboard/hr/leaves')}>
+                                Leave Management
+                            </NavLink>
+                            <NavLink permission="hr.advances.create" href="/dashboard/hr/advances" className={subLinkClass('/dashboard/hr/advances')}>
+                                Advances & Loans
+                            </NavLink>
+                            <div className="my-2 border-t"></div>
+                            <NavLink permission="hr.payroll.view" href="/dashboard/hr/payroll" className={subLinkClass('/dashboard/hr/payroll')}>
+                                Payroll Processing
                             </NavLink>
                         </div>
                     )}

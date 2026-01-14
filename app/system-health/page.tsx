@@ -45,6 +45,7 @@ const INITIAL_MODULES: TestModule[] = [
     { id: 'lbac', name: '13. Location Access (LBAC)', description: 'Verify multi-location assignments & security logic', status: 'pending', logs: [] },
     { id: 'user_mgmt', name: '14. User & Role Management', description: 'Verify role fetching and user integrity', status: 'pending', logs: [] },
     { id: 'customer_mgmt', name: '15. Customer Management', description: 'Verify full Customer CRUD lifecycle', status: 'pending', logs: [] },
+    { id: 'hr', name: '16. HR & Payroll Module', description: 'Verify Employee, Attendance, and Leave workflows', status: 'pending', logs: [] },
 ]
 
 export default function SystemHealthPage() {
@@ -99,6 +100,7 @@ export default function SystemHealthPage() {
             await runLBACLogicTest()
             await runUserRoleManagementTest()
             await runCustomerManagementTest()
+            await runHRWorkflowTest()
         } catch (error) {
             console.error('Global Test Error:', error)
         } finally {
@@ -1477,6 +1479,109 @@ export default function SystemHealthPage() {
                 await supabase.from('customers').delete().eq('id', testCustomerId)
                 log(id, '✅ Cleanup complete', 'success')
             }
+        }
+    }
+
+    const runHRWorkflowTest = async () => {
+        const id = 'hr'
+        setCurrentTestId(id)
+        updateModule(id, { status: 'running' })
+
+        let testEmployeeId: string | null = null
+        let testPeriodId: string | null = null
+
+        try {
+            // 1. Create Test Employee
+            const empCode = `TEST-EMP-${Date.now()}`
+            log(id, `Creating test employee: ${empCode}`)
+            const { data: employee, error: empErr } = await supabase.from('employees').insert({
+                full_name: 'HEALTH-TEST-EMPLOYEE',
+                employee_code: empCode,
+                designation: 'Software Tester',
+                basic_salary: 50000,
+                employment_status: 'ACTIVE',
+                join_date: new Date().toISOString().split('T')[0]
+            }).select().single()
+
+            if (empErr) throw empErr
+            testEmployeeId = employee.id
+            log(id, '✅ Employee created', 'success')
+
+            // 2. Test Attendance RPC
+            log(id, 'Testing mark_attendance RPC...')
+            const { data: attResult, error: attErr } = await supabase.rpc('mark_attendance', {
+                p_employee_id: testEmployeeId,
+                p_date: new Date().toISOString().split('T')[0],
+                p_status: 'PRESENT',
+                p_check_in: '09:00:00',
+                p_check_out: '18:00:00'
+            })
+            if (attErr) throw attErr
+            log(id, '✅ Attendance marked via RPC', 'success')
+
+            // 3. Test Leave Request RPC
+            log(id, 'Testing request_leave RPC...')
+            const { data: leaveType } = await supabase.from('leave_types').select('id').limit(1).single()
+            if (leaveType) {
+                const { data: leaveResult, error: leaveErr } = await supabase.rpc('request_leave', {
+                    p_employee_id: testEmployeeId,
+                    p_leave_type_id: leaveType.id,
+                    p_start_date: new Date().toISOString().split('T')[0],
+                    p_end_date: new Date().toISOString().split('T')[0],
+                    p_reason: 'System Health Test'
+                })
+                if (leaveErr) throw leaveErr
+                log(id, '✅ Leave request submitted via RPC', 'success')
+            }
+
+            // 4. Test Advance Creation
+            log(id, 'Testing create_employee_advance RPC...')
+            const { data: advResult, error: advErr } = await supabase.rpc('create_employee_advance', {
+                p_employee_id: testEmployeeId,
+                p_advance_type: 'ADVANCE',
+                p_amount: 5000,
+                p_reason: 'System Health Test',
+                p_installments: 1
+            })
+            if (advErr) throw advErr
+            log(id, '✅ Advance created via RPC', 'success')
+
+            // 5. Test Payroll Period Creation & Process
+            const periodName = `HEALTH-TEST-${Date.now()}`
+            log(id, `Creating payroll period: ${periodName}`)
+            const { data: period, error: periodErr } = await supabase.from('payroll_periods').insert({
+                period_name: periodName,
+                start_date: new Date().toISOString().split('T')[0],
+                end_date: new Date().toISOString().split('T')[0],
+                status: 'DRAFT'
+            }).select().single()
+            if (periodErr) throw periodErr
+            testPeriodId = period.id
+
+            log(id, 'Processing payroll (RPC)...')
+            const { data: payrollResult, error: payrollErr } = await supabase.rpc('process_monthly_payroll', {
+                p_payroll_period_id: testPeriodId
+            })
+            if (payrollErr) throw payrollErr
+            log(id, '✅ Payroll processed', 'success')
+
+            updateModule(id, { status: 'success' })
+        } catch (error: any) {
+            log(id, `HR Test Failed: ${error.message}`, 'error')
+            updateModule(id, { status: 'failure' })
+        } finally {
+            if (testEmployeeId) {
+                log(id, 'Cleaning up HR test records...')
+                await supabase.from('attendance').delete().eq('employee_id', testEmployeeId)
+                await supabase.from('leave_requests').delete().eq('employee_id', testEmployeeId)
+                await supabase.from('employee_advances').delete().eq('employee_id', testEmployeeId)
+                await supabase.from('payslips').delete().eq('employee_id', testEmployeeId)
+                await supabase.from('employees').delete().eq('id', testEmployeeId)
+            }
+            if (testPeriodId) {
+                await supabase.from('payroll_periods').delete().eq('id', testPeriodId)
+            }
+            log(id, '✅ HR Cleanup complete', 'success')
         }
     }
 

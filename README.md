@@ -32,8 +32,21 @@ A comprehensive, modern Enterprise Resource Planning (ERP) system built for **Bi
 
 ### 📊 Accounting & Finance
 - **Double-Entry General Ledger**: Automated journal entries for all transactions.
-- **Chart of Accounts**: Customizable financial structure.
+- **Chart of Accounts**: Customizable financial structure (70+ predefined Pakistani standard accounts).
 - **Reports**: Trial Balance, Profit & Loss, Balance Sheet, and Transaction Registers.
+- **Auto-Posting**: Real-time synchronization between POS/Sales/Procurement and the General Ledger.
+
+### 👥 HR & Payroll
+- **Employee Management**: Comprehensive profiles, salary structures, and employment lifecycle tracking.
+- **Attendance & Leaves**: Daily tracking with automated working hours and leave approval workflows.
+- **Advances & Loans**: Management of employee advances with automated monthly recovery.
+- **Automated Payroll**: One-click payroll generation considering attendance, tax, and EOBI.
+- **Digital Payslips**: Professional payslip generation with detailed breakdowns.
+
+### ⚙️ System Setup
+- **Wizard-Driven Initialization**: 7-step guided setup for new business entities.
+- **Configurable Tax Rates**: Pakistan-standard GST (18%) and WHT (4.5%/10%) can be adjusted.
+- **HR Configuration**: Dynamic income tax thresholds and EOBI amounts.
 
 ## 🛠️ Technology Stack
 
@@ -52,7 +65,13 @@ A comprehensive, modern Enterprise Resource Planning (ERP) system built for **Bi
     cd bismillah-erp
     ```
 
-2.  **Install dependencies:**
+2.  **Database Setup:**
+    The system requires a Supabase (Postgres) database. You can initialize the schema using the provided dump:
+    ```bash
+    psql "your_postgresql_url" -f bismillah_erp_complete_schema.sql
+    ```
+
+3.  **Install dependencies:**
     ```bash
     npm install
     ```
@@ -83,8 +102,29 @@ This application is optimized for deployment on [Vercel](https://vercel.com/):
 4.  **Environment Variables**: Add the `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in the Vercel Project Settings.
 5.  Click **Deploy**.
 
-## 🛡️ Security
+## 🏗️ Technical Architecture
 
-- **Row Level Security (RLS)**: Database policies ensure data isolation and security.
-- **Middleware Proxy**: Protected routes are guarded against unauthorized access.
-- **Input Validation**: Server Actions validation to prevent improper data entry.
+### 🔐 Multi-Layered Security (RBAC)
+- **Granular Permissions**: Every module is protected by 12+ specific permissions.
+- **Permission Guards**: UI elements are conditionally rendered based on the user's active permissions.
+- **Audit Logging**: All critical actions (creation, modification, deletion) are logged with old and new values.
+
+### 🔄 Autonomous Workflow Engine
+- **Database Triggers**: Real-time synchronization between logistics and finance without manual input.
+- **Goods Receipt (GRN) → Vendor Bill**: Automatically creates and approves vendor bills upon stock arrival.
+- **Sales → GL**: Automatically posts journal entries for every POS sale and B2B invoice.
+
+### 🇵🇰 Compliance & Accounting Standard
+- **Fiscal Year**: Pre-configured for Pakistan (July 1st – June 30th).
+- **Taxation Engine**: Built-in support for SRB/FBR Sales Tax and Income Tax WHT.
+- **Credit Limit Enforcement**: Real-time blocking of sales for customers exceeding their assigned credit limits.
+
+## 🏥 System Health & Verification
+
+The application includes a built-in **Autonomic Diagnostics Suite** at `/system-health`:
+- **Automated Verification**: Tests 12+ core modules in under 60 seconds.
+- **Data Cleanup**: Secure API for removing test data across the entire database schema safely.
+
+## 🛡️ Security & Privacy
+- **Row Level Security (RLS)**: Enforced at the Postgres level for hard data isolation.
+- **Privacy Enforcement**: Restricted access to sensitive payroll and financial reports.

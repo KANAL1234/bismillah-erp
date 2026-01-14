@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict uBgCV9xbEF150H9gdJUaeZZPdBhZCoXzonRpQ6a92t7dLXyYLbdOpccy1SHUPsF
+\restrict vKDXFCzCdeDcGYoOPX6VoqAFJnN0ZLaOntWyYwTsAI6EJSV2fzcg0vcDgMz5ltN
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.7 (Homebrew)
@@ -259,6 +259,79 @@ COMMENT ON FUNCTION public.auto_create_vendor_bill_from_grn() IS 'Autonomous wor
 
 
 --
+-- Name: calculate_employee_commission(uuid, date, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calculate_employee_commission(p_employee_id uuid, p_period_start date, p_period_end date) RETURNS numeric
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_total_sales numeric := 0;
+    v_commission_rate numeric;
+    v_commission_amount numeric;
+    v_commission_type text;
+BEGIN
+    -- Get employee commission settings
+    SELECT commission_rate, commission_type
+    INTO v_commission_rate, v_commission_type
+    FROM employees
+    WHERE id = p_employee_id;
+
+    IF v_commission_rate IS NULL OR v_commission_rate = 0 THEN
+        RETURN 0;
+    END IF;
+
+    -- Calculate total sales based on commission type
+    IF v_commission_type = 'SALES_VALUE' THEN
+        -- Commission on total sales value
+        SELECT COALESCE(SUM(ps.total_amount), 0)
+        INTO v_total_sales
+        FROM pos_sales ps
+        WHERE ps.cashier_id = p_employee_id
+          AND ps.sale_date::date BETWEEN p_period_start AND p_period_end
+          AND ps.status != 'cancelled';
+
+        -- Add B2B sales if any
+        SELECT v_total_sales + COALESCE(SUM(ci.total_amount), 0)
+        INTO v_total_sales
+        FROM customer_invoices ci
+        WHERE ci.salesperson_id = p_employee_id
+          AND ci.invoice_date::date BETWEEN p_period_start AND p_period_end
+          AND ci.status != 'cancelled';
+
+    ELSIF v_commission_type = 'PROFIT_MARGIN' THEN
+        -- Commission on profit (sales - cost)
+        -- This would require more complex calculation
+        -- For now, using simplified approach
+        v_total_sales := 0; -- Implement based on specific requirements
+    END IF;
+
+    -- Calculate commission
+    v_commission_amount := v_total_sales * (v_commission_rate / 100);
+
+    -- Record commission
+    INSERT INTO commission_records (
+        employee_id,
+        period_start,
+        period_end,
+        total_sales,
+        commission_rate,
+        commission_amount
+    ) VALUES (
+        p_employee_id,
+        p_period_start,
+        p_period_end,
+        v_total_sales,
+        v_commission_rate,
+        v_commission_amount
+    );
+
+    RETURN v_commission_amount;
+END;
+$$;
+
+
+--
 -- Name: check_customer_credit_available(uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -372,6 +445,59 @@ $$;
 
 
 --
+-- Name: create_employee_advance(uuid, text, numeric, text, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_employee_advance(p_employee_id uuid, p_advance_type text, p_amount numeric, p_reason text, p_installments integer DEFAULT 1, p_approved_by uuid DEFAULT NULL::uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_advance_number text;
+    v_installment_amount numeric;
+BEGIN
+    -- Generate advance number
+    SELECT 'ADV-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '-' || LPAD(COALESCE(MAX(SUBSTRING(advance_number FROM 12)::integer), 0) + 1::text, 4, '0')
+    INTO v_advance_number
+    FROM employee_advances
+    WHERE advance_number LIKE 'ADV-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '%';
+
+    -- Calculate installment amount
+    v_installment_amount := p_amount / p_installments;
+
+    -- Create advance record
+    INSERT INTO employee_advances (
+        advance_number,
+        employee_id,
+        advance_type,
+        amount,
+        reason,
+        installments,
+        installment_amount,
+        approved_by,
+        approved_at
+    ) VALUES (
+        v_advance_number,
+        p_employee_id,
+        p_advance_type,
+        p_amount,
+        p_reason,
+        p_installments,
+        v_installment_amount,
+        p_approved_by,
+        CASE WHEN p_approved_by IS NOT NULL THEN now() ELSE NULL END
+    );
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Advance created successfully',
+        'advance_number', v_advance_number,
+        'installment_amount', v_installment_amount
+    );
+END;
+$$;
+
+
+--
 -- Name: create_user_profile(uuid, text, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -453,6 +579,36 @@ BEGIN
         up.created_at
     FROM user_profiles up
     ORDER BY up.full_name;
+END;
+$$;
+
+
+--
+-- Name: get_attendance_report(uuid, date, date, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_attendance_report(p_employee_id uuid DEFAULT NULL::uuid, p_date_from date DEFAULT NULL::date, p_date_to date DEFAULT NULL::date, p_location_id uuid DEFAULT NULL::uuid) RETURNS TABLE(attendance_date date, employee_code text, employee_name text, check_in_time time without time zone, check_out_time time without time zone, total_hours numeric, status text, location_name text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        a.attendance_date,
+        e.employee_code,
+        e.full_name,
+        a.check_in_time,
+        a.check_out_time,
+        a.total_hours,
+        a.status,
+        il.location_name
+    FROM attendance a
+    JOIN employees e ON e.id = a.employee_id
+    LEFT JOIN inventory_locations il ON il.id = a.location_id
+    WHERE (p_employee_id IS NULL OR a.employee_id = p_employee_id)
+      AND (p_date_from IS NULL OR a.attendance_date >= p_date_from)
+      AND (p_date_to IS NULL OR a.attendance_date <= p_date_to)
+      AND (p_location_id IS NULL OR a.location_id = p_location_id)
+    ORDER BY a.attendance_date DESC, e.employee_code;
 END;
 $$;
 
@@ -915,6 +1071,68 @@ BEGIN
     FROM customer_stats
     WHERE c_utilization >= p_threshold_pct OR c_balance > c_limit
     ORDER BY c_utilization DESC;
+END;
+$$;
+
+
+--
+-- Name: get_employee_leave_balance(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_employee_leave_balance(p_employee_id uuid, p_fiscal_year integer DEFAULT NULL::integer) RETURNS TABLE(leave_type_name text, opening_balance numeric, accrued numeric, taken numeric, balance numeric)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        lt.leave_type_name,
+        lb.opening_balance,
+        lb.accrued,
+        lb.taken,
+        lb.balance
+    FROM leave_balance lb
+    JOIN leave_types lt ON lt.id = lb.leave_type_id
+    WHERE lb.employee_id = p_employee_id
+      AND lb.fiscal_year = COALESCE(p_fiscal_year, EXTRACT(YEAR FROM CURRENT_DATE))
+    ORDER BY lt.leave_type_name;
+END;
+$$;
+
+
+--
+-- Name: get_payslip_details(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_payslip_details(p_payslip_id uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT json_build_object(
+        'payslip', row_to_json(p.*),
+        'employee', json_build_object(
+            'employee_code', e.employee_code,
+            'full_name', e.full_name,
+            'designation', e.designation,
+            'department', d.department_name,
+            'bank_account', e.bank_account_number,
+            'bank_name', e.bank_name
+        ),
+        'period', json_build_object(
+            'period_name', pp.period_name,
+            'start_date', pp.start_date,
+            'end_date', pp.end_date,
+            'payment_date', pp.payment_date
+        )
+    ) INTO v_result
+    FROM payslips p
+    JOIN employees e ON e.id = p.employee_id
+    LEFT JOIN departments d ON d.id = e.department_id
+    JOIN payroll_periods pp ON pp.id = p.payroll_period_id
+    WHERE p.id = p_payslip_id;
+
+    RETURN v_result;
 END;
 $$;
 
@@ -1913,6 +2131,62 @@ $$;
 
 
 --
+-- Name: mark_attendance(uuid, date, time without time zone, time without time zone, text, uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_attendance(p_employee_id uuid, p_attendance_date date, p_check_in_time time without time zone DEFAULT NULL::time without time zone, p_check_out_time time without time zone DEFAULT NULL::time without time zone, p_status text DEFAULT 'PRESENT'::text, p_location_id uuid DEFAULT NULL::uuid, p_notes text DEFAULT NULL::text, p_marked_by uuid DEFAULT NULL::uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_total_hours numeric;
+    v_result json;
+BEGIN
+    -- Calculate total hours if both check-in and check-out provided
+    IF p_check_in_time IS NOT NULL AND p_check_out_time IS NOT NULL THEN
+        v_total_hours := EXTRACT(EPOCH FROM (p_check_out_time - p_check_in_time)) / 3600;
+    END IF;
+
+    -- Insert or update attendance
+    INSERT INTO attendance (
+        employee_id,
+        attendance_date,
+        check_in_time,
+        check_out_time,
+        total_hours,
+        status,
+        location_id,
+        notes,
+        marked_by
+    ) VALUES (
+        p_employee_id,
+        p_attendance_date,
+        p_check_in_time,
+        p_check_out_time,
+        v_total_hours,
+        p_status,
+        p_location_id,
+        p_notes,
+        COALESCE(p_marked_by, auth.uid())
+    )
+    ON CONFLICT (employee_id, attendance_date)
+    DO UPDATE SET
+        check_in_time = EXCLUDED.check_in_time,
+        check_out_time = EXCLUDED.check_out_time,
+        total_hours = EXCLUDED.total_hours,
+        status = EXCLUDED.status,
+        notes = EXCLUDED.notes,
+        updated_at = now();
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Attendance marked successfully',
+        'total_hours', v_total_hours
+    );
+END;
+$$;
+
+
+--
 -- Name: post_customer_invoice(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2489,6 +2763,244 @@ $$;
 
 
 --
+-- Name: process_leave_request(uuid, text, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.process_leave_request(p_request_id uuid, p_action text, p_approved_by uuid, p_rejection_reason text DEFAULT NULL::text) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_employee_id uuid;
+    v_leave_type_id uuid;
+    v_total_days numeric;
+    v_fiscal_year integer;
+BEGIN
+    -- Get request details
+    SELECT employee_id, leave_type_id, total_days, EXTRACT(YEAR FROM from_date)
+    INTO v_employee_id, v_leave_type_id, v_total_days, v_fiscal_year
+    FROM leave_requests
+    WHERE id = p_request_id;
+
+    IF p_action = 'APPROVE' THEN
+        -- Update request status
+        UPDATE leave_requests
+        SET status = 'APPROVED',
+            approved_by = p_approved_by,
+            approved_at = now()
+        WHERE id = p_request_id;
+
+        -- Deduct from leave balance
+        UPDATE leave_balance
+        SET taken = taken + v_total_days,
+            updated_at = now()
+        WHERE employee_id = v_employee_id
+          AND leave_type_id = v_leave_type_id
+          AND fiscal_year = v_fiscal_year;
+
+        RETURN json_build_object(
+            'success', true,
+            'message', 'Leave request approved'
+        );
+    ELSE
+        -- Reject request
+        UPDATE leave_requests
+        SET status = 'REJECTED',
+            approved_by = p_approved_by,
+            approved_at = now(),
+            rejection_reason = p_rejection_reason
+        WHERE id = p_request_id;
+
+        RETURN json_build_object(
+            'success', true,
+            'message', 'Leave request rejected'
+        );
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: process_monthly_payroll(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.process_monthly_payroll(p_payroll_period_id uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_period_start date;
+    v_period_end date;
+    v_working_days integer;
+    v_employee record;
+    v_days_present integer;
+    v_days_absent integer;
+    v_basic_salary numeric;
+    v_allowances numeric;
+    v_commission numeric;
+    v_overtime numeric;
+    v_gross_salary numeric;
+    v_income_tax numeric;
+    v_eobi numeric;
+    v_advance numeric;
+    v_total_deductions numeric;
+    v_net_salary numeric;
+    v_payslip_number text;
+    v_payslip_count integer := 0;
+    v_tax_threshold numeric;
+    v_tax_rate numeric;
+    v_eobi_amount numeric;
+BEGIN
+    -- Get period details
+    SELECT start_date, end_date INTO v_period_start, v_period_end
+    FROM payroll_periods
+    WHERE id = p_payroll_period_id;
+
+    -- Calculate working days (excluding Sundays)
+    SELECT COUNT(*)::integer INTO v_working_days
+    FROM generate_series(v_period_start, v_period_end, '1 day'::interval) d
+    WHERE extract(dow from d) != 0;
+
+    -- Get settings from company_settings
+    SELECT 
+        COALESCE(hr_income_tax_threshold, 50000),
+        COALESCE(hr_income_tax_rate, 5.0) / 100.0,
+        COALESCE(hr_eobi_amount, 250)
+    INTO v_tax_threshold, v_tax_rate, v_eobi_amount
+    FROM company_settings
+    LIMIT 1;
+
+    -- Process each active employee
+    FOR v_employee IN 
+        SELECT id, employee_code, basic_salary, commission_rate
+        FROM employees
+        WHERE employment_status = 'ACTIVE'
+    LOOP
+        -- Get attendance
+        SELECT 
+            COUNT(*) FILTER (WHERE status IN ('PRESENT', 'LATE', 'HALF_DAY')),
+            COUNT(*) FILTER (WHERE status = 'ABSENT')
+        INTO v_days_present, v_days_absent
+        FROM attendance
+        WHERE employee_id = v_employee.id
+          AND attendance_date BETWEEN v_period_start AND v_period_end;
+
+        -- Calculate pro-rated basic salary
+        v_basic_salary := v_employee.basic_salary * (v_days_present::numeric / v_working_days);
+
+        -- Get allowances
+        SELECT COALESCE(SUM(amount), 0)
+        INTO v_allowances
+        FROM employee_salary_components esc
+        JOIN salary_components sc ON sc.id = esc.component_id
+        WHERE esc.employee_id = v_employee.id
+          AND sc.component_type = 'ALLOWANCE'
+          AND sc.component_code != 'BASIC'
+          AND esc.is_active = true;
+
+        -- Calculate commission
+        v_commission := calculate_employee_commission(
+            v_employee.id,
+            v_period_start,
+            v_period_end
+        );
+
+        -- Get overtime
+        SELECT COALESCE(SUM(total_amount), 0)
+        INTO v_overtime
+        FROM overtime_records
+        WHERE employee_id = v_employee.id
+          AND overtime_date BETWEEN v_period_start AND v_period_end
+          AND payslip_id IS NULL;
+
+        -- Calculate gross salary
+        v_gross_salary := v_basic_salary + v_allowances + v_commission + v_overtime;
+
+        -- Calculate deductions using dynamic settings
+        v_eobi := v_eobi_amount;
+        v_income_tax := CASE 
+            WHEN v_gross_salary > v_tax_threshold THEN v_gross_salary * v_tax_rate
+            ELSE 0 
+        END;
+
+        -- Get pending advances
+        SELECT COALESCE(SUM(installment_amount), 0)
+        INTO v_advance
+        FROM employee_advances
+        WHERE employee_id = v_employee.id
+          AND status = 'ACTIVE'
+          AND balance > 0;
+
+        v_total_deductions := v_eobi + v_income_tax + v_advance;
+        v_net_salary := v_gross_salary - v_total_deductions;
+
+        -- Generate payslip number
+        v_payslip_number := 'PAY-' || TO_CHAR(v_period_start, 'YYYYMM') || '-' || v_employee.employee_code;
+
+        -- Create payslip
+        INSERT INTO payslips (
+            payslip_number,
+            employee_id,
+            payroll_period_id,
+            basic_salary,
+            allowances,
+            commission,
+            overtime,
+            gross_salary,
+            income_tax,
+            eobi,
+            advance,
+            total_deductions,
+            net_salary,
+            working_days,
+            days_present,
+            days_absent
+        ) VALUES (
+            v_payslip_number,
+            v_employee.id,
+            p_payroll_period_id,
+            v_basic_salary,
+            v_allowances,
+            v_commission,
+            v_overtime,
+            v_gross_salary,
+            v_income_tax,
+            v_eobi,
+            v_advance,
+            v_total_deductions,
+            v_net_salary,
+            v_working_days,
+            v_days_present,
+            v_days_absent
+        ) ON CONFLICT (payslip_number) DO UPDATE SET
+            basic_salary = EXCLUDED.basic_salary,
+            allowances = EXCLUDED.allowances,
+            commission = EXCLUDED.commission,
+            overtime = EXCLUDED.overtime,
+            gross_salary = EXCLUDED.gross_salary,
+            income_tax = EXCLUDED.income_tax,
+            eobi = EXCLUDED.eobi,
+            advance = EXCLUDED.advance,
+            total_deductions = EXCLUDED.total_deductions,
+            net_salary = EXCLUDED.net_salary,
+            working_days = EXCLUDED.working_days,
+            days_present = EXCLUDED.days_present,
+            days_absent = EXCLUDED.days_absent;
+
+        v_payslip_count := v_payslip_count + 1;
+    END LOOP;
+
+    -- Update period status
+    UPDATE payroll_periods SET status = 'PROCESSED' WHERE id = p_payroll_period_id;
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Payroll processed successfully',
+        'payslips_generated', v_payslip_count
+    );
+END;
+$$;
+
+
+--
 -- Name: process_sale_transaction(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2555,6 +3067,78 @@ BEGIN
     RETURN json_build_object(
         'success', true,
         'message', 'Role removed successfully'
+    );
+END;
+$$;
+
+
+--
+-- Name: request_leave(uuid, uuid, date, date, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.request_leave(p_employee_id uuid, p_leave_type_id uuid, p_from_date date, p_to_date date, p_reason text, p_created_by uuid DEFAULT NULL::uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_total_days numeric;
+    v_request_number text;
+    v_available_balance numeric;
+    v_leave_type_name text;
+BEGIN
+    -- Calculate total days
+    v_total_days := (p_to_date - p_from_date) + 1;
+
+    -- Get leave type name
+    SELECT leave_type_name INTO v_leave_type_name
+    FROM leave_types
+    WHERE id = p_leave_type_id;
+
+    -- Check leave balance
+    SELECT COALESCE(balance, 0) INTO v_available_balance
+    FROM leave_balance
+    WHERE employee_id = p_employee_id
+      AND leave_type_id = p_leave_type_id
+      AND fiscal_year = EXTRACT(YEAR FROM CURRENT_DATE);
+
+    IF v_available_balance < v_total_days THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Insufficient leave balance. Available: ' || v_available_balance || ' days'
+        );
+    END IF;
+
+    -- Generate request number
+    SELECT 'LR-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '-' || LPAD(COALESCE(MAX(SUBSTRING(request_number FROM 11)::integer), 0) + 1::text, 4, '0')
+    INTO v_request_number
+    FROM leave_requests
+    WHERE request_number LIKE 'LR-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '%';
+
+    -- Create leave request
+    INSERT INTO leave_requests (
+        request_number,
+        employee_id,
+        leave_type_id,
+        from_date,
+        to_date,
+        total_days,
+        reason,
+        created_by
+    ) VALUES (
+        v_request_number,
+        p_employee_id,
+        p_leave_type_id,
+        p_from_date,
+        p_to_date,
+        v_total_days,
+        p_reason,
+        COALESCE(p_created_by, auth.uid())
+    );
+
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Leave request submitted successfully',
+        'request_number', v_request_number,
+        'total_days', v_total_days
     );
 END;
 $$;
@@ -2918,6 +3502,21 @@ CREATE TABLE public.activity_logs (
 
 
 --
+-- Name: advance_deductions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.advance_deductions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    advance_id uuid NOT NULL,
+    payslip_id uuid,
+    deduction_date date NOT NULL,
+    amount numeric(15,2) NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: approval_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2952,6 +3551,34 @@ CREATE TABLE public.approval_workflows (
     is_active boolean DEFAULT true,
     created_at timestamp with time zone DEFAULT now()
 );
+
+
+--
+-- Name: attendance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.attendance (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_id uuid NOT NULL,
+    attendance_date date NOT NULL,
+    check_in_time time without time zone,
+    check_out_time time without time zone,
+    total_hours numeric(5,2),
+    status text NOT NULL,
+    location_id uuid,
+    notes text,
+    marked_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT attendance_status_check CHECK ((status = ANY (ARRAY['PRESENT'::text, 'ABSENT'::text, 'HALF_DAY'::text, 'LATE'::text, 'ON_LEAVE'::text, 'HOLIDAY'::text, 'WEEK_OFF'::text])))
+);
+
+
+--
+-- Name: TABLE attendance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.attendance IS 'Daily attendance tracking with check-in/out times';
 
 
 --
@@ -3019,6 +3646,31 @@ CREATE TABLE public.chart_of_accounts (
 
 
 --
+-- Name: commission_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.commission_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_id uuid NOT NULL,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    total_sales numeric(15,2) DEFAULT 0 NOT NULL,
+    commission_rate numeric(5,2) NOT NULL,
+    commission_amount numeric(15,2) NOT NULL,
+    payslip_id uuid,
+    notes text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE commission_records; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.commission_records IS 'Sales commission tracking per employee per period';
+
+
+--
 -- Name: company_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3036,7 +3688,13 @@ CREATE TABLE public.company_settings (
     current_fiscal_year_id uuid,
     base_currency text DEFAULT 'PKR'::text,
     created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now()
+    updated_at timestamp with time zone DEFAULT now(),
+    hr_income_tax_threshold numeric(15,2) DEFAULT 50000,
+    hr_income_tax_rate numeric(5,2) DEFAULT 5.0,
+    hr_eobi_amount numeric(15,2) DEFAULT 250.0,
+    gst_rate numeric(5,2) DEFAULT 18.0,
+    wht_goods_rate numeric(5,2) DEFAULT 4.5,
+    wht_services_rate numeric(5,2) DEFAULT 10.0
 );
 
 
@@ -3253,6 +3911,49 @@ CREATE TABLE public.departments (
     name text NOT NULL,
     description text,
     is_active boolean DEFAULT true
+);
+
+
+--
+-- Name: employee_advances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.employee_advances (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    advance_number text NOT NULL,
+    employee_id uuid NOT NULL,
+    advance_type text NOT NULL,
+    amount numeric(15,2) NOT NULL,
+    reason text NOT NULL,
+    advance_date date DEFAULT CURRENT_DATE NOT NULL,
+    installments integer DEFAULT 1,
+    installment_amount numeric(15,2),
+    amount_recovered numeric(15,2) DEFAULT 0,
+    balance numeric(15,2) GENERATED ALWAYS AS ((amount - amount_recovered)) STORED,
+    status text DEFAULT 'ACTIVE'::text NOT NULL,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    notes text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT employee_advances_advance_type_check CHECK ((advance_type = ANY (ARRAY['ADVANCE'::text, 'LOAN'::text]))),
+    CONSTRAINT employee_advances_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'COMPLETED'::text, 'CANCELLED'::text])))
+);
+
+
+--
+-- Name: employee_salary_components; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.employee_salary_components (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_id uuid NOT NULL,
+    component_id uuid NOT NULL,
+    amount numeric(15,2) NOT NULL,
+    effective_from date DEFAULT CURRENT_DATE NOT NULL,
+    effective_to date,
+    is_active boolean DEFAULT true,
+    created_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -3544,6 +4245,65 @@ CREATE TABLE public.journals (
 
 
 --
+-- Name: leave_balance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.leave_balance (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_id uuid NOT NULL,
+    leave_type_id uuid NOT NULL,
+    fiscal_year integer NOT NULL,
+    opening_balance numeric(5,2) DEFAULT 0,
+    accrued numeric(5,2) DEFAULT 0,
+    taken numeric(5,2) DEFAULT 0,
+    balance numeric(5,2) GENERATED ALWAYS AS (((opening_balance + accrued) - taken)) STORED,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: leave_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.leave_requests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    request_number text NOT NULL,
+    employee_id uuid NOT NULL,
+    leave_type_id uuid NOT NULL,
+    from_date date NOT NULL,
+    to_date date NOT NULL,
+    total_days numeric(5,2) NOT NULL,
+    reason text NOT NULL,
+    status text DEFAULT 'PENDING'::text NOT NULL,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    rejection_reason text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT leave_requests_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'APPROVED'::text, 'REJECTED'::text, 'CANCELLED'::text])))
+);
+
+
+--
+-- Name: leave_types; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.leave_types (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    leave_type_code text NOT NULL,
+    leave_type_name text NOT NULL,
+    days_allowed_per_year integer DEFAULT 0 NOT NULL,
+    carry_forward boolean DEFAULT false,
+    paid boolean DEFAULT true,
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: location_types; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3590,6 +4350,24 @@ CREATE TABLE public.maintenance_logs (
     next_service_date date,
     next_service_odometer integer,
     performed_by text,
+    notes text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: overtime_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.overtime_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_id uuid NOT NULL,
+    overtime_date date NOT NULL,
+    hours numeric(5,2) NOT NULL,
+    rate_per_hour numeric(10,2) NOT NULL,
+    total_amount numeric(15,2) GENERATED ALWAYS AS ((hours * rate_per_hour)) STORED,
+    payslip_id uuid,
+    approved_by uuid,
     notes text,
     created_at timestamp with time zone DEFAULT now()
 );
@@ -3645,6 +4423,19 @@ CREATE TABLE public.payroll_periods (
     end_date date NOT NULL,
     payment_date date NOT NULL,
     status text DEFAULT 'DRAFT'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: payslip_details; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.payslip_details (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    payslip_id uuid NOT NULL,
+    component_id uuid NOT NULL,
+    amount numeric(15,2) NOT NULL,
     created_at timestamp with time zone DEFAULT now()
 );
 
@@ -3929,6 +4720,27 @@ CREATE TABLE public.roles (
     is_system_role boolean DEFAULT false,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: salary_components; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.salary_components (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    component_code text NOT NULL,
+    component_name text NOT NULL,
+    component_type text NOT NULL,
+    calculation_type text NOT NULL,
+    default_value numeric(15,2) DEFAULT 0,
+    is_taxable boolean DEFAULT true,
+    is_active boolean DEFAULT true,
+    display_order integer DEFAULT 0,
+    description text,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT salary_components_calculation_type_check CHECK ((calculation_type = ANY (ARRAY['FIXED'::text, 'PERCENTAGE'::text]))),
+    CONSTRAINT salary_components_component_type_check CHECK ((component_type = ANY (ARRAY['ALLOWANCE'::text, 'DEDUCTION'::text])))
 );
 
 
@@ -4528,6 +5340,14 @@ ALTER TABLE ONLY public.activity_logs
 
 
 --
+-- Name: advance_deductions advance_deductions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.advance_deductions
+    ADD CONSTRAINT advance_deductions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: approval_requests approval_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4549,6 +5369,14 @@ ALTER TABLE ONLY public.approval_workflows
 
 ALTER TABLE ONLY public.approval_workflows
     ADD CONSTRAINT approval_workflows_workflow_name_key UNIQUE (workflow_name);
+
+
+--
+-- Name: attendance attendance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_pkey PRIMARY KEY (id);
 
 
 --
@@ -4581,6 +5409,14 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 ALTER TABLE ONLY public.chart_of_accounts
     ADD CONSTRAINT chart_of_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: commission_records commission_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commission_records
+    ADD CONSTRAINT commission_records_pkey PRIMARY KEY (id);
 
 
 --
@@ -4701,6 +5537,30 @@ ALTER TABLE ONLY public.departments
 
 ALTER TABLE ONLY public.departments
     ADD CONSTRAINT departments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: employee_advances employee_advances_advance_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_advances
+    ADD CONSTRAINT employee_advances_advance_number_key UNIQUE (advance_number);
+
+
+--
+-- Name: employee_advances employee_advances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_advances
+    ADD CONSTRAINT employee_advances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: employee_salary_components employee_salary_components_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_salary_components
+    ADD CONSTRAINT employee_salary_components_pkey PRIMARY KEY (id);
 
 
 --
@@ -4896,6 +5756,46 @@ ALTER TABLE ONLY public.journals
 
 
 --
+-- Name: leave_balance leave_balance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_balance
+    ADD CONSTRAINT leave_balance_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: leave_requests leave_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_requests
+    ADD CONSTRAINT leave_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: leave_requests leave_requests_request_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_requests
+    ADD CONSTRAINT leave_requests_request_number_key UNIQUE (request_number);
+
+
+--
+-- Name: leave_types leave_types_leave_type_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_types
+    ADD CONSTRAINT leave_types_leave_type_code_key UNIQUE (leave_type_code);
+
+
+--
+-- Name: leave_types leave_types_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_types
+    ADD CONSTRAINT leave_types_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: location_types location_types_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4936,6 +5836,14 @@ ALTER TABLE ONLY public.maintenance_logs
 
 
 --
+-- Name: overtime_records overtime_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.overtime_records
+    ADD CONSTRAINT overtime_records_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: payment_allocations payment_allocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4973,6 +5881,14 @@ ALTER TABLE ONLY public.payroll_periods
 
 ALTER TABLE ONLY public.payroll_periods
     ADD CONSTRAINT payroll_periods_start_date_end_date_key UNIQUE (start_date, end_date);
+
+
+--
+-- Name: payslip_details payslip_details_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payslip_details
+    ADD CONSTRAINT payslip_details_pkey PRIMARY KEY (id);
 
 
 --
@@ -5181,6 +6097,22 @@ ALTER TABLE ONLY public.roles
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_role_name_key UNIQUE (role_name);
+
+
+--
+-- Name: salary_components salary_components_component_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.salary_components
+    ADD CONSTRAINT salary_components_component_code_key UNIQUE (component_code);
+
+
+--
+-- Name: salary_components salary_components_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.salary_components
+    ADD CONSTRAINT salary_components_pkey PRIMARY KEY (id);
 
 
 --
@@ -5416,6 +6348,30 @@ ALTER TABLE ONLY public.transaction_types
 
 
 --
+-- Name: employee_salary_components unique_employee_component; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_salary_components
+    ADD CONSTRAINT unique_employee_component UNIQUE (employee_id, component_id, effective_from);
+
+
+--
+-- Name: attendance unique_employee_date; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT unique_employee_date UNIQUE (employee_id, attendance_date);
+
+
+--
+-- Name: leave_balance unique_employee_leave_year; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_balance
+    ADD CONSTRAINT unique_employee_leave_year UNIQUE (employee_id, leave_type_id, fiscal_year);
+
+
+--
 -- Name: permissions unique_permission; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5613,6 +6569,55 @@ CREATE INDEX idx_activity_logs_user ON public.activity_logs USING btree (user_id
 
 
 --
+-- Name: idx_advance_deductions_advance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_advance_deductions_advance ON public.advance_deductions USING btree (advance_id);
+
+
+--
+-- Name: idx_advance_deductions_payslip; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_advance_deductions_payslip ON public.advance_deductions USING btree (payslip_id);
+
+
+--
+-- Name: idx_advances_employee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_advances_employee ON public.employee_advances USING btree (employee_id);
+
+
+--
+-- Name: idx_advances_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_advances_status ON public.employee_advances USING btree (status);
+
+
+--
+-- Name: idx_attendance_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attendance_date ON public.attendance USING btree (attendance_date);
+
+
+--
+-- Name: idx_attendance_employee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attendance_employee ON public.attendance USING btree (employee_id);
+
+
+--
+-- Name: idx_attendance_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attendance_status ON public.attendance USING btree (status);
+
+
+--
 -- Name: idx_audit_logs_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5655,6 +6660,20 @@ CREATE INDEX idx_coa_account_type ON public.chart_of_accounts USING btree (accou
 
 
 --
+-- Name: idx_commission_employee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_commission_employee ON public.commission_records USING btree (employee_id);
+
+
+--
+-- Name: idx_commission_period; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_commission_period ON public.commission_records USING btree (period_start, period_end);
+
+
+--
 -- Name: idx_customers_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5666,6 +6685,20 @@ CREATE INDEX idx_customers_active ON public.customers USING btree (is_active);
 --
 
 CREATE INDEX idx_customers_code ON public.customers USING btree (customer_code);
+
+
+--
+-- Name: idx_emp_salary_comp_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_emp_salary_comp_active ON public.employee_salary_components USING btree (is_active);
+
+
+--
+-- Name: idx_emp_salary_comp_employee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_emp_salary_comp_employee ON public.employee_salary_components USING btree (employee_id);
 
 
 --
@@ -5816,10 +6849,66 @@ CREATE INDEX idx_jel_journal_entry_id ON public.journal_entry_lines USING btree 
 
 
 --
+-- Name: idx_leave_balance_employee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_leave_balance_employee ON public.leave_balance USING btree (employee_id);
+
+
+--
+-- Name: idx_leave_balance_year; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_leave_balance_year ON public.leave_balance USING btree (fiscal_year);
+
+
+--
+-- Name: idx_leave_requests_dates; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_leave_requests_dates ON public.leave_requests USING btree (from_date, to_date);
+
+
+--
+-- Name: idx_leave_requests_employee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_leave_requests_employee ON public.leave_requests USING btree (employee_id);
+
+
+--
+-- Name: idx_leave_requests_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_leave_requests_status ON public.leave_requests USING btree (status);
+
+
+--
 -- Name: idx_maintenance_logs_vehicle; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_maintenance_logs_vehicle ON public.maintenance_logs USING btree (vehicle_id);
+
+
+--
+-- Name: idx_overtime_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_overtime_date ON public.overtime_records USING btree (overtime_date);
+
+
+--
+-- Name: idx_overtime_employee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_overtime_employee ON public.overtime_records USING btree (employee_id);
+
+
+--
+-- Name: idx_payslip_details_payslip; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_payslip_details_payslip ON public.payslip_details USING btree (payslip_id);
 
 
 --
@@ -6218,11 +7307,51 @@ ALTER TABLE ONLY public.activity_logs
 
 
 --
+-- Name: advance_deductions advance_deductions_advance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.advance_deductions
+    ADD CONSTRAINT advance_deductions_advance_id_fkey FOREIGN KEY (advance_id) REFERENCES public.employee_advances(id) ON DELETE CASCADE;
+
+
+--
+-- Name: advance_deductions advance_deductions_payslip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.advance_deductions
+    ADD CONSTRAINT advance_deductions_payslip_id_fkey FOREIGN KEY (payslip_id) REFERENCES public.payslips(id) ON DELETE SET NULL;
+
+
+--
 -- Name: approval_requests approval_requests_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_requests
     ADD CONSTRAINT approval_requests_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES public.approval_workflows(id);
+
+
+--
+-- Name: attendance attendance_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
+
+
+--
+-- Name: attendance attendance_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.inventory_locations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: attendance attendance_marked_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_marked_by_fkey FOREIGN KEY (marked_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 
 
 --
@@ -6247,6 +7376,22 @@ ALTER TABLE ONLY public.bank_accounts
 
 ALTER TABLE ONLY public.chart_of_accounts
     ADD CONSTRAINT chart_of_accounts_parent_account_id_fkey FOREIGN KEY (parent_account_id) REFERENCES public.chart_of_accounts(id);
+
+
+--
+-- Name: commission_records commission_records_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commission_records
+    ADD CONSTRAINT commission_records_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
+
+
+--
+-- Name: commission_records commission_records_payslip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commission_records
+    ADD CONSTRAINT commission_records_payslip_id_fkey FOREIGN KEY (payslip_id) REFERENCES public.payslips(id) ON DELETE SET NULL;
 
 
 --
@@ -6375,6 +7520,38 @@ ALTER TABLE ONLY public.delivery_notes
 
 ALTER TABLE ONLY public.delivery_notes
     ADD CONSTRAINT delivery_notes_sales_order_id_fkey FOREIGN KEY (sales_order_id) REFERENCES public.sales_orders(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: employee_advances employee_advances_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_advances
+    ADD CONSTRAINT employee_advances_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: employee_advances employee_advances_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_advances
+    ADD CONSTRAINT employee_advances_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
+
+
+--
+-- Name: employee_salary_components employee_salary_components_component_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_salary_components
+    ADD CONSTRAINT employee_salary_components_component_id_fkey FOREIGN KEY (component_id) REFERENCES public.salary_components(id) ON DELETE CASCADE;
+
+
+--
+-- Name: employee_salary_components employee_salary_components_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.employee_salary_components
+    ADD CONSTRAINT employee_salary_components_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
 
 
 --
@@ -6650,6 +7827,54 @@ ALTER TABLE ONLY public.journal_entry_lines
 
 
 --
+-- Name: leave_balance leave_balance_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_balance
+    ADD CONSTRAINT leave_balance_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
+
+
+--
+-- Name: leave_balance leave_balance_leave_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_balance
+    ADD CONSTRAINT leave_balance_leave_type_id_fkey FOREIGN KEY (leave_type_id) REFERENCES public.leave_types(id) ON DELETE CASCADE;
+
+
+--
+-- Name: leave_requests leave_requests_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_requests
+    ADD CONSTRAINT leave_requests_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: leave_requests leave_requests_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_requests
+    ADD CONSTRAINT leave_requests_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: leave_requests leave_requests_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_requests
+    ADD CONSTRAINT leave_requests_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
+
+
+--
+-- Name: leave_requests leave_requests_leave_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.leave_requests
+    ADD CONSTRAINT leave_requests_leave_type_id_fkey FOREIGN KEY (leave_type_id) REFERENCES public.leave_types(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: locations locations_assigned_salesperson_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6671,6 +7896,30 @@ ALTER TABLE ONLY public.locations
 
 ALTER TABLE ONLY public.maintenance_logs
     ADD CONSTRAINT maintenance_logs_vehicle_id_fkey FOREIGN KEY (vehicle_id) REFERENCES public.vehicles(id);
+
+
+--
+-- Name: overtime_records overtime_records_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.overtime_records
+    ADD CONSTRAINT overtime_records_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: overtime_records overtime_records_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.overtime_records
+    ADD CONSTRAINT overtime_records_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
+
+
+--
+-- Name: overtime_records overtime_records_payslip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.overtime_records
+    ADD CONSTRAINT overtime_records_payslip_id_fkey FOREIGN KEY (payslip_id) REFERENCES public.payslips(id) ON DELETE SET NULL;
 
 
 --
@@ -6711,6 +7960,22 @@ ALTER TABLE ONLY public.payment_vouchers
 
 ALTER TABLE ONLY public.payment_vouchers
     ADD CONSTRAINT payment_vouchers_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
+
+
+--
+-- Name: payslip_details payslip_details_component_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payslip_details
+    ADD CONSTRAINT payslip_details_component_id_fkey FOREIGN KEY (component_id) REFERENCES public.salary_components(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: payslip_details payslip_details_payslip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payslip_details
+    ADD CONSTRAINT payslip_details_payslip_id_fkey FOREIGN KEY (payslip_id) REFERENCES public.payslips(id) ON DELETE CASCADE;
 
 
 --
@@ -7884,6 +9149,13 @@ CREATE POLICY "Users can update own profile" ON public.user_profiles FOR UPDATE 
 
 
 --
+-- Name: employee_advances Users can view advances; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view advances" ON public.employee_advances FOR SELECT TO authenticated USING (true);
+
+
+--
 -- Name: user_profiles Users can view all profiles; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -7891,10 +9163,80 @@ CREATE POLICY "Users can view all profiles" ON public.user_profiles FOR SELECT T
 
 
 --
+-- Name: attendance Users can view attendance; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view attendance" ON public.attendance FOR SELECT TO authenticated USING (true);
+
+
+--
 -- Name: audit_logs Users can view audit logs; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Users can view audit logs" ON public.audit_logs FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: commission_records Users can view commissions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view commissions" ON public.commission_records FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: advance_deductions Users can view deductions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view deductions" ON public.advance_deductions FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: employee_salary_components Users can view employee components; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view employee components" ON public.employee_salary_components FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: leave_balance Users can view leave balance; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view leave balance" ON public.leave_balance FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: leave_requests Users can view leave requests; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view leave requests" ON public.leave_requests FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: leave_types Users can view leave types; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view leave types" ON public.leave_types FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: overtime_records Users can view overtime; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view overtime" ON public.overtime_records FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: payslip_details Users can view payslip details; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view payslip details" ON public.payslip_details FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: salary_components Users can view salary components; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can view salary components" ON public.salary_components FOR SELECT TO authenticated USING (true);
 
 
 --
@@ -7910,10 +9252,28 @@ ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: advance_deductions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.advance_deductions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: attendance; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: commission_records; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.commission_records ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: customer_payments; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7926,6 +9286,18 @@ ALTER TABLE public.customer_payments ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: employee_advances; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.employee_advances ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: employee_salary_components; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.employee_salary_components ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: employees; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7976,6 +9348,24 @@ ALTER TABLE public.inventory_stock ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_transactions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: leave_balance; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.leave_balance ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: leave_requests; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.leave_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: leave_types; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.leave_types ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: location_types; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7992,6 +9382,18 @@ ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.maintenance_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: overtime_records; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.overtime_records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: payslip_details; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.payslip_details ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: payslips; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8058,6 +9460,12 @@ ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: salary_components; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.salary_components ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: sales_commissions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8135,5 +9543,5 @@ ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict uBgCV9xbEF150H9gdJUaeZZPdBhZCoXzonRpQ6a92t7dLXyYLbdOpccy1SHUPsF
+\unrestrict vKDXFCzCdeDcGYoOPX6VoqAFJnN0ZLaOntWyYwTsAI6EJSV2fzcg0vcDgMz5ltN
 

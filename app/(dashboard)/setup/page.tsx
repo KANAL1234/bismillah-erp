@@ -11,9 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle2, Building2, Calendar, Banknote, DollarSign, FileText, ArrowRight, ArrowLeft } from 'lucide-react'
+import { CheckCircle2, Building2, Calendar, Banknote, DollarSign, FileText, ArrowRight, ArrowLeft, Users2 } from 'lucide-react'
 
-type SetupStep = 1 | 2 | 3 | 4 | 5 | 6
+type SetupStep = 1 | 2 | 3 | 4 | 5 | 6 | 7
 
 export default function SetupWizardPage() {
     const router = useRouter()
@@ -43,11 +43,21 @@ export default function SetupWizardPage() {
     const [cashInHand, setCashInHand] = useState('100000')
     const [inventoryValue, setInventoryValue] = useState('200000')
 
-    const totalSteps = 6
+    // Step 5: HR & Payroll Settings
+    const [hrTaxThreshold, setHrTaxThreshold] = useState('50000')
+    const [hrTaxRate, setHrTaxRate] = useState('5')
+    const [hrEobiAmount, setHrEobiAmount] = useState('250')
+
+    // Step 5: General Tax Settings
+    const [gstRate, setGstRate] = useState('18')
+    const [whtGoodsRate, setWhtGoodsRate] = useState('4.5')
+    const [whtServicesRate, setWhtServicesRate] = useState('10')
+
+    const totalSteps = 7
     const progress = (currentStep / totalSteps) * 100
 
     const handleNext = () => {
-        if (currentStep < 6) {
+        if (currentStep < 7) {
             setCurrentStep((currentStep + 1) as SetupStep)
         }
     }
@@ -73,7 +83,13 @@ export default function SetupWizardPage() {
                     address,
                     city,
                     phone,
-                    email
+                    email,
+                    hr_income_tax_threshold: parseFloat(hrTaxThreshold),
+                    hr_income_tax_rate: parseFloat(hrTaxRate),
+                    hr_eobi_amount: parseFloat(hrEobiAmount),
+                    gst_rate: parseFloat(gstRate),
+                    wht_goods_rate: parseFloat(whtGoodsRate),
+                    wht_services_rate: parseFloat(whtServicesRate)
                 })
                 .eq('id', (await supabase.from('company_settings').select('id').single()).data?.id)
 
@@ -153,7 +169,8 @@ export default function SetupWizardPage() {
                             {currentStep === 3 && <><Banknote className="h-6 w-6" /> Bank Account</>}
                             {currentStep === 4 && <><DollarSign className="h-6 w-6" /> Opening Balances</>}
                             {currentStep === 5 && <><FileText className="h-6 w-6" /> Tax Configuration</>}
-                            {currentStep === 6 && <><CheckCircle2 className="h-6 w-6" /> Review & Confirm</>}
+                            {currentStep === 6 && <><Users2 className="h-6 w-6" /> HR & Payroll Settings</>}
+                            {currentStep === 7 && <><CheckCircle2 className="h-6 w-6" /> Review & Confirm</>}
                         </CardTitle>
                         <CardDescription>
                             {currentStep === 1 && 'Enter your business details'}
@@ -161,7 +178,8 @@ export default function SetupWizardPage() {
                             {currentStep === 3 && 'Add your primary bank account'}
                             {currentStep === 4 && 'Set your starting balances'}
                             {currentStep === 5 && 'Verify tax rates for Pakistan'}
-                            {currentStep === 6 && 'Review all settings before finalizing'}
+                            {currentStep === 6 && 'Configure salary taxes and deductions'}
+                            {currentStep === 7 && 'Review all settings before finalizing'}
                         </CardDescription>
                     </CardHeader>
 
@@ -349,33 +367,72 @@ export default function SetupWizardPage() {
                                     </p>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                                        <span className="font-medium">Sales Tax (GST)</span>
-                                        <span className="text-green-600 font-bold">18%</span>
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4 items-center p-3 bg-slate-50 rounded-lg">
+                                        <Label htmlFor="gstRate">Sales Tax (GST) %</Label>
+                                        <Input id="gstRate" type="number" value={gstRate} onChange={(e) => setGstRate(e.target.value)} />
                                     </div>
-                                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                                        <span className="font-medium">WHT on Goods</span>
-                                        <span className="text-green-600 font-bold">4.5%</span>
+                                    <div className="grid grid-cols-2 gap-4 items-center p-3 bg-slate-50 rounded-lg">
+                                        <Label htmlFor="whtGoods">WHT on Goods %</Label>
+                                        <Input id="whtGoods" type="number" value={whtGoodsRate} onChange={(e) => setWhtGoodsRate(e.target.value)} />
                                     </div>
-                                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                                        <span className="font-medium">WHT on Services</span>
-                                        <span className="text-green-600 font-bold">10%</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                                        <span className="font-medium">WHT on Contractors</span>
-                                        <span className="text-green-600 font-bold">7%</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                                        <span className="font-medium">WHT on Rent</span>
-                                        <span className="text-green-600 font-bold">15%</span>
+                                    <div className="grid grid-cols-2 gap-4 items-center p-3 bg-slate-50 rounded-lg">
+                                        <Label htmlFor="whtServices">WHT on Services %</Label>
+                                        <Input id="whtServices" type="number" value={whtServicesRate} onChange={(e) => setWhtServicesRate(e.target.value)} />
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Step 6: Review & Confirm */}
+                        {/* Step 6: HR & Payroll Settings */}
                         {currentStep === 6 && (
+                            <div className="space-y-4">
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+                                    <p className="text-sm text-emerald-800">
+                                        These settings will be used to calculate monthly payroll automatically.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="hrTaxThreshold">Income Tax Threshold (PKR Monthly)</Label>
+                                        <Input
+                                            id="hrTaxThreshold"
+                                            type="number"
+                                            value={hrTaxThreshold}
+                                            onChange={(e) => setHrTaxThreshold(e.target.value)}
+                                            placeholder="50000"
+                                        />
+                                        <p className="text-[0.7rem] text-muted-foreground">Salaries above this amount will be taxed.</p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="hrTaxRate">Income Tax Rate (%)</Label>
+                                        <Input
+                                            id="hrTaxRate"
+                                            type="number"
+                                            value={hrTaxRate}
+                                            onChange={(e) => setHrTaxRate(e.target.value)}
+                                            placeholder="5"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="hrEobiAmount">Fixed EOBI Deduction (PKR)</Label>
+                                        <Input
+                                            id="hrEobiAmount"
+                                            type="number"
+                                            value={hrEobiAmount}
+                                            onChange={(e) => setHrEobiAmount(e.target.value)}
+                                            placeholder="250"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 7: Review & Confirm */}
+                        {currentStep === 7 && (
                             <div className="space-y-4">
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                                     <p className="text-sm text-blue-800">
@@ -418,6 +475,22 @@ export default function SetupWizardPage() {
                                             <p className="text-green-700 font-bold pt-2 border-t"><strong>Total Capital:</strong> PKR {(parseFloat(cashInHand) + parseFloat(bankOpeningBalance) + parseFloat(inventoryValue)).toLocaleString()}</p>
                                         </div>
                                     </div>
+                                    <div>
+                                        <h3 className="font-semibold mb-2">Tax Settings</h3>
+                                        <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-sm">
+                                            <p><strong>GST Rate:</strong> {gstRate}%</p>
+                                            <p><strong>WHT (Goods):</strong> {whtGoodsRate}%</p>
+                                            <p><strong>WHT (Services):</strong> {whtServicesRate}%</p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold mb-2">HR & Payroll</h3>
+                                        <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-sm">
+                                            <p><strong>Tax Threshold:</strong> PKR {parseFloat(hrTaxThreshold).toLocaleString()}</p>
+                                            <p><strong>Tax Rate:</strong> {hrTaxRate}%</p>
+                                            <p><strong>EOBI:</strong> PKR {parseFloat(hrEobiAmount).toLocaleString()}</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -433,7 +506,7 @@ export default function SetupWizardPage() {
                                 Previous
                             </Button>
 
-                            {currentStep < 6 ? (
+                            {currentStep < 7 ? (
                                 <Button onClick={handleNext}>
                                     Next
                                     <ArrowRight className="ml-2 h-4 w-4" />
@@ -446,8 +519,8 @@ export default function SetupWizardPage() {
                             )}
                         </div>
                     </CardContent>
-                </Card>
-            </div>
-        </div>
+                </Card >
+            </div >
+        </div >
     )
 }

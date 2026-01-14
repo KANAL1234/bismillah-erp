@@ -99,6 +99,33 @@ export async function POST() {
             logs.push(`✅ Deleted ${ids.length} stale test roles`)
         }
 
+        // --- HR & PAYROLL ---
+        const { data: staleEmp } = await adminSupabase.from('employees').select('id')
+            .or('full_name.ilike.TEST-%,employee_code.ilike.TEST-%,full_name.ilike.HEALTH-TEST-%,employee_code.ilike.HEALTH-TEST-%')
+        if (staleEmp?.length) {
+            const ids = staleEmp.map(e => e.id)
+            await adminSupabase.from('attendance').delete().in('employee_id', ids)
+            await adminSupabase.from('leave_requests').delete().in('employee_id', ids)
+            await adminSupabase.from('leave_balance').delete().in('employee_id', ids)
+            await adminSupabase.from('employee_advances').delete().in('employee_id', ids)
+            await adminSupabase.from('payslips').delete().in('employee_id', ids)
+            await adminSupabase.from('employee_salary_components').delete().in('employee_id', ids)
+            await adminSupabase.from('commission_records').delete().in('employee_id', ids)
+            await adminSupabase.from('overtime_records').delete().in('employee_id', ids)
+
+            const { error } = await adminSupabase.from('employees').delete().in('id', ids)
+            if (!error) logs.push(`✅ Deleted ${ids.length} stale employees`)
+        }
+
+        const { data: stalePayroll } = await adminSupabase.from('payroll_periods').select('id')
+            .or('period_name.ilike.TEST-%,period_name.ilike.HEALTH-TEST-%')
+        if (stalePayroll?.length) {
+            const ids = stalePayroll.map(p => p.id)
+            await adminSupabase.from('payslips').delete().in('payroll_period_id', ids)
+            const { error } = await adminSupabase.from('payroll_periods').delete().in('id', ids)
+            if (!error) logs.push(`✅ Deleted ${ids.length} stale payroll periods`)
+        }
+
         console.log('🧹 [API] Cleanup Complete', logs)
         return NextResponse.json({ success: true, logs })
 
