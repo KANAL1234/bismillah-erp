@@ -1451,7 +1451,7 @@ export default function SystemHealthPage() {
                     receipt_date: new Date().toISOString().split('T')[0],
                     amount: payAmount,
                     payment_method: 'CASH',
-                    status: 'cleared',
+                    status: 'posted',
                     notes: 'System Health Test Payment'
                 }).select().single()
 
@@ -1521,10 +1521,10 @@ export default function SystemHealthPage() {
             log(id, 'Testing mark_attendance RPC...')
             const { data: attResult, error: attErr } = await supabase.rpc('mark_attendance', {
                 p_employee_id: testEmployeeId,
-                p_date: new Date().toISOString().split('T')[0],
-                p_status: 'PRESENT',
-                p_check_in: '09:00:00',
-                p_check_out: '18:00:00'
+                p_attendance_date: new Date().toISOString().split('T')[0],
+                p_check_in_time: '09:00:00',
+                p_check_out_time: '18:00:00',
+                p_status: 'PRESENT'
             })
             if (attErr) throw attErr
             log(id, '✅ Attendance marked via RPC', 'success')
