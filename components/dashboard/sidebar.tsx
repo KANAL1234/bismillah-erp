@@ -149,6 +149,9 @@ export function Sidebar() {
                             <NavLink permission="inventory.stock.view" href="/dashboard/inventory" className={subLinkClass('/dashboard/inventory')}>
                                 Stock Overview
                             </NavLink>
+                            <NavLink permission="inventory.stock.view" href="/dashboard/inventory/valuation" className={subLinkClass('/dashboard/inventory/valuation')}>
+                                Stock Valuation
+                            </NavLink>
                             <NavLink permission="inventory.products.read" href="/dashboard/products" className={subLinkClass('/dashboard/products')}>
                                 Product List
                             </NavLink>
