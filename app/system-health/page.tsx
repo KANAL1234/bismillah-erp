@@ -1563,7 +1563,7 @@ export default function SystemHealthPage() {
                 period_name: periodName,
                 start_date: new Date().toISOString().split('T')[0],
                 end_date: new Date().toISOString().split('T')[0],
-                payment_date: new Date().toISOString().split('T')[0],
+                payment_date: new Date().toISOString().split('T')[0], // Fixed: Added required payment_date
                 status: 'DRAFT'
             }).select().single()
             if (periodErr) throw periodErr
