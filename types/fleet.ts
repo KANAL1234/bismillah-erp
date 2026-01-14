@@ -1,6 +1,7 @@
 export type VehicleStatus = 'ACTIVE' | 'MAINTENANCE' | 'RETIRED'
 export type DriverStatus = 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE'
 export type TripStatus = 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+export type PaymentMethod = 'CASH' | 'CREDIT'
 
 export interface FleetVehicle {
     id: string
@@ -12,6 +13,7 @@ export interface FleetVehicle {
     current_mileage: number
     last_service_date: string | null
     last_service_mileage: number | null
+    location_id: string | null // Linked mobile store location
     created_at: string
 }
 
@@ -29,6 +31,13 @@ export interface FleetDriver {
     }
 }
 
+export interface TripGPSPoint {
+    lat: number
+    lng: number
+    time: string
+    speed?: number
+}
+
 export interface FleetTrip {
     id: string
     vehicle_id: string
@@ -41,10 +50,23 @@ export interface FleetTrip {
     end_mileage: number | null
     trip_purpose: string | null
     status: TripStatus
+    gps_path: TripGPSPoint[] | null
     created_at: string
     // Joined fields
     vehicle?: FleetVehicle
     driver?: FleetDriver
+}
+
+export interface FleetTripVisit {
+    id: string
+    trip_id: string
+    customer_id: string
+    visit_time: string
+    notes: string | null
+    customer?: {
+        name: string
+        customer_code: string
+    }
 }
 
 export interface FleetFuelLog {
@@ -57,6 +79,8 @@ export interface FleetFuelLog {
     total_cost: number
     odometer_reading: number
     receipt_url: string | null
+    payment_method: PaymentMethod
+    journal_entry_id: string | null
     created_at: string
     // Joined fields
     vehicle?: FleetVehicle
@@ -73,6 +97,8 @@ export interface FleetMaintenance {
     vendor_name: string | null
     next_service_due_date: string | null
     next_service_due_mileage: number | null
+    payment_method: PaymentMethod
+    journal_entry_id: string | null
     created_at: string
     // Joined fields
     vehicle?: FleetVehicle

@@ -173,11 +173,6 @@ export function MainNav({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                    <DropdownMenuLabel>Setup</DropdownMenuLabel>
-                    <DropdownMenuItem asChild>
-                        <Link href="/setup">Initial Setup Wizard</Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
                     <DropdownMenuLabel>General Ledger</DropdownMenuLabel>
                     <DropdownMenuItem asChild>
                         <Link href="/dashboard/accounting/chart-of-accounts">Chart of Accounts</Link>
@@ -202,6 +197,46 @@ export function MainNav({
                     <DropdownMenuLabel>Reports</DropdownMenuLabel>
                     <DropdownMenuItem asChild>
                         <Link href="/dashboard/accounting/reports/trial-balance">Trial Balance</Link>
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Fleet Management */}
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                            isActive('/dashboard/fleet')
+                                ? "bg-accent text-accent-foreground" : "text-muted-foreground"
+                        )}
+                    >
+                        <Truck className="mr-2 h-4 w-4" />
+                        Fleet
+                        <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                    <DropdownMenuLabel>Fleet Operations</DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/fleet">Overview</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/fleet/vehicles">Mobile Store Vehicles</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/fleet/drivers">Drivers</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Tracking</DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/fleet/trips">Live Trips & Tracking</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Maintenance</DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/fleet/maintenance">Service Records</Link>
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>

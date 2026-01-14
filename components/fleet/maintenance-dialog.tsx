@@ -43,6 +43,7 @@ const formSchema = z.object({
     vendor_name: z.string().optional(),
     next_service_due_date: z.string().optional(),
     next_service_due_mileage: z.string().optional(),
+    payment_method: z.enum(["CASH", "CREDIT"]),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -72,6 +73,7 @@ export function MaintenanceDialog({ maintenance, trigger, open, onOpenChange, on
             vendor_name: "",
             next_service_due_date: "",
             next_service_due_mileage: "",
+            payment_method: "CASH",
         },
     })
 
@@ -95,6 +97,7 @@ export function MaintenanceDialog({ maintenance, trigger, open, onOpenChange, on
                 vendor_name: maintenance.vendor_name || "",
                 next_service_due_date: maintenance.next_service_due_date || "",
                 next_service_due_mileage: maintenance.next_service_due_mileage ? String(maintenance.next_service_due_mileage) : "",
+                payment_method: maintenance.payment_method || "CASH",
             })
         }
     }, [maintenance, form])
@@ -115,6 +118,7 @@ export function MaintenanceDialog({ maintenance, trigger, open, onOpenChange, on
                 vendor_name: values.vendor_name || null,
                 next_service_due_date: values.next_service_due_date || null,
                 next_service_due_mileage,
+                payment_method: values.payment_method,
             }
 
             if (maintenance) {
@@ -126,12 +130,27 @@ export function MaintenanceDialog({ maintenance, trigger, open, onOpenChange, on
                 if (error) throw error
                 toast.success("Maintenance record updated")
             } else {
-                const { error } = await supabase
+                // Insert new maintenance record
+                const { data: insertedData, error } = await supabase
                     .from("fleet_maintenance")
                     .insert(dataToSave)
+                    .select("id")
+                    .single()
 
                 if (error) throw error
-                toast.success("Maintenance record created")
+
+                // Auto-post to accounting
+                const { data: postResult, error: postError } = await supabase
+                    .rpc("post_fleet_maintenance_expense", { p_maintenance_id: insertedData.id })
+
+                if (postError) {
+                    console.error("Failed to post to accounting:", postError)
+                    toast.success("Maintenance record created (accounting post failed)")
+                } else if (postResult?.success) {
+                    toast.success(`Maintenance recorded - ${postResult.journal_number}`)
+                } else {
+                    toast.success("Maintenance record created")
+                }
             }
 
             setIsOpen(false)
@@ -258,6 +277,28 @@ export function MaintenanceDialog({ maintenance, trigger, open, onOpenChange, on
                                 )}
                             />
                         </div>
+
+                        <FormField
+                            control={form.control}
+                            name="payment_method"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Payment Method</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select payment method" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            <SelectItem value="CASH">Cash</SelectItem>
+                                            <SelectItem value="CREDIT">Credit (Payable)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
 
                         <FormField
                             control={form.control}

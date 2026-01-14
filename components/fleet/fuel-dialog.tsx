@@ -38,6 +38,7 @@ const formSchema = z.object({
     liters: z.string().min(1, "Amount is required"),
     cost_per_liter: z.string().min(1, "Cost is required"),
     odometer_reading: z.string().min(1, "Odometer required"),
+    payment_method: z.enum(["CASH", "CREDIT"]),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -63,6 +64,7 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
             liters: "0",
             cost_per_liter: "0",
             odometer_reading: "0",
+            payment_method: "CASH",
         },
     })
 
@@ -82,6 +84,7 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
                 liters: String(fuelLog.liters),
                 cost_per_liter: String(fuelLog.cost_per_liter),
                 odometer_reading: String(fuelLog.odometer_reading),
+                payment_method: fuelLog.payment_method || "CASH",
             })
         }
     }, [fuelLog, form])
@@ -100,6 +103,7 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
                 cost_per_liter,
                 odometer_reading,
                 total_cost,
+                payment_method: values.payment_method,
             }
 
             if (fuelLog) {
@@ -111,12 +115,27 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
                 if (error) throw error
                 toast.success("Fuel Log updated successfully")
             } else {
-                const { error } = await supabase
+                // Insert new fuel log
+                const { data: insertedData, error } = await supabase
                     .from("fleet_fuel_logs")
                     .insert(dataToSave)
+                    .select("id")
+                    .single()
 
                 if (error) throw error
-                toast.success("Fuel Log added successfully")
+
+                // Auto-post to accounting
+                const { data: postResult, error: postError } = await supabase
+                    .rpc("post_fleet_fuel_expense", { p_fuel_log_id: insertedData.id })
+
+                if (postError) {
+                    console.error("Failed to post to accounting:", postError)
+                    toast.success("Fuel Log added (accounting post failed)")
+                } else if (postResult?.success) {
+                    toast.success(`Fuel Log added - ${postResult.journal_number}`)
+                } else {
+                    toast.success("Fuel Log added successfully")
+                }
             }
 
             setIsOpen(false)
@@ -211,6 +230,27 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
                                     <FormControl>
                                         <Input type="number" {...field} />
                                     </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={form.control}
+                            name="payment_method"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Payment Method</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select payment method" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            <SelectItem value="CASH">Cash</SelectItem>
+                                            <SelectItem value="CREDIT">Credit (Payable)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                     <FormMessage />
                                 </FormItem>
                             )}

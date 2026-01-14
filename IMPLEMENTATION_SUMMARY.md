@@ -1,7 +1,7 @@
 # Bismillah ERP - Complete Implementation Summary
 
 **Last Updated**: January 14, 2026
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Status**: ✅ **PRODUCTION-READY**
 
 ---
@@ -189,13 +189,14 @@ All critical issues resolved:
 ---
 
 ### 3. Recent Fixes & Improvements
-- **Fleet Module**: Fixed TypeScript errors in all fleet dialog components (vehicle, driver, trip, fuel, maintenance)
-- **Toast System**: Migrated from deprecated `useToast` hook to `sonner` toast library across fleet components
-- **Form Handling**: Resolved `z.coerce.number()` type inference issues with react-hook-form by using string-based form fields
-- **Security**: Implemented Location-Based Access Control (LBAC) for inventory valuation reports
-- **HR Module**: Fixed critical bugs in `request_leave` (FK violation) and implemented missing `calculate_leave_balance` function
-- **Build System**: Resolved all build errors including missing components, incorrect imports, and TypeScript validation issues
-- **Testing**: Achieved 100% pass rate on all system health checks including HR and Accounting workflows
+- **Fleet Module**: Fixed TypeScript errors in all fleet dialog components and consolidated data flow to use the `fleet_` prefixed database schema consistently.
+- **Fleet UI**: Added full CRUD (Edit/Delete) functionality to Vehicles, Drivers, and Trips management pages.
+- **Toast System**: Migrated from deprecated `useToast` hook to `sonner` toast library across all fleet components.
+- **Form Handling**: Resolved `z.coerce.number()` type inference issues with react-hook-form by using string-based form fields with manual parsing.
+- **Security**: Implemented Location-Based Access Control (LBAC) for inventory valuation reports.
+- **HR Module**: Fixed critical bugs in `request_leave` (FK violation) and implemented missing `calculate_leave_balance` function.
+- **Build System**: Resolved all build errors including missing components, incorrect imports, and TypeScript validation issues.
+- **Testing**: Achieved 100% pass rate on all system health checks including the new Fleet Management test suite.
 
 7. **Navigation Access**
    - **Issue**: Inventory valuation page not accessible from menu
