@@ -16,12 +16,12 @@ export default function TransactionRegisters() {
     const [loading, setLoading] = useState(false);
     const [dateFrom, setDateFrom] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]); // First day of month
     const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
-    const { allowedLocationIds } = useLocation();
+    const { allowedLocationIds, currentLocationId } = useLocation();
 
     // Filters
     const [customerFilter, setCustomerFilter] = useState('');
     const [vendorFilter, setVendorFilter] = useState('');
-    const [locationFilter, setLocationFilter] = useState('');
+    // locationFilter replaced by global currentLocationId
 
     // Data
     const [salesRegister, setSalesRegister] = useState<any[]>([]);
@@ -42,7 +42,7 @@ export default function TransactionRegisters() {
 
     useEffect(() => {
         loadReport();
-    }, [activeRegister, dateFrom, dateTo, customerFilter, vendorFilter, locationFilter]);
+    }, [activeRegister, dateFrom, dateTo, customerFilter, vendorFilter, currentLocationId]);
 
     const loadDropdowns = async () => {
         const [customersRes, vendorsRes, locationsRes] = await Promise.all([
@@ -92,7 +92,7 @@ export default function TransactionRegisters() {
             p_date_from: dateFrom,
             p_date_to: dateTo,
             p_customer_id: customerFilter || null,
-            p_location_id: locationFilter || null
+            p_location_id: (!currentLocationId || currentLocationId === '') ? null : currentLocationId
         });
 
         const { data: summaryData, error: summaryError } = await supabase.rpc('get_sales_register_summary', {
@@ -333,18 +333,7 @@ export default function TransactionRegisters() {
                                     </select>
                                 </div>
 
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={locationFilter}
-                                        onChange={(e) => setLocationFilter(e.target.value)}
-                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    >
-                                        <option value="">All Locations</option>
-                                        {locations.map(l => (
-                                            <option key={l.id} value={l.id}>{l.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
+
                             </>
                         )}
 

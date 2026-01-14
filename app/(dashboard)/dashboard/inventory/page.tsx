@@ -9,13 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select'
-import {
     Table,
     TableBody,
     TableCell,
@@ -38,7 +31,6 @@ export default function InventoryPage() {
 
 function InventoryContent() {
     const [searchQuery, setSearchQuery] = useState('')
-    const [selectedLocation, setSelectedLocation] = useState<string>('all')
     const { allowedLocationIds, currentLocationId } = useLocation()
 
     const { data: allStock, isLoading } = useInventoryStock()
@@ -62,10 +54,7 @@ function InventoryContent() {
             return false
         }
 
-        // Page-level location filter (optional additional filter)
-        if (selectedLocation !== 'all' && stock.location_id !== selectedLocation) {
-            return false
-        }
+
 
         const matchesSearch =
             stock.products.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -175,19 +164,6 @@ function InventoryContent() {
                                         className="max-w-sm"
                                     />
                                 </div>
-                                <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                                    <SelectTrigger className="w-full md:w-[200px]">
-                                        <SelectValue placeholder="All Locations" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All My Locations</SelectItem>
-                                        {allowedLocations?.map((location) => (
-                                            <SelectItem key={location.id} value={location.id}>
-                                                {location.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
                             </div>
                         </CardHeader>
                         <CardContent className="p-0">
@@ -348,6 +324,6 @@ function InventoryContent() {
                     </div>
                 </TabsContent>
             </Tabs>
-        </div>
+        </div >
     )
 }

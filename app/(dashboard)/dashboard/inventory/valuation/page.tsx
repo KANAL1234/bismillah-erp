@@ -2,11 +2,10 @@
 
 import { useState } from 'react'
 import { useInventoryValuation, useCostLayers } from '@/lib/queries/cost-layers'
-import { useAllowedLocations } from '@/lib/queries/locations'
 import { DataTable } from '@/components/ui/data-table'
+import { useLocation } from '@/components/providers/location-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { format } from 'date-fns'
@@ -22,14 +21,17 @@ export default function InventoryValuationPage() {
 }
 
 function InventoryValuationContent() {
-    const [selectedLocation, setSelectedLocation] = useState<string>('all')
-    const { data: allowedLocations } = useAllowedLocations()
+    const { currentLocationId } = useLocation()
+
+    // Convert empty string (All Locations) or null to undefined for the query
+    const locationFilter = (!currentLocationId || currentLocationId === '') ? undefined : currentLocationId
+
     const { data: valuation, isLoading: valuationLoading, refetch: refetchValuation } = useInventoryValuation(
-        selectedLocation === 'all' ? undefined : selectedLocation
+        locationFilter
     )
     const { data: costLayers, isLoading: layersLoading, refetch: refetchLayers } = useCostLayers(
         undefined,
-        selectedLocation === 'all' ? undefined : selectedLocation
+        locationFilter
     )
     const [activeTab, setActiveTab] = useState('valuation')
 
@@ -73,19 +75,6 @@ function InventoryValuationContent() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                        <SelectTrigger className="w-[200px]">
-                            <SelectValue placeholder="All Locations" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Locations</SelectItem>
-                            {allowedLocations?.map((location) => (
-                                <SelectItem key={location.id} value={location.id}>
-                                    {location.name}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
                     <Button variant="outline" size="icon" onClick={handleRefresh}>
                         <RefreshCw className="h-4 w-4" />
                     </Button>
