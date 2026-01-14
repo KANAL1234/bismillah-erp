@@ -52,3 +52,6 @@ export function useAllowedLocations() {
         }
     })
 }
+
+// Alias for backward compatibility
+export const useLocations = useAllowedLocations

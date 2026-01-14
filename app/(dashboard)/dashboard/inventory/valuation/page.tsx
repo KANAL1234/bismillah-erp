@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { format } from 'date-fns'
 import { Download, RefreshCw, DollarSign, Package, BarChart3 } from 'lucide-react'
-import { PermissionGuard } from '@/components/auth/permission-guard'
+import { PermissionGuard } from '@/components/permission-guard'
 
 export default function InventoryValuationPage() {
     return (
