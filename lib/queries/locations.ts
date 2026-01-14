@@ -1,46 +1,54 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import type { LocationWithType } from '@/lib/types/database'
 
 const supabase = createClient()
 
-// Get all locations
-export function useLocations() {
+export function useAllowedLocations() {
     return useQuery({
-        queryKey: ['locations'],
+        queryKey: ['allowed-locations'],
         queryFn: async () => {
-            const { data, error } = await supabase
-                .from('locations')
+            // First, get the current user
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return []
+
+            // Check if user is admin
+            const { data: userRoles } = await supabase
+                .from('user_roles')
                 .select(`
-          *,
-          location_types(id, name, description)
+          roles (
+            role_name
+          )
         `)
-                .eq('is_active', true)
-                .order('code')
+                .eq('user_id', user.id)
+                .eq('roles.role_name', 'admin')
+                .single()
 
-            if (error) throw error
-            return data as LocationWithType[]
-        },
-    })
-}
+            const isAdmin = userRoles?.roles && Array.isArray(userRoles.roles) ? false : (userRoles?.roles as any)?.role_name === 'admin'
 
-// Get locations by type
-export function useLocationsByType(type: 'warehouse' | 'store' | 'vehicle') {
-    return useQuery({
-        queryKey: ['locations', 'type', type],
-        queryFn: async () => {
-            const { data, error } = await supabase
-                .from('locations')
-                .select(`
-          *,
-          location_types!inner(id, name, description)
-        `)
-                .eq('location_types.name', type)
-                .eq('is_active', true)
-                .order('code')
+            if (isAdmin) {
+                // If admin, fetch all active locations
+                const { data, error } = await supabase
+                    .from('locations')
+                    .select('*')
+                    .eq('is_active', true)
+                    .order('name')
 
-            if (error) throw error
-            return data as LocationWithType[]
-        },
+                if (error) throw error
+                return data
+            } else {
+                // If not admin, fetch only allowed locations
+                const { data, error } = await supabase
+                    .from('user_allowed_locations')
+                    .select(`
+                locations (*)
+            `)
+                    .eq('user_id', user.id)
+
+                if (error) throw error
+
+                // Flatten the structure to return just the locations
+                return data.map((item: any) => item.locations).filter((loc: any) => loc && loc.is_active).sort((a: any, b: any) => a.name.localeCompare(b.name))
+            }
+        }
     })
 }

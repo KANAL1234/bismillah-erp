@@ -116,6 +116,11 @@ export function MainNav({
                     <DropdownMenuItem asChild>
                         <Link href="/dashboard/inventory/adjustments">Stock Adjustments</Link>
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Reports</DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/inventory/valuation">Inventory Valuation</Link>
+                    </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
 
