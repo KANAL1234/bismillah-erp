@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lnyXBwJ6jnfa6NT3m3hs7SJMnW8wSSIOlHNzR7ks4obM8GyXax8TbsCdFzIp1ZP
+\restrict uBgCV9xbEF150H9gdJUaeZZPdBhZCoXzonRpQ6a92t7dLXyYLbdOpccy1SHUPsF
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.7 (Homebrew)
@@ -384,15 +384,14 @@ BEGIN
         full_name,
         email,
         employee_code,
-        phone,
-        location_id
+        phone
+        -- location_id removed
     ) VALUES (
         p_user_id,
         p_full_name,
         p_email,
         p_employee_code,
-        p_phone,
-        p_location_id
+        p_phone
     );
 
     RETURN json_build_object(
@@ -7864,6 +7863,20 @@ CREATE POLICY "Authenticated users can update products" ON public.products FOR U
 
 
 --
+-- Name: roles Enable Role Management; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Enable Role Management" ON public.roles TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: role_permissions Enable Role Permission Management; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Enable Role Permission Management" ON public.role_permissions TO authenticated USING (true) WITH CHECK (true);
+
+
+--
 -- Name: user_profiles Users can update own profile; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -8122,5 +8135,5 @@ ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lnyXBwJ6jnfa6NT3m3hs7SJMnW8wSSIOlHNzR7ks4obM8GyXax8TbsCdFzIp1ZP
+\unrestrict uBgCV9xbEF150H9gdJUaeZZPdBhZCoXzonRpQ6a92t7dLXyYLbdOpccy1SHUPsF
 

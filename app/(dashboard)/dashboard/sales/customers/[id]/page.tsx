@@ -1,15 +1,15 @@
 'use client'
 
-import { use } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useCustomer, useCustomerTransactions } from '@/lib/queries/customers'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, Receipt, Printer, MoreVertical } from 'lucide-react'
+import { ChevronLeft, Receipt, Printer } from 'lucide-react'
 import { CustomerProfileCard } from '@/components/customers/customer-profile-card'
 import { CustomerLedgerTable } from '@/components/customers/customer-ledger-table'
 import { CustomerPaymentDialog } from '@/components/customers/customer-payment-dialog'
 import { useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PermissionGuard } from '@/components/permission-guard'
 
 export default function CustomerLedgerPage() {
     const params = useParams()
@@ -44,69 +44,71 @@ export default function CustomerLedgerPage() {
     }
 
     return (
-        <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
-            {/* Header Actions */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => router.back()}
-                        className="text-slate-500"
-                    >
-                        <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Customer Ledger</h1>
-                        <p className="text-sm text-slate-500">Transaction history and financial overview.</p>
+        <PermissionGuard permission="sales.customers.read">
+            <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
+                {/* Header Actions */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => router.back()}
+                            className="text-slate-500"
+                        >
+                            <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                        <div>
+                            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Customer Ledger</h1>
+                            <p className="text-sm text-slate-500">Transaction history and financial overview.</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => window.print()} className="hidden sm:flex">
+                            <Printer className="mr-2 h-4 w-4" />
+                            Print Statement
+                        </Button>
+                        <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            onClick={() => setIsPaymentDialogOpen(true)}
+                        >
+                            <Receipt className="mr-2 h-4 w-4" />
+                            Receive Payment
+                        </Button>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => window.print()} className="hidden sm:flex">
-                        <Printer className="mr-2 h-4 w-4" />
-                        Print Statement
-                    </Button>
-                    <Button
-                        size="sm"
-                        className="bg-emerald-600 hover:bg-emerald-700"
-                        onClick={() => setIsPaymentDialogOpen(true)}
-                    >
-                        <Receipt className="mr-2 h-4 w-4" />
-                        Receive Payment
-                    </Button>
+                {/* Profile Section */}
+                <CustomerProfileCard customer={customer} />
+
+                {/* Ledger Section */}
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-slate-900">Statement of Account</h2>
+                        <div className="text-xs text-slate-500 font-mono">
+                            Showing {transactions.length} entries
+                        </div>
+                    </div>
+
+                    {isLoadingTx ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-12 w-full" />
+                            <Skeleton className="h-12 w-full" />
+                            <Skeleton className="h-12 w-full" />
+                        </div>
+                    ) : (
+                        <CustomerLedgerTable transactions={transactions} />
+                    )}
                 </div>
+
+                {/* Dialogs */}
+                <CustomerPaymentDialog
+                    open={isPaymentDialogOpen}
+                    onOpenChange={setIsPaymentDialogOpen}
+                    customer={customer}
+                />
             </div>
-
-            {/* Profile Section */}
-            <CustomerProfileCard customer={customer} />
-
-            {/* Ledger Section */}
-            <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-bold text-slate-900">Statement of Account</h2>
-                    <div className="text-xs text-slate-500 font-mono">
-                        Showing {transactions.length} entries
-                    </div>
-                </div>
-
-                {isLoadingTx ? (
-                    <div className="space-y-2">
-                        <Skeleton className="h-12 w-full" />
-                        <Skeleton className="h-12 w-full" />
-                        <Skeleton className="h-12 w-full" />
-                    </div>
-                ) : (
-                    <CustomerLedgerTable transactions={transactions} />
-                )}
-            </div>
-
-            {/* Dialogs */}
-            <CustomerPaymentDialog
-                open={isPaymentDialogOpen}
-                onOpenChange={setIsPaymentDialogOpen}
-                customer={customer}
-            />
-        </div>
+        </PermissionGuard>
     )
 }

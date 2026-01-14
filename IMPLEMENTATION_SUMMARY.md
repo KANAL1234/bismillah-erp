@@ -72,11 +72,19 @@ Last Updated: January 13, 2026 (Updated File Structure & Schema)
 - **Shipment Tracking**: Record vehicle numbers, driver details, and tracking IDs.
 - **Sales Returns**: Manage customer returns with reason codes (Damaged, Defective) and action disposition (Restock, Discard).
 
-### 🛡️ Credit Limit Enforcement (NEW)
-- **Real-time Validation**: Automated credit checks before sales confirmation.
+### 🛡️ Customer Management & Credit Enforcement
+- **Centralized Profiles**: Manage Individual and Business customers with detailed contact/tax info.
+- **Soft-Delete Lifecycle**: Deactivate customers while preserving historical ledger data.
+- **Real-time Credit Validation**: Automated credit checks before sales confirmation.
 - **Dynamic Calculation**: `Available Credit = Limit - Current Balance`.
-- **Trigger-based Updates**: Database triggers (`trg_update_customer_balance_invoice`) automatically update customer balances when invoices are posted.
-- **Credit Summaries**: Automated derivation of credit utilization percentages and risk statuses.
+- **Trigger-based Updates**: Database triggers automatically update customer balances when invoices are posted.
+
+### 📓 Customer Ledger (Statement of Account) (NEW) ✨
+- **Unified Transaction List**: A comprehensive view combining Sales Invoices and Receipt Vouchers.
+- **Chronological Tracking**: Date-sorted ledger showing every debit and credit with running details.
+- **Financial Profile**: Quick view of total balance, credit limit, and terms inside the ledger.
+- **Direct Payments**: Integrated "Receive Payment" functionality with automatic balance recalculation.
+- **Premium UI**: Clean, color-coded statement view with print-ready formatting.
 
 ## 4. Autonomous Workflows Integration (NEW) ✨
 The system now features deep database-level automation for procurement and accounting.

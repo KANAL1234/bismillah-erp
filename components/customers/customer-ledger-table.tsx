@@ -9,7 +9,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { ArrowUpRight, ArrowDownLeft, FileText, Receipt, AlertCircle } from 'lucide-react'
+import { FileText, Receipt, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Transaction {
