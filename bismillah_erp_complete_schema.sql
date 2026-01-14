@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict vKDXFCzCdeDcGYoOPX6VoqAFJnN0ZLaOntWyYwTsAI6EJSV2fzcg0vcDgMz5ltN
+\restrict fGOD3gSB0fLp1UhuSZkeGvQnMKLpygynLSVieMBAnCpZaK51B2ImFxeATXsiw2U
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.7 (Homebrew)
@@ -259,6 +259,49 @@ COMMENT ON FUNCTION public.auto_create_vendor_bill_from_grn() IS 'Autonomous wor
 
 
 --
+-- Name: calculate_avco(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calculate_avco(p_product_id uuid, p_location_id uuid) RETURNS numeric
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_total_value numeric;
+    v_total_qty numeric;
+    v_avg_cost numeric;
+BEGIN
+    SELECT 
+        SUM(remaining_quantity * unit_cost),
+        SUM(remaining_quantity)
+    INTO v_total_value, v_total_qty
+    FROM inventory_cost_layers
+    WHERE product_id = p_product_id
+      AND location_id = p_location_id
+      AND remaining_quantity > 0;
+    
+    IF v_total_qty > 0 THEN
+        v_avg_cost := v_total_value / v_total_qty;
+    ELSE
+        -- Fallback to current average cost in inventory_stock
+        SELECT average_cost INTO v_avg_cost
+        FROM inventory_stock
+        WHERE product_id = p_product_id
+          AND location_id = p_location_id;
+    END IF;
+    
+    RETURN COALESCE(v_avg_cost, 0);
+END;
+$$;
+
+
+--
+-- Name: FUNCTION calculate_avco(p_product_id uuid, p_location_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calculate_avco(p_product_id uuid, p_location_id uuid) IS 'Calculates weighted average cost from cost layers';
+
+
+--
 -- Name: calculate_employee_commission(uuid, date, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -327,6 +370,46 @@ BEGIN
     );
 
     RETURN v_commission_amount;
+END;
+$$;
+
+
+--
+-- Name: calculate_leave_balance(uuid, uuid, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calculate_leave_balance(p_employee_id uuid, p_leave_type_id uuid, p_date date) RETURNS numeric
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_total_allowed numeric;
+    v_used_days numeric;
+    v_fiscal_year int;
+BEGIN
+    v_fiscal_year := EXTRACT(YEAR FROM p_date);
+
+    -- 1. Get total allowed days for this leave type (default 30 if null)
+    SELECT COALESCE(days_per_year, 30)
+    INTO v_total_allowed
+    FROM leave_types
+    WHERE id = p_leave_type_id;
+
+    IF v_total_allowed IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    -- 2. Calculate used days for this employee & leave type in current year
+    -- Includes PENDING and APPROVED requests
+    SELECT COALESCE(SUM(total_days), 0)
+    INTO v_used_days
+    FROM leave_requests
+    WHERE employee_id = p_employee_id
+    AND leave_type_id = p_leave_type_id
+    AND status IN ('PENDING', 'APPROVED')
+    AND EXTRACT(YEAR FROM from_date) = v_fiscal_year;
+
+    -- 3. Return remaining balance
+    RETURN v_total_allowed - v_used_days;
 END;
 $$;
 
@@ -445,6 +528,108 @@ $$;
 
 
 --
+-- Name: consume_cost_layers_fifo(uuid, uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.consume_cost_layers_fifo(p_product_id uuid, p_location_id uuid, p_quantity_to_consume numeric) RETURNS TABLE(layer_id uuid, quantity_consumed numeric, unit_cost numeric, layer_value numeric)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_remaining numeric := p_quantity_to_consume;
+    v_layer RECORD;
+    v_consume_qty numeric;
+BEGIN
+    -- Get cost layers in FIFO order (oldest first)
+    FOR v_layer IN 
+        SELECT id, remaining_quantity, unit_cost
+        FROM inventory_cost_layers
+        WHERE product_id = p_product_id
+          AND location_id = p_location_id
+          AND remaining_quantity > 0
+        ORDER BY layer_date ASC, created_at ASC
+        FOR UPDATE
+    LOOP
+        IF v_remaining <= 0 THEN
+            EXIT;
+        END IF;
+        
+        -- Determine how much to consume from this layer
+        v_consume_qty := LEAST(v_layer.remaining_quantity, v_remaining);
+        
+        -- Update the layer
+        UPDATE inventory_cost_layers
+        SET remaining_quantity = remaining_quantity - v_consume_qty,
+            updated_at = now()
+        WHERE id = v_layer.id;
+        
+        -- Return the consumption details
+        layer_id := v_layer.id;
+        quantity_consumed := v_consume_qty;
+        unit_cost := v_layer.unit_cost;
+        layer_value := v_consume_qty * v_layer.unit_cost;
+        RETURN NEXT;
+        
+        v_remaining := v_remaining - v_consume_qty;
+    END LOOP;
+    
+    IF v_remaining > 0.001 THEN
+        RAISE EXCEPTION 'Insufficient cost layers to consume % units (% remaining)', 
+            p_quantity_to_consume, v_remaining;
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION consume_cost_layers_fifo(p_product_id uuid, p_location_id uuid, p_quantity_to_consume numeric); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.consume_cost_layers_fifo(p_product_id uuid, p_location_id uuid, p_quantity_to_consume numeric) IS 'Consumes cost layers in FIFO order and returns cost details';
+
+
+--
+-- Name: create_cost_layer(uuid, uuid, numeric, numeric, text, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_cost_layer(p_product_id uuid, p_location_id uuid, p_unit_cost numeric, p_quantity numeric, p_reference_type text, p_reference_id uuid DEFAULT NULL::uuid, p_reference_number text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_layer_id uuid;
+BEGIN
+    INSERT INTO inventory_cost_layers (
+        product_id,
+        location_id,
+        unit_cost,
+        original_quantity,
+        remaining_quantity,
+        reference_type,
+        reference_id,
+        reference_number
+    ) VALUES (
+        p_product_id,
+        p_location_id,
+        p_unit_cost,
+        p_quantity,
+        p_quantity,
+        p_reference_type,
+        p_reference_id,
+        p_reference_number
+    ) RETURNING id INTO v_layer_id;
+    
+    RETURN v_layer_id;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION create_cost_layer(p_product_id uuid, p_location_id uuid, p_unit_cost numeric, p_quantity numeric, p_reference_type text, p_reference_id uuid, p_reference_number text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.create_cost_layer(p_product_id uuid, p_location_id uuid, p_unit_cost numeric, p_quantity numeric, p_reference_type text, p_reference_id uuid, p_reference_number text) IS 'Creates a new cost layer for FIFO tracking';
+
+
+--
 -- Name: create_employee_advance(uuid, text, numeric, text, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -456,7 +641,8 @@ DECLARE
     v_installment_amount numeric;
 BEGIN
     -- Generate advance number
-    SELECT 'ADV-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '-' || LPAD(COALESCE(MAX(SUBSTRING(advance_number FROM 12)::integer), 0) + 1::text, 4, '0')
+    -- Fixed: Cast the result of addition to text, not the operand '1'
+    SELECT 'ADV-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '-' || LPAD((COALESCE(MAX(SUBSTRING(advance_number FROM 12)::integer), 0) + 1)::text, 4, '0')
     INTO v_advance_number
     FROM employee_advances
     WHERE advance_number LIKE 'ADV-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '%';
@@ -878,6 +1064,105 @@ $$;
 
 
 --
+-- Name: get_cogs_for_sale(uuid, uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_cogs_for_sale(p_product_id uuid, p_location_id uuid, p_quantity numeric) RETURNS numeric
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_costing_method text;
+    v_cogs numeric := 0;
+    v_layer RECORD;
+BEGIN
+    -- Get costing method from product category
+    SELECT pc.costing_method INTO v_costing_method
+    FROM products p
+    JOIN product_categories pc ON p.category_id = pc.id
+    WHERE p.id = p_product_id;
+    
+    IF v_costing_method = 'FIFO' THEN
+        -- Calculate COGS using FIFO (consumes layers)
+        FOR v_layer IN 
+            SELECT * FROM consume_cost_layers_fifo(p_product_id, p_location_id, p_quantity)
+        LOOP
+            v_cogs := v_cogs + v_layer.layer_value;
+        END LOOP;
+    ELSE
+        -- AVCO method (uses average cost, doesn't consume layers)
+        SELECT average_cost * p_quantity INTO v_cogs
+        FROM inventory_stock
+        WHERE product_id = p_product_id
+          AND location_id = p_location_id;
+    END IF;
+    
+    RETURN COALESCE(v_cogs, 0);
+END;
+$$;
+
+
+--
+-- Name: FUNCTION get_cogs_for_sale(p_product_id uuid, p_location_id uuid, p_quantity numeric); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.get_cogs_for_sale(p_product_id uuid, p_location_id uuid, p_quantity numeric) IS 'Calculates COGS using FIFO or AVCO method based on product category';
+
+
+--
+-- Name: get_cost_layer_report(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_cost_layer_report(p_product_id uuid DEFAULT NULL::uuid, p_location_id uuid DEFAULT NULL::uuid) RETURNS TABLE(product_code text, product_name text, location_name text, layer_date timestamp with time zone, reference_type text, reference_number text, unit_cost numeric, original_qty numeric, remaining_qty numeric, consumed_qty numeric, layer_value numeric)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.sku,
+        p.name,
+        l.name,
+        cl.layer_date,
+        cl.reference_type,
+        cl.reference_number,
+        cl.unit_cost,
+        cl.original_quantity,
+        cl.remaining_quantity,
+        cl.original_quantity - cl.remaining_quantity,
+        cl.remaining_quantity * cl.unit_cost
+    FROM inventory_cost_layers cl
+    JOIN products p ON cl.product_id = p.id
+    JOIN locations l ON cl.location_id = l.id
+    WHERE (p_product_id IS NULL OR cl.product_id = p_product_id)
+      AND (p_location_id IS NULL OR cl.location_id = p_location_id)
+      AND cl.remaining_quantity > 0
+      -- LBAC Check: Ensure user has access to the location
+      AND (
+          EXISTS (
+              SELECT 1 FROM user_allowed_locations ual
+              WHERE ual.user_id = auth.uid()
+              AND ual.location_id = cl.location_id
+          )
+          OR 
+          -- Allow if user is admin
+          EXISTS (
+              SELECT 1 FROM user_roles ur
+              JOIN roles r ON ur.role_id = r.id
+              WHERE ur.user_id = auth.uid() AND r.role_name = 'admin'
+          )
+      )
+    ORDER BY p.sku, l.name, cl.layer_date;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION get_cost_layer_report(p_product_id uuid, p_location_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.get_cost_layer_report(p_product_id uuid, p_location_id uuid) IS 'Returns detailed cost layer report for inventory analysis';
+
+
+--
 -- Name: get_customer_aging_report(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1097,6 +1382,63 @@ BEGIN
     ORDER BY lt.leave_type_name;
 END;
 $$;
+
+
+--
+-- Name: get_inventory_valuation(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_inventory_valuation(p_location_id uuid DEFAULT NULL::uuid) RETURNS TABLE(product_code text, product_name text, location_name text, costing_method text, quantity numeric, average_cost numeric, total_value numeric, cost_layers_count bigint, oldest_layer_date timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p.sku,
+        p.name,
+        l.name,
+        pc.costing_method,
+        ist.quantity_available,
+        ist.average_cost,
+        ist.total_value,
+        COUNT(cl.id) FILTER (WHERE cl.remaining_quantity > 0),
+        MIN(cl.layer_date) FILTER (WHERE cl.remaining_quantity > 0)
+    FROM inventory_stock ist
+    JOIN products p ON ist.product_id = p.id
+    JOIN locations l ON ist.location_id = l.id
+    JOIN product_categories pc ON p.category_id = pc.id
+    LEFT JOIN inventory_cost_layers cl ON cl.product_id = p.id 
+        AND cl.location_id = l.id
+        AND cl.remaining_quantity > 0
+    WHERE (p_location_id IS NULL OR ist.location_id = p_location_id)
+      AND ist.quantity_available > 0
+      -- LBAC Check
+      AND (
+          EXISTS (
+              SELECT 1 FROM user_allowed_locations ual
+              WHERE ual.user_id = auth.uid()
+              AND ual.location_id = ist.location_id
+          )
+          OR 
+          -- Allow if user is admin
+          EXISTS (
+              SELECT 1 FROM user_roles ur
+              JOIN roles r ON ur.role_id = r.id
+              WHERE ur.user_id = auth.uid() AND r.role_name = 'admin'
+          )
+      )
+    GROUP BY p.sku, p.name, l.name, pc.costing_method, 
+             ist.quantity_available, ist.average_cost, ist.total_value
+    ORDER BY p.sku, l.name;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION get_inventory_valuation(p_location_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.get_inventory_valuation(p_location_id uuid) IS 'Returns comprehensive inventory valuation with cost layer details';
 
 
 --
@@ -3081,57 +3423,71 @@ CREATE FUNCTION public.request_leave(p_employee_id uuid, p_leave_type_id uuid, p
     AS $$
 DECLARE
     v_total_days numeric;
-    v_request_number text;
     v_available_balance numeric;
-    v_leave_type_name text;
+    v_request_number text;
 BEGIN
-    -- Calculate total days
+    -- Calculate total days (inclusive)
     v_total_days := (p_to_date - p_from_date) + 1;
 
-    -- Get leave type name
-    SELECT leave_type_name INTO v_leave_type_name
-    FROM leave_types
-    WHERE id = p_leave_type_id;
+    -- Check if leave balance is available
+    SELECT calculate_leave_balance(p_employee_id, p_leave_type_id, p_from_date)
+    INTO v_available_balance;
 
-    -- Check leave balance
-    SELECT COALESCE(balance, 0) INTO v_available_balance
-    FROM leave_balance
-    WHERE employee_id = p_employee_id
-      AND leave_type_id = p_leave_type_id
-      AND fiscal_year = EXTRACT(YEAR FROM CURRENT_DATE);
-
-    IF v_available_balance < v_total_days THEN
+    -- Check overlap
+    IF EXISTS (
+        SELECT 1 FROM leave_requests
+        WHERE employee_id = p_employee_id
+        AND status IN ('PENDING', 'APPROVED')
+        AND (
+            (from_date BETWEEN p_from_date AND p_to_date) OR
+            (to_date BETWEEN p_from_date AND p_to_date) OR
+            (p_from_date BETWEEN from_date AND to_date)
+        )
+    ) THEN
         RETURN json_build_object(
             'success', false,
-            'message', 'Insufficient leave balance. Available: ' || v_available_balance || ' days'
+            'message', 'Leave request overlaps with existing request'
         );
     END IF;
 
-    -- Generate request number
-    SELECT 'LR-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '-' || LPAD(COALESCE(MAX(SUBSTRING(request_number FROM 11)::integer), 0) + 1::text, 4, '0')
-    INTO v_request_number
-    FROM leave_requests
-    WHERE request_number LIKE 'LR-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '%';
+    -- Check balance (simplified check, real check should look at specific leave type rules)
+    -- For now, we assume calc returns remaining balance
+    -- Note: calculate_leave_balance func handles logic
+    
+    -- IMPORTANT: This matches the previous logic, ensuring consistent behavior
+    IF v_available_balance < v_total_days THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Insufficient leave balance. Available: ' || v_available_balance::text || ' days'
+        );
+    END IF;
 
-    -- Create leave request
+    -- Generate request number with explicit casting
+    SELECT 'LR-' || LPAD((COALESCE(MAX(SUBSTRING(request_number FROM 4)::int), 0) + 1)::text, 4, '0')
+    INTO v_request_number
+    FROM leave_requests;
+
+    -- Insert leave request
     INSERT INTO leave_requests (
-        request_number,
         employee_id,
         leave_type_id,
+        request_number,
         from_date,
         to_date,
         total_days,
         reason,
+        status,
         created_by
     ) VALUES (
-        v_request_number,
         p_employee_id,
         p_leave_type_id,
+        v_request_number,
         p_from_date,
         p_to_date,
         v_total_days,
         p_reason,
-        COALESCE(p_created_by, auth.uid())
+        'PENDING',
+        COALESCE(p_created_by, auth.uid()) -- FIX: Use auth.uid() instead of p_employee_id
     );
 
     RETURN json_build_object(
@@ -4121,6 +4477,56 @@ CREATE TABLE public.grn_items (
 
 
 --
+-- Name: inventory_cost_layers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory_cost_layers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    product_id uuid NOT NULL,
+    location_id uuid NOT NULL,
+    layer_date timestamp with time zone DEFAULT now() NOT NULL,
+    reference_type text NOT NULL,
+    reference_id uuid,
+    reference_number text,
+    unit_cost numeric(15,2) NOT NULL,
+    original_quantity numeric(15,2) NOT NULL,
+    remaining_quantity numeric(15,2) NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT chk_cost_layer_ref_type CHECK ((reference_type = ANY (ARRAY['GRN'::text, 'ADJUSTMENT'::text, 'OPENING'::text, 'TRANSFER_IN'::text, 'RETURN'::text, 'MANUAL'::text]))),
+    CONSTRAINT chk_remaining_qty CHECK (((remaining_quantity >= (0)::numeric) AND (remaining_quantity <= original_quantity)))
+);
+
+
+--
+-- Name: TABLE inventory_cost_layers; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.inventory_cost_layers IS 'Tracks cost layers for FIFO inventory valuation';
+
+
+--
+-- Name: COLUMN inventory_cost_layers.unit_cost; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inventory_cost_layers.unit_cost IS 'Cost per unit for this layer';
+
+
+--
+-- Name: COLUMN inventory_cost_layers.original_quantity; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inventory_cost_layers.original_quantity IS 'Initial quantity in this layer';
+
+
+--
+-- Name: COLUMN inventory_cost_layers.remaining_quantity; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inventory_cost_layers.remaining_quantity IS 'Quantity still available in this layer';
+
+
+--
 -- Name: inventory_locations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4299,8 +4705,16 @@ CREATE TABLE public.leave_types (
     paid boolean DEFAULT true,
     description text,
     is_active boolean DEFAULT true,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    days_per_year integer DEFAULT 30 NOT NULL
 );
+
+
+--
+-- Name: COLUMN leave_types.days_per_year; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.leave_types.days_per_year IS 'Total allowed leave days per fiscal year for this leave type';
 
 
 --
@@ -4558,7 +4972,8 @@ CREATE TABLE public.product_categories (
     costing_method text DEFAULT 'AVCO'::text NOT NULL,
     description text,
     is_active boolean DEFAULT true,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT chk_costing_method CHECK ((costing_method = ANY (ARRAY['AVCO'::text, 'FIFO'::text])))
 );
 
 
@@ -4691,7 +5106,7 @@ CREATE TABLE public.receipt_vouchers (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     CONSTRAINT receipt_vouchers_payment_method_check CHECK ((payment_method = ANY (ARRAY['CASH'::text, 'CHEQUE'::text, 'BANK_TRANSFER'::text]))),
-    CONSTRAINT receipt_vouchers_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'posted'::text, 'cancelled'::text])))
+    CONSTRAINT receipt_vouchers_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'posted'::text, 'cleared'::text, 'cancelled'::text])))
 );
 
 
@@ -5665,6 +6080,14 @@ ALTER TABLE ONLY public.goods_receipts
 
 ALTER TABLE ONLY public.grn_items
     ADD CONSTRAINT grn_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_cost_layers inventory_cost_layers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_cost_layers
+    ADD CONSTRAINT inventory_cost_layers_pkey PRIMARY KEY (id);
 
 
 --
@@ -6671,6 +7094,34 @@ CREATE INDEX idx_commission_employee ON public.commission_records USING btree (e
 --
 
 CREATE INDEX idx_commission_period ON public.commission_records USING btree (period_start, period_end);
+
+
+--
+-- Name: idx_cost_layers_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cost_layers_date ON public.inventory_cost_layers USING btree (layer_date);
+
+
+--
+-- Name: idx_cost_layers_product_location; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cost_layers_product_location ON public.inventory_cost_layers USING btree (product_id, location_id);
+
+
+--
+-- Name: idx_cost_layers_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cost_layers_reference ON public.inventory_cost_layers USING btree (reference_type, reference_id);
+
+
+--
+-- Name: idx_cost_layers_remaining; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cost_layers_remaining ON public.inventory_cost_layers USING btree (product_id, location_id, remaining_quantity) WHERE (remaining_quantity > (0)::numeric);
 
 
 --
@@ -7728,6 +8179,22 @@ ALTER TABLE ONLY public.goods_receipts
 
 ALTER TABLE ONLY public.goods_receipts
     ADD CONSTRAINT goods_receipts_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
+
+
+--
+-- Name: inventory_cost_layers inventory_cost_layers_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_cost_layers
+    ADD CONSTRAINT inventory_cost_layers_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: inventory_cost_layers inventory_cost_layers_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_cost_layers
+    ADD CONSTRAINT inventory_cost_layers_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
 
 
 --
@@ -9543,375 +10010,5 @@ ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict vKDXFCzCdeDcGYoOPX6VoqAFJnN0ZLaOntWyYwTsAI6EJSV2fzcg0vcDgMz5ltN
+\unrestrict fGOD3gSB0fLp1UhuSZkeGvQnMKLpygynLSVieMBAnCpZaK51B2ImFxeATXsiw2U
 
--- =====================================================
--- Inventory Valuation: AVCO & FIFO Cost Layer Tracking
--- =====================================================
--- This migration adds comprehensive cost layer tracking
--- to support both AVCO and FIFO inventory valuation methods
-
--- =====================================================
--- 1. CREATE COST LAYERS TABLE
--- =====================================================
-
-CREATE TABLE IF NOT EXISTS public.inventory_cost_layers (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    location_id uuid NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
-    
-    -- Layer identification
-    layer_date timestamp with time zone NOT NULL DEFAULT now(),
-    reference_type text NOT NULL,
-    reference_id uuid,
-    reference_number text,
-    
-    -- Cost information
-    unit_cost numeric(15,2) NOT NULL,
-    original_quantity numeric(15,2) NOT NULL,
-    remaining_quantity numeric(15,2) NOT NULL,
-    
-    -- Metadata
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now(),
-    
-    CONSTRAINT chk_remaining_qty CHECK (remaining_quantity >= 0 AND remaining_quantity <= original_quantity),
-    CONSTRAINT chk_cost_layer_ref_type CHECK (reference_type IN ('GRN', 'ADJUSTMENT', 'OPENING', 'TRANSFER_IN', 'RETURN', 'MANUAL'))
-);
-
-COMMENT ON TABLE inventory_cost_layers IS 'Tracks cost layers for FIFO inventory valuation';
-COMMENT ON COLUMN inventory_cost_layers.unit_cost IS 'Cost per unit for this layer';
-COMMENT ON COLUMN inventory_cost_layers.original_quantity IS 'Initial quantity in this layer';
-COMMENT ON COLUMN inventory_cost_layers.remaining_quantity IS 'Quantity still available in this layer';
-
--- =====================================================
--- 2. CREATE INDEXES
--- =====================================================
-
-CREATE INDEX IF NOT EXISTS idx_cost_layers_product_location 
-ON inventory_cost_layers(product_id, location_id);
-
-CREATE INDEX IF NOT EXISTS idx_cost_layers_remaining 
-ON inventory_cost_layers(product_id, location_id, remaining_quantity) 
-WHERE remaining_quantity > 0;
-
-CREATE INDEX IF NOT EXISTS idx_cost_layers_date 
-ON inventory_cost_layers(layer_date);
-
-CREATE INDEX IF NOT EXISTS idx_cost_layers_reference 
-ON inventory_cost_layers(reference_type, reference_id);
-
--- =====================================================
--- 3. ADD CONSTRAINT TO PRODUCT CATEGORIES
--- =====================================================
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'chk_costing_method'
-    ) THEN
-        ALTER TABLE product_categories 
-        ADD CONSTRAINT chk_costing_method 
-        CHECK (costing_method IN ('AVCO', 'FIFO'));
-    END IF;
-END $$;
-
--- =====================================================
--- 4. CREATE COST LAYER MANAGEMENT FUNCTIONS
--- =====================================================
-
--- Function: Create Cost Layer
-CREATE OR REPLACE FUNCTION create_cost_layer(
-    p_product_id uuid,
-    p_location_id uuid,
-    p_unit_cost numeric,
-    p_quantity numeric,
-    p_reference_type text,
-    p_reference_id uuid DEFAULT NULL,
-    p_reference_number text DEFAULT NULL
-) RETURNS uuid AS $$
-DECLARE
-    v_layer_id uuid;
-BEGIN
-    INSERT INTO inventory_cost_layers (
-        product_id,
-        location_id,
-        unit_cost,
-        original_quantity,
-        remaining_quantity,
-        reference_type,
-        reference_id,
-        reference_number
-    ) VALUES (
-        p_product_id,
-        p_location_id,
-        p_unit_cost,
-        p_quantity,
-        p_quantity,
-        p_reference_type,
-        p_reference_id,
-        p_reference_number
-    ) RETURNING id INTO v_layer_id;
-    
-    RETURN v_layer_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-COMMENT ON FUNCTION create_cost_layer IS 'Creates a new cost layer for FIFO tracking';
-
--- Function: Consume Cost Layers (FIFO)
-CREATE OR REPLACE FUNCTION consume_cost_layers_fifo(
-    p_product_id uuid,
-    p_location_id uuid,
-    p_quantity_to_consume numeric
-) RETURNS TABLE(layer_id uuid, quantity_consumed numeric, unit_cost numeric, layer_value numeric) AS $$
-DECLARE
-    v_remaining numeric := p_quantity_to_consume;
-    v_layer RECORD;
-    v_consume_qty numeric;
-BEGIN
-    -- Get cost layers in FIFO order (oldest first)
-    FOR v_layer IN 
-        SELECT id, remaining_quantity, unit_cost
-        FROM inventory_cost_layers
-        WHERE product_id = p_product_id
-          AND location_id = p_location_id
-          AND remaining_quantity > 0
-        ORDER BY layer_date ASC, created_at ASC
-        FOR UPDATE
-    LOOP
-        IF v_remaining <= 0 THEN
-            EXIT;
-        END IF;
-        
-        -- Determine how much to consume from this layer
-        v_consume_qty := LEAST(v_layer.remaining_quantity, v_remaining);
-        
-        -- Update the layer
-        UPDATE inventory_cost_layers
-        SET remaining_quantity = remaining_quantity - v_consume_qty,
-            updated_at = now()
-        WHERE id = v_layer.id;
-        
-        -- Return the consumption details
-        layer_id := v_layer.id;
-        quantity_consumed := v_consume_qty;
-        unit_cost := v_layer.unit_cost;
-        layer_value := v_consume_qty * v_layer.unit_cost;
-        RETURN NEXT;
-        
-        v_remaining := v_remaining - v_consume_qty;
-    END LOOP;
-    
-    IF v_remaining > 0.001 THEN
-        RAISE EXCEPTION 'Insufficient cost layers to consume % units (% remaining)', 
-            p_quantity_to_consume, v_remaining;
-    END IF;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-COMMENT ON FUNCTION consume_cost_layers_fifo IS 'Consumes cost layers in FIFO order and returns cost details';
-
--- Function: Calculate AVCO
-CREATE OR REPLACE FUNCTION calculate_avco(
-    p_product_id uuid,
-    p_location_id uuid
-) RETURNS numeric AS $$
-DECLARE
-    v_total_value numeric;
-    v_total_qty numeric;
-    v_avg_cost numeric;
-BEGIN
-    SELECT 
-        SUM(remaining_quantity * unit_cost),
-        SUM(remaining_quantity)
-    INTO v_total_value, v_total_qty
-    FROM inventory_cost_layers
-    WHERE product_id = p_product_id
-      AND location_id = p_location_id
-      AND remaining_quantity > 0;
-    
-    IF v_total_qty > 0 THEN
-        v_avg_cost := v_total_value / v_total_qty;
-    ELSE
-        -- Fallback to current average cost in inventory_stock
-        SELECT average_cost INTO v_avg_cost
-        FROM inventory_stock
-        WHERE product_id = p_product_id
-          AND location_id = p_location_id;
-    END IF;
-    
-    RETURN COALESCE(v_avg_cost, 0);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-COMMENT ON FUNCTION calculate_avco IS 'Calculates weighted average cost from cost layers';
-
--- Function: Get Cost of Goods Sold (COGS)
-CREATE OR REPLACE FUNCTION get_cogs_for_sale(
-    p_product_id uuid,
-    p_location_id uuid,
-    p_quantity numeric
-) RETURNS numeric AS $$
-DECLARE
-    v_costing_method text;
-    v_cogs numeric := 0;
-    v_layer RECORD;
-BEGIN
-    -- Get costing method from product category
-    SELECT pc.costing_method INTO v_costing_method
-    FROM products p
-    JOIN product_categories pc ON p.category_id = pc.id
-    WHERE p.id = p_product_id;
-    
-    IF v_costing_method = 'FIFO' THEN
-        -- Calculate COGS using FIFO (consumes layers)
-        FOR v_layer IN 
-            SELECT * FROM consume_cost_layers_fifo(p_product_id, p_location_id, p_quantity)
-        LOOP
-            v_cogs := v_cogs + v_layer.layer_value;
-        END LOOP;
-    ELSE
-        -- AVCO method (uses average cost, doesn't consume layers)
-        SELECT average_cost * p_quantity INTO v_cogs
-        FROM inventory_stock
-        WHERE product_id = p_product_id
-          AND location_id = p_location_id;
-    END IF;
-    
-    RETURN COALESCE(v_cogs, 0);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-COMMENT ON FUNCTION get_cogs_for_sale IS 'Calculates COGS using FIFO or AVCO method based on product category';
-
--- =====================================================
--- 5. REPORTING FUNCTIONS
--- =====================================================
-
--- Function: Cost Layer Report
-CREATE OR REPLACE FUNCTION get_cost_layer_report(
-    p_product_id uuid DEFAULT NULL,
-    p_location_id uuid DEFAULT NULL
-) RETURNS TABLE(
-    product_code text,
-    product_name text,
-    location_name text,
-    layer_date timestamp with time zone,
-    reference_type text,
-    reference_number text,
-    unit_cost numeric,
-    original_qty numeric,
-    remaining_qty numeric,
-    consumed_qty numeric,
-    layer_value numeric
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        p.sku,
-        p.name,
-        l.name,
-        cl.layer_date,
-        cl.reference_type,
-        cl.reference_number,
-        cl.unit_cost,
-        cl.original_quantity,
-        cl.remaining_quantity,
-        cl.original_quantity - cl.remaining_quantity,
-        cl.remaining_quantity * cl.unit_cost
-    FROM inventory_cost_layers cl
-    JOIN products p ON cl.product_id = p.id
-    JOIN locations l ON cl.location_id = l.id
-    WHERE (p_product_id IS NULL OR cl.product_id = p_product_id)
-      AND (p_location_id IS NULL OR cl.location_id = p_location_id)
-      AND cl.remaining_quantity > 0
-    ORDER BY p.sku, l.name, cl.layer_date;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-COMMENT ON FUNCTION get_cost_layer_report IS 'Returns detailed cost layer report for inventory analysis';
-
--- Function: Inventory Valuation Report
-CREATE OR REPLACE FUNCTION get_inventory_valuation(
-    p_location_id uuid DEFAULT NULL
-) RETURNS TABLE(
-    product_code text,
-    product_name text,
-    location_name text,
-    costing_method text,
-    quantity numeric,
-    average_cost numeric,
-    total_value numeric,
-    cost_layers_count bigint,
-    oldest_layer_date timestamp with time zone
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        p.sku,
-        p.name,
-        l.name,
-        pc.costing_method,
-        ist.quantity_available,
-        ist.average_cost,
-        ist.total_value,
-        COUNT(cl.id) FILTER (WHERE cl.remaining_quantity > 0),
-        MIN(cl.layer_date) FILTER (WHERE cl.remaining_quantity > 0)
-    FROM inventory_stock ist
-    JOIN products p ON ist.product_id = p.id
-    JOIN locations l ON ist.location_id = l.id
-    JOIN product_categories pc ON p.category_id = pc.id
-    LEFT JOIN inventory_cost_layers cl ON cl.product_id = p.id 
-        AND cl.location_id = l.id
-        AND cl.remaining_quantity > 0
-    WHERE (p_location_id IS NULL OR ist.location_id = p_location_id)
-      AND ist.quantity_available > 0
-    GROUP BY p.sku, p.name, l.name, pc.costing_method, 
-             ist.quantity_available, ist.average_cost, ist.total_value
-    ORDER BY p.sku, l.name;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-COMMENT ON FUNCTION get_inventory_valuation IS 'Returns comprehensive inventory valuation with cost layer details';
-
--- =====================================================
--- 6. MIGRATION: CREATE OPENING LAYERS FOR EXISTING STOCK
--- =====================================================
-
--- Create opening cost layers for all existing inventory
-INSERT INTO inventory_cost_layers (
-    product_id,
-    location_id,
-    unit_cost,
-    original_quantity,
-    remaining_quantity,
-    reference_type,
-    reference_number,
-    layer_date
-)
-SELECT 
-    product_id,
-    location_id,
-    COALESCE(average_cost, 0),
-    quantity_available,
-    quantity_available,
-    'OPENING',
-    'OPENING-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD'),
-    CURRENT_TIMESTAMP
-FROM inventory_stock
-WHERE quantity_available > 0
-ON CONFLICT DO NOTHING;
-
--- =====================================================
--- 7. GRANT PERMISSIONS
--- =====================================================
-
-GRANT SELECT ON inventory_cost_layers TO authenticated;
-GRANT EXECUTE ON FUNCTION create_cost_layer TO authenticated;
-GRANT EXECUTE ON FUNCTION consume_cost_layers_fifo TO authenticated;
-GRANT EXECUTE ON FUNCTION calculate_avco TO authenticated;
-GRANT EXECUTE ON FUNCTION get_cogs_for_sale TO authenticated;
-GRANT EXECUTE ON FUNCTION get_cost_layer_report TO authenticated;
-GRANT EXECUTE ON FUNCTION get_inventory_valuation TO authenticated;
