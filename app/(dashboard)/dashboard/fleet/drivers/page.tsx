@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { DriverDialog } from "@/components/fleet/driver-dialog"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 import { format } from "date-fns"
 import {
     AlertDialog,
@@ -53,7 +53,6 @@ function DriversContent() {
     const [editingDriver, setEditingDriver] = useState<FleetDriver | undefined>()
     const [deletingDriver, setDeletingDriver] = useState<FleetDriver | null>(null)
     const supabase = createClient()
-    const { toast } = useToast()
 
     const fetchDrivers = async () => {
         setLoading(true)
@@ -66,7 +65,7 @@ function DriversContent() {
             .order("created_at", { ascending: false })
 
         if (error) {
-            toast({ title: "Error fetching drivers", variant: "destructive" })
+            toast.error("Error fetching drivers")
         } else {
             // Map the joined data correctly to our type
             const mappedDrivers = (data || []).map((d: any) => ({
@@ -91,9 +90,9 @@ function DriversContent() {
             .eq("id", deletingDriver.id)
 
         if (error) {
-            toast({ title: "Error deleting driver", variant: "destructive" })
+            toast.error("Error deleting driver")
         } else {
-            toast({ title: "Driver deleted successfully" })
+            toast.success("Driver deleted successfully")
             fetchDrivers()
         }
         setDeletingDriver(null)

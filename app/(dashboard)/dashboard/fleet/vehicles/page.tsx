@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { VehicleDialog } from "@/components/fleet/vehicle-dialog"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "sonner"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -52,7 +52,6 @@ function VehiclesContent() {
     const [editingVehicle, setEditingVehicle] = useState<FleetVehicle | undefined>()
     const [deletingVehicle, setDeletingVehicle] = useState<FleetVehicle | null>(null)
     const supabase = createClient()
-    const { toast } = useToast()
 
     const fetchVehicles = async () => {
         setLoading(true)
@@ -62,7 +61,7 @@ function VehiclesContent() {
             .order("created_at", { ascending: false })
 
         if (error) {
-            toast({ title: "Error fetching vehicles", variant: "destructive" })
+            toast.error("Error fetching vehicles")
         } else {
             setVehicles(data || [])
         }
@@ -82,9 +81,9 @@ function VehiclesContent() {
             .eq("id", deletingVehicle.id)
 
         if (error) {
-            toast({ title: "Error deleting vehicle", variant: "destructive" })
+            toast.error("Error deleting vehicle")
         } else {
-            toast({ title: "Vehicle deleted successfully" })
+            toast.success("Vehicle deleted successfully")
             fetchVehicles()
         }
         setDeletingVehicle(null)
