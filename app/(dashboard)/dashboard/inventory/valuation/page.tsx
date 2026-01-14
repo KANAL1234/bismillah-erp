@@ -34,8 +34,8 @@ function InventoryValuationContent() {
     const [activeTab, setActiveTab] = useState('valuation')
 
     // Calculate summary metrics
-    const totalValue = valuation?.reduce((sum, item) => sum + (item.total_value || 0), 0) || 0
-    const totalItems = valuation?.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) || 0
+    const totalValue = valuation?.reduce((sum: number, item: any) => sum + (Number(item.total_value) || 0), 0) || 0
+    const totalItems = valuation?.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0) || 0
     const activeProducts = valuation?.length || 0
 
     const handleRefresh = () => {
@@ -52,7 +52,7 @@ function InventoryValuationContent() {
 
         const csvContent = "data:text/csv;charset=utf-8,"
             + Object.keys(data[0] || {}).join(",") + "\n"
-            + data.map(row => Object.values(row).join(",")).join("\n")
+            + data.map((row: any) => Object.values(row).join(",")).join("\n")
 
         const encodedUri = encodeURI(csvContent)
         const link = document.createElement("a")
@@ -159,9 +159,9 @@ function InventoryValuationContent() {
                                         { accessorKey: 'product_code', header: 'SKU' },
                                         { accessorKey: 'product_name', header: 'Product' },
                                         { accessorKey: 'location_name', header: 'Location' },
-                                        { accessorKey: 'quantity', header: 'Qty', cell: ({ row }) => Number(row.original.quantity).toLocaleString() },
-                                        { accessorKey: 'average_cost', header: 'Avg Cost', cell: ({ row }) => formatCurrency(row.original.average_cost) },
-                                        { accessorKey: 'total_value', header: 'Total Value', cell: ({ row }) => formatCurrency(row.original.total_value) },
+                                        { accessorKey: 'quantity', header: 'Qty', cell: ({ row }: any) => Number(row.original.quantity).toLocaleString() },
+                                        { accessorKey: 'average_cost', header: 'Avg Cost', cell: ({ row }: any) => formatCurrency(row.original.average_cost) },
+                                        { accessorKey: 'total_value', header: 'Total Value', cell: ({ row }: any) => formatCurrency(row.original.total_value) },
                                         { accessorKey: 'costing_method', header: 'Method' },
                                     ]}
                                     data={valuation || []}
@@ -186,13 +186,13 @@ function InventoryValuationContent() {
                             ) : (
                                 <DataTable
                                     columns={[
-                                        { accessorKey: 'layer_date', header: 'Date', cell: ({ row }) => format(new Date(row.original.layer_date), 'MMM d, yyyy') },
+                                        { accessorKey: 'layer_date', header: 'Date', cell: ({ row }: any) => format(new Date(row.original.layer_date), 'MMM d, yyyy') },
                                         { accessorKey: 'product_name', header: 'Product' },
                                         { accessorKey: 'location_name', header: 'Location' },
                                         { accessorKey: 'reference_number', header: 'Ref' },
-                                        { accessorKey: 'unit_cost', header: 'Unit Cost', cell: ({ row }) => formatCurrency(row.original.unit_cost) },
-                                        { accessorKey: 'remaining_qty', header: 'Remaining', cell: ({ row }) => Number(row.original.remaining_qty).toLocaleString() },
-                                        { accessorKey: 'layer_value', header: 'Value', cell: ({ row }) => formatCurrency(row.original.layer_value) },
+                                        { accessorKey: 'unit_cost', header: 'Unit Cost', cell: ({ row }: any) => formatCurrency(row.original.unit_cost) },
+                                        { accessorKey: 'remaining_qty', header: 'Remaining', cell: ({ row }: any) => Number(row.original.remaining_qty).toLocaleString() },
+                                        { accessorKey: 'layer_value', header: 'Value', cell: ({ row }: any) => formatCurrency(row.original.layer_value) },
                                     ]}
                                     data={costLayers || []}
                                 />
