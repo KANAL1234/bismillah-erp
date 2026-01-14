@@ -98,6 +98,36 @@ A high-performance diagnostic suite (12 Modules) for real-time ERP verification.
   - **Accounting Integrity**: Chart of Accounts and Manual Posting verification.
   - **Credit Limit Verification**: Tests real-time checking and trigger-based updates.
   - **Transaction Register Validation**: Verifies reporting RPCs (Sales/Purchase).
+
+## 5. User & Role Management (RBAC) (NEW) 🔐
+A robust security framework enabling multi-user operations with granular control.
+
+### 👮 Role-Based Access Control
+- **Custom Roles**: Create roles with specific permission sets (e.g., "Sales Manager", "Accountant", "Inventory Clerk").
+- **Permission Granularity**: Over 50+ specific permissions covering Views, Creates, Edits, and Deletes across all modules.
+- **Super Admin Bypass**: Safety overrides to prevent accidental lockouts.
+
+### 👤 User Administration
+- **User Creation**: Admin interface to create new users with email/password and Employee Codes.
+- **Profile Management**: Associates system users with Employee Profiles and Contact Info.
+- **Location Assignment**: Restrict users to specific physical locations (Stores/Warehouses).
+- **Session Management**: Secure login/logout flows with persistent sessions.
+
+### 🛡️ Security & Architecture
+- **Row Level Security (RLS)**: Enforced at the database layer to restrict data access.
+- **Proxy Middleware**: Next.js 16 compatible proxy layer protecting dashboard routes.
+- **Permission Guards**: Client-side components (`PermissionGuard`) to conditionally render UI elements based on user rights.
+
+## 6. Recent Improvements & Fixes 🛠️
+- **Next.js 16 Compatibility**: Migrated deprecated `middleware.ts` to `proxy.ts`.
+- **Deployment Readiness**: 
+  - Fixed build errors in Product/Vendor modules.
+  - Resolved TypeScript strict mode errors in Accounting.
+  - Verified production build (`npm run build`).
+- **Data Integrity**: 
+  - Fixed "ghost user" issues where profiles failed to create.
+  - Implemented transactional logic for critical user creation flows.
+  - Corrected SQL RLS policies for Role Management tables.
 - **Self-Healing Data Cleanup**: 
   - **Expanded Cleanup API**: Server-side logic to reliably purge all `TEST-` and `Mock` data.
   - **Reactivity**: Cleanup invokes before and after diagnostic runs.

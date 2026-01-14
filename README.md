@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bismillah ERP
 
-## Getting Started
+A comprehensive, modern Enterprise Resource Planning (ERP) system built for **Bismillah Oil Agency**. This application manages the complete business lifecycle including Inventory, Procurement, Sales, Point of Sale (POS), Accounting, and detailed Reporting.
 
-First, run the development server:
+## 🚀 Key Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+### 🔐 User & Role Management (RBAC)
+- **Secure Authentication**: Powered by Supabase Auth.
+- **Role-Based Access Control**: Granular permission management (View, Create, Edit, Delete) for every module.
+- **System Admin Override**: Safety mechanisms to prevent admin lockouts.
+- **Location Access**: Limit users to specific stores or warehouses.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 📦 Inventory Management
+- **Multi-Location Support**: Track stock across warehouses and stores.
+- **Stock Movements**: Transfers, Adjustments, and Real-time stock tracking.
+- **Product Catalog**: SKU management, Categories, and Variant pricing.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 🛒 Point of Sale (POS)
+- **Fast Checkout**: Designed for high-volume retail operations.
+- **Walk-in Customers**: Quick handling of diverse customer types.
+- **Daily Closing**: Cash reconciliation and sales summaries.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 🛍️ Procurement & Purchasing
+- **Purchase Orders (PO)**: Workflow from Draft -> Approval -> Receiving.
+- **Goods Receipt Notes (GRN)**: Auto-updates inventory upon receipt.
+- **Vendor Management**: Track vendor balances and contact details.
 
-## Learn More
+### 💼 B2B Sales
+- **Quotations & Estimates**: Convert quotes to orders with one click.
+- **Sales Orders & Deliveries**: Track fulfillment and shipping.
+- **Credit Limits**: Automatic blocking of sales if customer exceeds credit limit.
 
-To learn more about Next.js, take a look at the following resources:
+### 📊 Accounting & Finance
+- **Double-Entry General Ledger**: Automated journal entries for all transactions.
+- **Chart of Accounts**: Customizable financial structure.
+- **Reports**: Trial Balance, Profit & Loss, Balance Sheet, and Transaction Registers.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🛠️ Technology Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Framework**: [Next.js 16](https://nextjs.org/) (App Directory)
+- **Language**: TypeScript
+- **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
+- **UI Components**: [Shadcn UI](https://ui.shadcn.com/) + [Radix UI](https://www.radix-ui.com/)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Icons**: [Lucide React](https://lucide.dev/)
 
-## Deploy on Vercel
+## ⚙️ Installation & Setup
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-repo/bismillah-erp.git
+    cd bismillah-erp
+    ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+3.  **Environment Configuration:**
+    Create a `.env.local` file in the root directory and add your Supabase credentials:
+
+    ```env
+    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+    ```
+    > **Note:** The `SUPABASE_SERVICE_ROLE_KEY` is required for advanced User Management features (creating users, assigning roles).
+
+4.  **Run the development server:**
+    ```bash
+    npm run dev
+    ```
+    Open [http://localhost:3000](http://localhost:3000) to view the app.
+
+## 🚀 Deployment (Vercel)
+
+This application is optimized for deployment on [Vercel](https://vercel.com/):
+
+1.  Push your code to a Git provider (GitHub, GitLab, Bitbucket).
+2.  Import the project into Vercel.
+3.  **Build Settings**: Leave the "Root Directory" empty.
+4.  **Environment Variables**: Add the `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in the Vercel Project Settings.
+5.  Click **Deploy**.
+
+## 🛡️ Security
+
+- **Row Level Security (RLS)**: Database policies ensure data isolation and security.
+- **Middleware Proxy**: Protected routes are guarded against unauthorized access.
+- **Input Validation**: Server Actions validation to prevent improper data entry.
