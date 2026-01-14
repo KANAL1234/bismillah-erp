@@ -109,6 +109,9 @@ export function Sidebar() {
                             <NavLink permission="sales.invoices.read" href="/dashboard/sales/invoices" className={subLinkClass('/dashboard/sales/invoices', false)}>
                                 Sales Invoices
                             </NavLink>
+                            <NavLink permission="sales.customers.read" href="/dashboard/sales/customers" className={subLinkClass('/dashboard/sales/customers', false)}>
+                                Customer List
+                            </NavLink>
                             <NavLink permission="sales.deliveries.read" href="/dashboard/sales/deliveries" className={subLinkClass('/dashboard/sales/deliveries', false)}>
                                 Delivery Notes
                             </NavLink>

@@ -19,7 +19,8 @@ export async function POST() {
         const logs: string[] = []
 
         // --- PRODUCTS & DEPENDENCIES ---
-        const { data: staleProducts } = await adminSupabase.from('products').select('id').or('sku.ilike.TEST-%,name.ilike.TEST-%')
+        const { data: staleProducts } = await adminSupabase.from('products').select('id')
+            .or('sku.ilike.TEST-%,name.ilike.TEST-%,sku.ilike.HEALTH-TEST-%,name.ilike.HEALTH-TEST-%')
 
         if (staleProducts?.length) {
             const ids = staleProducts.map(p => p.id)
@@ -39,7 +40,8 @@ export async function POST() {
         }
 
         // --- CUSTOMERS & VENDORS ---
-        const { data: staleCust } = await adminSupabase.from('customers').select('id').or('name.ilike.TEST-%,customer_code.ilike.TEST-%')
+        const { data: staleCust } = await adminSupabase.from('customers').select('id')
+            .or('name.ilike.TEST-%,customer_code.ilike.TEST-%,name.ilike.HEALTH-TEST-%,customer_code.ilike.HEALTH-TEST-%')
         if (staleCust?.length) {
             const ids = staleCust.map(c => c.id)
             await adminSupabase.from('pos_sales').delete().in('customer_id', ids)
@@ -50,7 +52,8 @@ export async function POST() {
             if (!error) logs.push(`✅ Deleted ${ids.length} stale customers`)
         }
 
-        const { data: staleVendors } = await adminSupabase.from('vendors').select('id').or('name.ilike.TEST-%,vendor_code.ilike.TEST-%')
+        const { data: staleVendors } = await adminSupabase.from('vendors').select('id')
+            .or('name.ilike.TEST-%,vendor_code.ilike.TEST-%,name.ilike.HEALTH-TEST-%,vendor_code.ilike.HEALTH-TEST-%')
         if (staleVendors?.length) {
             const ids = staleVendors.map(v => v.id)
             await adminSupabase.from('vendor_bills').delete().in('vendor_id', ids)
@@ -84,6 +87,16 @@ export async function POST() {
             await adminSupabase.from('journal_entry_lines').delete().in('journal_entry_id', ids)
             const { error } = await adminSupabase.from('journal_entries').delete().in('id', ids)
             if (!error) logs.push(`✅ Deleted ${ids.length} stale journal entries`)
+        }
+
+        // --- ROLES & PERMISSIONS (Optional/Safety) ---
+        const { data: staleRoles } = await adminSupabase.from('roles').select('id').ilike('role_name', 'HEALTH-TEST-%')
+        if (staleRoles?.length) {
+            const ids = staleRoles.map(r => r.id)
+            await adminSupabase.from('role_permissions').delete().in('role_id', ids)
+            await adminSupabase.from('user_roles').delete().in('role_id', ids)
+            await adminSupabase.from('roles').delete().in('id', ids)
+            logs.push(`✅ Deleted ${ids.length} stale test roles`)
         }
 
         console.log('🧹 [API] Cleanup Complete', logs)

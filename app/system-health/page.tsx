@@ -43,6 +43,8 @@ const INITIAL_MODULES: TestModule[] = [
     { id: 'credit', name: '11. Credit Limit Enforcement', description: 'Validate credit checks & balance updates', status: 'pending', logs: [] },
     { id: 'registers', name: '12. Transaction Registers', description: 'Verify data aggregation & reporting RPCs', status: 'pending', logs: [] },
     { id: 'lbac', name: '13. Location Access (LBAC)', description: 'Verify multi-location assignments & security logic', status: 'pending', logs: [] },
+    { id: 'user_mgmt', name: '14. User & Role Management', description: 'Verify role fetching and user integrity', status: 'pending', logs: [] },
+    { id: 'customer_mgmt', name: '15. Customer Management', description: 'Verify full Customer CRUD lifecycle', status: 'pending', logs: [] },
 ]
 
 export default function SystemHealthPage() {
@@ -95,6 +97,8 @@ export default function SystemHealthPage() {
             await runCreditLimitTest()
             await runRegistersTest()
             await runLBACLogicTest()
+            await runUserRoleManagementTest()
+            await runCustomerManagementTest()
         } catch (error) {
             console.error('Global Test Error:', error)
         } finally {
@@ -1342,6 +1346,102 @@ export default function SystemHealthPage() {
                 log(id, 'Cleanup complete', 'success')
             } catch (e) {
                 log(id, 'Cleanup partial/failed', 'warn')
+            }
+        }
+    }
+
+    // --- 14. USER & ROLE MANAGEMENT ---
+    const runUserRoleManagementTest = async () => {
+        const id = 'user_mgmt'
+        setCurrentTestId(id)
+        updateModule(id, { status: 'running' })
+        log(id, 'Starting User & Role Management Validation...')
+
+        try {
+            // 1. Fetch Roles
+            log(id, 'Step 1: Fetching system roles...')
+            const { data: roles, error: rolesErr } = await supabase.from('roles').select('*')
+            if (rolesErr) throw rolesErr
+            log(id, `✅ Found ${roles?.length || 0} roles in system`, 'success')
+
+            const hasAdmin = roles?.some(r => r.role_name === 'Super Admin' || r.role_name === 'Admin')
+            if (!hasAdmin) log(id, '⚠️ No Admin/Super Admin role found by name (check schema)', 'warn')
+            else log(id, '✅ Admin role verified', 'success')
+
+            // 2. Fetch User Profiles
+            log(id, 'Step 2: verifying user profiles...')
+            const { data: profiles, error: profErr } = await supabase.from('user_profiles').select('id, full_name').limit(5)
+            if (profErr) throw profErr
+            log(id, `✅ Successfully read ${profiles?.length || 0} user profiles`, 'success')
+
+            // 3. Test RPC get_all_users_with_roles
+            log(id, 'Step 3: Testing user-role aggregation RPC...')
+            const { data: userRoles, error: rpcErr } = await supabase.rpc('get_all_users_with_roles')
+            if (rpcErr) {
+                log(id, `⚠️ RPC get_all_users_with_roles failed: ${rpcErr.message}`, 'warn')
+            } else {
+                log(id, `✅ Aggregation RPC OK (${userRoles?.length || 0} entries)`, 'success')
+            }
+
+            updateModule(id, { status: 'success' })
+        } catch (error: any) {
+            log(id, `User Mgmt Test Failed: ${error.message}`, 'error')
+            updateModule(id, { status: 'failure' })
+        }
+    }
+
+    // --- 15. CUSTOMER MANAGEMENT ---
+    const runCustomerManagementTest = async () => {
+        const id = 'customer_mgmt'
+        setCurrentTestId(id)
+        updateModule(id, { status: 'running' })
+        log(id, 'Starting Customer Management CRUD Validation...')
+
+        let testCustomerId: string | null = null
+
+        try {
+            // 1. CREATE
+            const custCode = `HEALTH-TEST-CST-${Date.now()}`
+            const custName = `Health Test Customer ${Date.now()}`
+            log(id, `Creating test customer: ${custName}...`)
+
+            const { data: customer, error: createErr } = await supabase.from('customers').insert({
+                name: custName,
+                customer_code: custCode,
+                phone: '0300-1234567',
+                customer_type: 'INDIVIDUAL',
+                is_active: true
+            }).select().single()
+
+            if (createErr) throw createErr
+            testCustomerId = customer.id
+            log(id, '✅ Customer created successfully', 'success')
+
+            // 2. READ
+            log(id, 'Verifying customer existence...')
+            const { data: fetchCust, error: fetchErr } = await supabase.from('customers').select('*').eq('id', testCustomerId).single()
+            if (fetchErr || !fetchCust) throw new Error('Failed to fetch the created customer')
+            log(id, '✅ Read verification OK', 'success')
+
+            // 3. UPDATE
+            log(id, 'Testing update functionality...')
+            const updatedName = `${custName} (Updated)`
+            const { error: updateErr } = await supabase.from('customers').update({ name: updatedName }).eq('id', testCustomerId)
+            if (updateErr) throw updateErr
+
+            const { data: checkUpdate } = await supabase.from('customers').select('name').eq('id', testCustomerId).single()
+            if (checkUpdate?.name !== updatedName) throw new Error('Update failed: Name not changed')
+            log(id, '✅ Update successful', 'success')
+
+            updateModule(id, { status: 'success' })
+        } catch (error: any) {
+            log(id, `Customer Test Failed: ${error.message}`, 'error')
+            updateModule(id, { status: 'failure' })
+        } finally {
+            if (testCustomerId) {
+                log(id, 'Cleaning up test customer...')
+                await supabase.from('customers').delete().eq('id', testCustomerId)
+                log(id, '✅ Cleanup complete', 'success')
             }
         }
     }
