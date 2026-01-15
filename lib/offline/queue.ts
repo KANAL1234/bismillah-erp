@@ -79,33 +79,49 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
       case 'CREATE_POS_SALE': {
         const { items, ...saleData } = item.data
 
-        // 1. Insert the main sale record
-        const { data: sale, error: saleError } = await supabase
+        // 1. Check if sale already exists (Idempotency check)
+        const { data: existingSale } = await supabase
           .from('pos_sales')
-          .insert(saleData)
-          .select()
-          .single()
+          .select('id')
+          .eq('sale_number', saleData.sale_number)
+          .maybeSingle()
 
-        if (saleError) throw saleError
+        let saleId = existingSale?.id
 
-        // 2. Insert sale items
+        if (!saleId) {
+          // Insert the main sale record
+          const { data: sale, error: saleError } = await supabase
+            .from('pos_sales')
+            .insert(saleData)
+            .select()
+            .single()
+
+          if (saleError) throw saleError
+          saleId = sale.id
+        }
+
+        // 2. Insert/Check sale items
         if (items && items.length > 0) {
-          const saleItems = items.map((line: any) => ({
-            sale_id: sale.id,
-            product_id: line.product_id,
-            quantity: line.quantity,
-            unit_price: line.unit_price
-          }))
-
-          const { error: itemsError } = await supabase
+          // Check if items already exist for this sale to avoid duplicates on retry
+          const { data: existingItems } = await supabase
             .from('pos_sale_items')
-            .insert(saleItems)
+            .select('id')
+            .eq('sale_id', saleId)
 
-          if (itemsError) {
-            console.error('Error syncing POS items, but sale was created:', itemsError)
-            // We might want to handle this specially, but for now throwing will mark the whole item as failed
-            // Note: Since sale is already created, retrying might create duplicate sales unless we have idempotency
-            throw itemsError
+          if (!existingItems || existingItems.length === 0) {
+            const saleItems = items.map((line: any) => ({
+              sale_id: saleId,
+              product_id: line.product_id,
+              quantity: line.quantity,
+              unit_price: line.unit_price,
+              discount_percentage: 0
+            }))
+
+            const { error: itemsError } = await supabase
+              .from('pos_sale_items')
+              .insert(saleItems)
+
+            if (itemsError) throw itemsError
           }
         }
 
@@ -191,10 +207,8 @@ export async function processQueue(): Promise<{
   let failed = 0
 
   for (const item of queue) {
-    // Skip items that exceeded max retries
+    // Skip items that exceeded max retries (they are already in a permanent failed state)
     if (item.retryCount >= MAX_RETRIES) {
-      console.error(`❌ Max retries exceeded for ${item.id}, skipping`)
-      failed++
       continue
     }
 

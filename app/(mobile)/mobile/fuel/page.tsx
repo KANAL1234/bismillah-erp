@@ -5,13 +5,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
-import { Fuel, Camera } from 'lucide-react'
+import { Fuel } from 'lucide-react'
 import { addToQueue } from '@/lib/offline/queue'
 import { useOnlineStatus } from '@/lib/offline/sync'
+import { useAuth } from '@/components/providers/auth-provider'
 import { toast } from 'sonner'
 
 export default function FuelPage() {
     const isOnline = useOnlineStatus()
+    const { user } = useAuth()
     const [formData, setFormData] = useState({
         fuel_date: new Date().toISOString().split('T')[0],
         quantity_liters: '',
@@ -24,9 +26,17 @@ export default function FuelPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
 
+        const match = document.cookie.match(/driver_vehicle_id=([^;]+)/)
+        const vehicleId = match ? match[1] : null
+
+        if (!vehicleId || !user?.id) {
+            toast.error('Vehicle or Driver not identified')
+            return
+        }
+
         const fuelData = {
-            p_vehicle_id: 'YOUR_VEHICLE_ID', // Get from user session
-            p_driver_id: 'YOUR_DRIVER_ID',   // Get from user session
+            p_vehicle_id: vehicleId,
+            p_driver_id: user.id,
             p_fuel_date: formData.fuel_date,
             p_fuel_type: 'PETROL',
             p_quantity_liters: parseFloat(formData.quantity_liters),

@@ -2,7 +2,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { processQueue, getQueueStats, resetQueueRetries } from './queue'
+import { processQueue, getQueueStats, resetQueueRetries, clearFailedItems } from './queue'
 import { toast } from 'sonner'
 
 // Global state to prevent redundant listeners and sync storms
@@ -145,7 +145,7 @@ export function useAutoSync(intervalMs: number = 60000) {
     };
   }, [isOnline, intervalMs, updateStats]);
 
-  return { isOnline, isSyncing: isSyncing || isGlobalSyncing, stats, syncNow, resetQueueRetries };
+  return { isOnline, isSyncing: isSyncing || isGlobalSyncing, stats, syncNow, resetQueueRetries, clearFailedItems };
 }
 
 // Background sync (Generic fallback)

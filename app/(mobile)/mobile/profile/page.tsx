@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 
 export default function MobileProfilePage() {
     const { user, roles } = useAuth()
-    const { isOnline, isSyncing, stats, syncNow, resetQueueRetries } = useAutoSync()
+    const { isOnline, isSyncing, stats, syncNow, resetQueueRetries, clearFailedItems } = useAutoSync()
     const router = useRouter()
     const supabase = createClient()
 
@@ -76,26 +76,42 @@ export default function MobileProfilePage() {
                         <span className="font-medium text-rose-600">{stats.failed}</span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={async () => {
-                                await resetQueueRetries()
-                                toast.success('Retries reset. Syncing now...')
-                                syncNow()
-                            }}
-                            disabled={!isOnline || isSyncing || stats.failed === 0}
-                            className="text-xs"
-                        >
-                            Retry Failed
-                        </Button>
-                        <Button
-                            className="bg-blue-600 hover:bg-blue-700 text-xs"
-                            onClick={syncNow}
-                            disabled={!isOnline || isSyncing || stats.total === 0}
-                        >
-                            {isSyncing ? 'Syncing...' : 'Sync Now'}
-                        </Button>
+                    <div className="grid grid-cols-1 gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={async () => {
+                                    await resetQueueRetries()
+                                    toast.success('Retries reset. Syncing now...')
+                                    syncNow()
+                                }}
+                                disabled={!isOnline || isSyncing || stats.failed === 0}
+                                className="text-xs"
+                            >
+                                Retry Failed
+                            </Button>
+                            <Button
+                                className="bg-blue-600 hover:bg-blue-700 text-xs"
+                                onClick={syncNow}
+                                disabled={!isOnline || isSyncing || stats.total === 0}
+                            >
+                                {isSyncing ? 'Syncing...' : 'Sync Now'}
+                            </Button>
+                        </div>
+                        {stats.failed > 0 && (
+                            <Button
+                                variant="ghost"
+                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs w-full mt-2 border border-rose-100"
+                                onClick={async () => {
+                                    if (confirm('Are you sure you want to clear failing items? These changes will be lost.')) {
+                                        await clearFailedItems()
+                                        toast.success('Failed items cleared')
+                                    }
+                                }}
+                            >
+                                Clear All Failed Items
+                            </Button>
+                        )}
                     </div>
                 </div>
             </Card>

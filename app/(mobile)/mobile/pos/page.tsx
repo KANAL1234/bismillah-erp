@@ -109,16 +109,9 @@ export default function MobilePOSPage() {
 
         const saleData = {
             location_id: locationId,
-            items: cart.map(item => ({
-                product_id: item.id,
-                quantity: item.quantity,
-                unit_price: item.selling_price || 0,
-                total_amount: (item.selling_price || 0) * item.quantity
-            })),
             total_amount: calculateTotal(),
             payment_method: 'CASH',
             sale_date: new Date().toISOString(),
-            status: 'posted'
         }
 
         if (isOnline) {
@@ -140,12 +133,17 @@ export default function MobilePOSPage() {
         } else {
             await addToQueue('CREATE_POS_SALE', {
                 ...saleData,
+                items: cart.map(item => ({
+                    product_id: item.id,
+                    quantity: item.quantity,
+                    unit_price: item.selling_price || 0,
+                    total_amount: (item.selling_price || 0) * item.quantity
+                })),
                 sale_number: `POS-OFF-${Date.now()}`,
                 subtotal: saleData.total_amount,
                 tax_amount: 0,
                 discount_amount: 0,
                 amount_paid: saleData.total_amount,
-                amount_due: 0,
                 is_synced: false
             })
             toast.success('Sale saved offline. Syncing soon.')
