@@ -92,15 +92,21 @@ export function useCreatePaymentVoucher() {
                     amount_allocated: alloc.amount_allocated
                 }))
 
-                await supabase.from('payment_allocations').insert(allocations)
+                const { error: allocationsError } = await supabase
+                    .from('payment_allocations')
+                    .insert(allocations)
+
+                if (allocationsError) throw allocationsError
 
                 // Update vendor bills payment status
                 for (const alloc of billAllocations) {
-                    const { data: bill } = await supabase
+                    const { data: bill, error: billFetchError } = await supabase
                         .from('vendor_bills')
                         .select('total_amount, amount_due, amount_paid, due_date')
                         .eq('id', alloc.bill_id)
                         .single()
+
+                    if (billFetchError) throw billFetchError
 
                     if (bill) {
                         const totalAmount = Number(bill.total_amount || 0)
@@ -121,7 +127,7 @@ export function useCreatePaymentVoucher() {
                             if (paidOn > due) paymentStatus = 'overdue'
                         }
 
-                        await supabase
+                        const { error: billUpdateError } = await supabase
                             .from('vendor_bills')
                             .update({
                                 amount_due: newAmountDue,
@@ -129,6 +135,8 @@ export function useCreatePaymentVoucher() {
                                 payment_status: paymentStatus
                             })
                             .eq('id', alloc.bill_id)
+
+                        if (billUpdateError) throw billUpdateError
                     }
                 }
             }
