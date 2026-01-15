@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -45,15 +45,16 @@ import {
 import { toast } from 'sonner'
 import { PurchaseOrder } from '@/lib/types/database'
 
-export default function PurchaseOrderDetailPage({ params }: { params: { id: string } }) {
+export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = use(params)
     const router = useRouter()
-    const { data: po, isLoading } = usePurchaseOrder(params.id)
+    const { data: po, isLoading } = usePurchaseOrder(id)
     const updateStatus = useUpdatePOStatus()
     const deletePO = useDeletePurchaseOrder()
 
     const handleStatusUpdate = async (newStatus: PurchaseOrder['status']) => {
         try {
-            await updateStatus.mutateAsync({ id: params.id, status: newStatus })
+            await updateStatus.mutateAsync({ id, status: newStatus })
             toast.success(`Purchase Order ${newStatus.toLowerCase()}`)
         } catch (error) {
             // Error handled by mutation
@@ -62,7 +63,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
 
     const handleDelete = async () => {
         try {
-            await deletePO.mutateAsync(params.id)
+            await deletePO.mutateAsync(id)
             router.push('/dashboard/procurement/purchase-orders')
             toast.success('Purchase Order deleted')
         } catch (error) {
