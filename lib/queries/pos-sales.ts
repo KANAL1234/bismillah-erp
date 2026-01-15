@@ -10,6 +10,11 @@ export function usePOSSales(locationId?: string, startDate?: string, endDate?: s
         queryKey: ['pos-sales', locationId, startDate, endDate],
         queryFn: async () => {
             console.log('🔍 Fetching POS Sales with filters:', { locationId, startDate, endDate })
+            const endDateExclusive = endDate
+                ? new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000)
+                    .toISOString()
+                    .split('T')[0]
+                : undefined
 
             let query = supabase
                 .from('pos_sales')
@@ -37,7 +42,9 @@ export function usePOSSales(locationId?: string, startDate?: string, endDate?: s
 
             if (endDate) {
                 console.log('📅 End date filter:', endDate)
-                query = query.lte('sale_date', endDate)
+                if (endDateExclusive) {
+                    query = query.lt('sale_date', endDateExclusive)
+                }
             }
 
             const { data, error } = await query
@@ -254,12 +261,17 @@ export function useSalesSummary(locationId: string, startDate: string, endDate: 
     return useQuery({
         queryKey: ['sales-summary', locationId, startDate, endDate],
         queryFn: async () => {
+            const endDateExclusive = endDate
+                ? new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000)
+                    .toISOString()
+                    .split('T')[0]
+                : undefined
             const { data, error } = await supabase
                 .from('pos_sales')
                 .select('total_amount, amount_paid, payment_method, created_at')
                 .eq('location_id', locationId)
                 .gte('sale_date', startDate)
-                .lte('sale_date', endDate)
+                .lt('sale_date', endDateExclusive || endDate)
 
             if (error) throw error
 
