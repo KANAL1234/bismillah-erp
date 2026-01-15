@@ -263,7 +263,7 @@ export function useCreateGoodsReceipt() {
                         tax_amount: taxAmount,
                         total_amount: totalAmount,
                         amount_due: totalAmount,
-                        status: 'approved', // Auto-approve GRN-based bills
+                        status: 'goods_received', // Goods received from GRN
                         payment_status: 'unpaid',
                         created_by: user.id,
                         approved_by: user.id

@@ -701,7 +701,7 @@ export type VendorBill = {
     amount_paid: number
     amount_due: number
     payment_status: 'unpaid' | 'partial' | 'paid' | 'overdue'
-    status: 'draft' | 'approved' | 'posted' | 'cancelled'
+    status: 'draft' | 'approved' | 'posted' | 'goods_received' | 'cancelled'
     journal_entry_id: string | null
     notes: string | null
     created_by: string | null
