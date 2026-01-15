@@ -49,10 +49,10 @@ type GRNItem = {
 export default function NewGoodsReceiptPage() {
     const router = useRouter()
     const searchParams = useSearchParams()
-    const poId = searchParams.get('po')
+    const poId = searchParams.get('po') || searchParams.get('po_id')
 
     // Queries
-    const { data: po } = usePurchaseOrder(poId || '')
+    const { data: po, isLoading: poLoading } = usePurchaseOrder(poId || '')
     const { data: vendors } = useVendors()
     const { data: products } = useProducts()
     const { data: locations } = useLocations()
@@ -61,6 +61,14 @@ export default function NewGoodsReceiptPage() {
 
     // Filter locations by LBAC
     const allowedLocations = locations?.filter(loc => allowedLocationIds.includes(loc.id))
+    const poLocation = po?.locations || locations?.find(loc => loc.id === po?.location_id)
+    const locationOptions = poLocation && !allowedLocations?.some(loc => loc.id === poLocation.id)
+        ? [...(allowedLocations || []), poLocation]
+        : allowedLocations
+    const poVendor = vendors?.find(v => v.id === po?.vendor_id) || po?.vendors
+    const vendorOptions = poVendor && !vendors?.some(v => v.id === poVendor.id)
+        ? [...(vendors || []), poVendor]
+        : vendors
 
     // State
     const [vendorId, setVendorId] = useState('')
@@ -74,19 +82,27 @@ export default function NewGoodsReceiptPage() {
     // Load PO data if available
     useEffect(() => {
         if (po) {
-            setVendorId(po.vendor_id)
-            setLocationId(po.location_id)
+            setVendorId(prev => prev || po.vendor_id || po.vendors?.id || '')
+            setLocationId(prev => prev || po.location_id || '')
+            if (!receiptDate) {
+                setReceiptDate(new Date().toISOString().split('T')[0])
+            }
 
-            const newItems = po.purchase_order_items.map((item: any) => ({
-                id: Math.random().toString(),
-                po_item_id: item.id,
-                product_id: item.product_id,
-                product_name: item.products.name,
-                product_sku: item.products.sku,
-                quantity_received: item.quantity - item.quantity_received, // Default to remaining qty
-                unit_cost: item.unit_price,
-                line_total: (item.quantity - item.quantity_received) * item.unit_price
-            })).filter((item: GRNItem) => item.quantity_received > 0) // Only include items not fully received
+            const newItems = (po.purchase_order_items || []).map((item: any) => {
+                const orderedQty = Number(item.quantity || 0)
+                const receivedQty = Number(item.quantity_received || 0)
+                const remainingQty = Math.max(0, orderedQty - receivedQty)
+                return {
+                    id: Math.random().toString(),
+                    po_item_id: item.id,
+                    product_id: item.product_id,
+                    product_name: item.products?.name || 'Item',
+                    product_sku: item.products?.sku || '-',
+                    quantity_received: remainingQty,
+                    unit_cost: Number(item.unit_price || 0),
+                    line_total: remainingQty * Number(item.unit_price || 0)
+                }
+            }).filter((item: GRNItem) => item.quantity_received > 0)
 
             setItems(newItems)
         }
@@ -135,7 +151,10 @@ export default function NewGoodsReceiptPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
 
-        if (!vendorId || !locationId) {
+        const effectiveVendorId = vendorId || po?.vendor_id || po?.vendors?.id || ''
+        const effectiveLocationId = locationId || po?.location_id || ''
+
+        if (!effectiveVendorId || !effectiveLocationId) {
             toast.error('Error', { description: 'Please select vendor and location' })
             return
         }
@@ -148,8 +167,8 @@ export default function NewGoodsReceiptPage() {
         try {
             await createGRN.mutateAsync({
                 poId: poId || undefined,
-                vendorId,
-                locationId,
+                vendorId: effectiveVendorId,
+                locationId: effectiveLocationId,
                 receiptDate,
                 vendorInvoiceNumber,
                 vendorInvoiceDate,
@@ -172,6 +191,10 @@ export default function NewGoodsReceiptPage() {
     }
 
     const totalAmount = items.reduce((sum, item) => sum + item.line_total, 0)
+
+    if (poId && poLoading) {
+        return <div className="flex items-center justify-center h-64">Loading purchase order...</div>
+    }
 
     return (
         <div className="px-4 sm:px-0">
@@ -197,29 +220,37 @@ export default function NewGoodsReceiptPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Vendor</Label>
-                                <Select value={vendorId} onValueChange={setVendorId} disabled={!!poId}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select vendor" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {vendors?.map(v => (
-                                            <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                {poId ? (
+                                    <Input value={poVendor?.name || (po?.vendor_id ? `Vendor ${po.vendor_id}` : 'Unknown vendor')} disabled />
+                                ) : (
+                                    <Select value={vendorId} onValueChange={setVendorId}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select vendor" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {vendorOptions?.map(v => (
+                                                <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
                             </div>
                             <div className="space-y-2">
                                 <Label>Location</Label>
-                                <Select value={locationId} onValueChange={setLocationId} disabled={!!poId}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select location" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {allowedLocations?.map(l => (
-                                            <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                {poId ? (
+                                    <Input value={poLocation ? `${poLocation.name}` : (po?.location_id ? `Location ${po.location_id}` : 'Unknown location')} disabled />
+                                ) : (
+                                    <Select value={locationId} onValueChange={setLocationId}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select location" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {locationOptions?.map(l => (
+                                                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                )}
                             </div>
                         </div>
 

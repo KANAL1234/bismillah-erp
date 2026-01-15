@@ -101,7 +101,7 @@ export async function POST() {
 
         // --- HR & PAYROLL ---
         const { data: staleEmp } = await adminSupabase.from('employees').select('id')
-            .or('full_name.ilike.TEST-%,employee_code.ilike.TEST-%,full_name.ilike.HEALTH-TEST-%,employee_code.ilike.HEALTH-TEST-%')
+            .or('full_name.ilike.TEST-%,employee_code.ilike.TEST-%,full_name.ilike.HEALTH-TEST-%,employee_code.ilike.HEALTH-TEST-%,employee_code.ilike.HLT-DRV-%')
         if (staleEmp?.length) {
             const ids = staleEmp.map(e => e.id)
             await adminSupabase.from('attendance').delete().in('employee_id', ids)
@@ -115,6 +115,16 @@ export async function POST() {
 
             const { error } = await adminSupabase.from('employees').delete().in('id', ids)
             if (!error) logs.push(`✅ Deleted ${ids.length} stale employees`)
+        }
+
+        // --- PAYROLL PERIODS ---
+        const { data: stalePeriods } = await adminSupabase.from('payroll_periods').select('id')
+            .ilike('period_name', 'HEALTH-TEST-%')
+        if (stalePeriods?.length) {
+            const ids = stalePeriods.map(p => p.id)
+            await adminSupabase.from('payslips').delete().in('payroll_period_id', ids)
+            const { error } = await adminSupabase.from('payroll_periods').delete().in('id', ids)
+            if (!error) logs.push(`✅ Deleted ${ids.length} stale payroll periods`)
         }
 
         // --- FLEET MANAGEMENT ---

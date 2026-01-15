@@ -2,6 +2,9 @@
 
 import { useState } from 'react'
 import { usePurchaseOrders, useUpdatePOStatus, useDeletePurchaseOrder } from '@/lib/queries/purchase-orders'
+import { useGoodsReceipts } from '@/lib/queries/goods-receipts'
+import { createClient } from '@/lib/supabase/client'
+import { createPurchaseOrderPDF } from '@/lib/utils/export'
 import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,7 +19,7 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
-import { Plus, Check, X, Trash2, Send, Eye, Package } from 'lucide-react'
+import { Plus, Check, X, Trash2, Send, Eye, Package, Download, Printer } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import {
@@ -40,21 +43,136 @@ export default function PurchaseOrdersPage() {
 
 function PurchaseOrdersContent() {
     const { data: allOrders, isLoading } = usePurchaseOrders()
+    const { data: grns } = useGoodsReceipts()
     const updateStatus = useUpdatePOStatus()
     const deletePO = useDeletePurchaseOrder()
     const [orderToDelete, setOrderToDelete] = useState<{ id: string, number: string } | null>(null)
+    const supabase = createClient()
 
-    const getStatusColor = (status: string) => {
-        const colors = {
-            DRAFT: 'secondary',
-            PENDING_APPROVAL: 'default',
-            APPROVED: 'default',
-            SENT_TO_VENDOR: 'default',
-            PARTIALLY_RECEIVED: 'default',
-            RECEIVED: 'default',
-            CANCELLED: 'destructive',
+    const formatDate = (date: string | null) => {
+        if (!date) return '-'
+        return format(new Date(date), 'MMM dd, yyyy')
+    }
+
+    const handleDownload = async (orderId: string) => {
+        const { data: order, error } = await supabase
+            .from('purchase_orders')
+            .select(`
+                *,
+                vendors(id, vendor_code, name),
+                locations(id, code, name),
+                purchase_order_items!fk_po_items_po(
+                    *,
+                    products!fk_po_items_product(id, sku, name)
+                )
+            `)
+            .eq('id', orderId)
+            .single()
+
+        if (error || !order) {
+            toast.error('Failed to download purchase order PDF', {
+                description: error?.message || 'Purchase order not found',
+            })
+            return
         }
-        return colors[status as keyof typeof colors] || 'secondary'
+
+        createPurchaseOrderPDF({
+            po_number: order.po_number,
+            po_date: formatDate(order.po_date),
+            expected_delivery_date: order.expected_delivery_date ? formatDate(order.expected_delivery_date) : null,
+            status: order.status,
+            vendor_name: order.vendors?.name || 'Vendor',
+            vendor_code: order.vendors?.vendor_code || null,
+            location_name: order.locations ? `${order.locations.name} (${order.locations.code})` : null,
+            items: (order.purchase_order_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                line_total: item.line_total || item.quantity * item.unit_price,
+            })),
+            subtotal: order.subtotal || 0,
+            tax_amount: order.tax_amount || 0,
+            discount_amount: order.discount_amount || 0,
+            total_amount: order.total_amount || 0,
+            notes: order.notes || undefined,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        }).save(`PurchaseOrder_${order.po_number}.pdf`)
+    }
+
+    const handlePrint = async (orderId: string) => {
+        const { data: order, error } = await supabase
+            .from('purchase_orders')
+            .select(`
+                *,
+                vendors(id, vendor_code, name),
+                locations(id, code, name),
+                purchase_order_items!fk_po_items_po(
+                    *,
+                    products!fk_po_items_product(id, sku, name)
+                )
+            `)
+            .eq('id', orderId)
+            .single()
+
+        if (error || !order) {
+            toast.error('Failed to print purchase order', {
+                description: error?.message || 'Purchase order not found',
+            })
+            return
+        }
+
+        const doc = createPurchaseOrderPDF({
+            po_number: order.po_number,
+            po_date: formatDate(order.po_date),
+            expected_delivery_date: order.expected_delivery_date ? formatDate(order.expected_delivery_date) : null,
+            status: order.status,
+            vendor_name: order.vendors?.name || 'Vendor',
+            vendor_code: order.vendors?.vendor_code || null,
+            location_name: order.locations ? `${order.locations.name} (${order.locations.code})` : null,
+            items: (order.purchase_order_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                line_total: item.line_total || item.quantity * item.unit_price,
+            })),
+            subtotal: order.subtotal || 0,
+            tax_amount: order.tax_amount || 0,
+            discount_amount: order.discount_amount || 0,
+            total_amount: order.total_amount || 0,
+            notes: order.notes || undefined,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+
+        doc.autoPrint()
+        const url = doc.output('bloburl')
+        window.open(url, '_blank', 'noopener,noreferrer')
+    }
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'DRAFT':
+                return <Badge variant="secondary">Draft</Badge>
+            case 'PENDING_APPROVAL':
+                return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
+            case 'APPROVED':
+                return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>
+            case 'SENT_TO_VENDOR':
+                return <Badge className="bg-purple-500 hover:bg-purple-600">Sent</Badge>
+            case 'PARTIALLY_RECEIVED':
+                return <Badge className="bg-indigo-500 hover:bg-indigo-600">Partial</Badge>
+            case 'RECEIVED':
+                return <Badge className="bg-green-500 hover:bg-green-600">Received</Badge>
+            case 'CANCELLED':
+                return <Badge variant="destructive">Cancelled</Badge>
+            default:
+                return <Badge variant="outline">{status}</Badge>
+        }
     }
 
     const handleStatusChange = async (id: string, newStatus: string) => {
@@ -89,6 +207,8 @@ function PurchaseOrdersContent() {
     if (isLoading) {
         return <div className="flex items-center justify-center h-64">Loading...</div>
     }
+
+    const grnOrderIds = new Set((grns || []).map((grn: any) => grn.po_id).filter(Boolean))
 
     const draftOrders = allOrders?.filter(o => o.status === 'DRAFT')
     const pendingOrders = allOrders?.filter(o => o.status === 'PENDING_APPROVAL')
@@ -170,42 +290,42 @@ function PurchaseOrdersContent() {
                                                             Rs. {order.total_amount.toLocaleString()}
                                                         </TableCell>
                                                         <TableCell>
-                                                            <Badge variant={getStatusColor(order.status) as any}>
-                                                                {order.status.replace('_', ' ')}
-                                                            </Badge>
+                                                            {getStatusBadge(order.status)}
                                                         </TableCell>
                                                         <TableCell className="text-right">
-                                                            <div className="flex justify-end gap-2">
-                                                                <Link href={`/dashboard/purchases/orders/${order.id}`}>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="icon"
-                                                                        className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                                        title="View Details"
-                                                                    >
-                                                                        <Eye className="h-4 w-4" />
-                                                                    </Button>
-                                                                </Link>
+                                                            <div className="flex flex-wrap justify-end gap-2">
+                                                                <Button asChild variant="outline" size="sm">
+                                                                    <Link href={`/dashboard/purchases/orders/${order.id}`}>
+                                                                        <Eye className="mr-2 h-4 w-4" />
+                                                                        View
+                                                                    </Link>
+                                                                </Button>
+                                                                <Button variant="outline" size="sm" onClick={() => handlePrint(order.id)}>
+                                                                    <Printer className="mr-2 h-4 w-4" />
+                                                                    Print
+                                                                </Button>
+                                                                <Button variant="outline" size="sm" onClick={() => handleDownload(order.id)}>
+                                                                    <Download className="mr-2 h-4 w-4" />
+                                                                    PDF
+                                                                </Button>
 
                                                                 {order.status === 'DRAFT' && (
                                                                     <>
                                                                         <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                                            variant="outline"
+                                                                            size="sm"
                                                                             onClick={() => handleStatusChange(order.id, 'PENDING_APPROVAL')}
-                                                                            title="Submit for Approval"
                                                                         >
-                                                                            <Send className="h-4 w-4" />
+                                                                            <Send className="mr-2 h-4 w-4" />
+                                                                            Submit
                                                                         </Button>
                                                                         <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                            variant="destructive"
+                                                                            size="sm"
                                                                             onClick={() => setOrderToDelete({ id: order.id, number: order.po_number })}
-                                                                            title="Delete Order"
                                                                         >
-                                                                            <Trash2 className="h-4 w-4" />
+                                                                            <Trash2 className="mr-2 h-4 w-4" />
+                                                                            Delete
                                                                         </Button>
                                                                     </>
                                                                 )}
@@ -213,51 +333,57 @@ function PurchaseOrdersContent() {
                                                                 {order.status === 'PENDING_APPROVAL' && (
                                                                     <>
                                                                         <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                            variant="outline"
+                                                                            size="sm"
                                                                             onClick={() => handleStatusChange(order.id, 'APPROVED')}
-                                                                            title="Approve Order"
                                                                         >
-                                                                            <Check className="h-4 w-4" />
+                                                                            <Check className="mr-2 h-4 w-4" />
+                                                                            Approve
                                                                         </Button>
                                                                         <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                            variant="destructive"
+                                                                            size="sm"
                                                                             onClick={() => handleStatusChange(order.id, 'CANCELLED')}
-                                                                            title="Cancel Order"
                                                                         >
-                                                                            <X className="h-4 w-4" />
+                                                                            <X className="mr-2 h-4 w-4" />
+                                                                            Cancel
                                                                         </Button>
                                                                     </>
                                                                 )}
 
-                                                                {(order.status === 'APPROVED' || order.status === 'SENT_TO_VENDOR') && (
-                                                                    <>
-                                                                        {order.status === 'APPROVED' && (
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                                                                onClick={() => handleStatusChange(order.id, 'SENT_TO_VENDOR')}
-                                                                                title="Mark as Sent to Vendor"
-                                                                            >
-                                                                                <Send className="h-4 w-4" />
-                                                                            </Button>
-                                                                        )}
-                                                                        <Link href={`/dashboard/purchases/grn/new?po=${order.id}`}>
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                                                                                title="Receive Goods (GRN)"
-                                                                            >
-                                                                                <Package className="h-4 w-4" />
-                                                                            </Button>
-                                                                        </Link>
-                                                                    </>
+                                                                {order.status === 'APPROVED' && (
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        onClick={() => handleStatusChange(order.id, 'SENT_TO_VENDOR')}
+                                                                    >
+                                                                        <Send className="mr-2 h-4 w-4" />
+                                                                        Sent
+                                                                    </Button>
                                                                 )}
+                                                                {(() => {
+                                                                    const canReceive = ['APPROVED', 'SENT_TO_VENDOR', 'PARTIALLY_RECEIVED'].includes(order.status)
+                                                                    const isDisabled = !canReceive || grnOrderIds.has(order.id)
+                                                                    const title = grnOrderIds.has(order.id)
+                                                                        ? 'GRN already created for this order'
+                                                                        : !canReceive
+                                                                            ? 'Receive is available after approval'
+                                                                            : undefined
+
+                                                                    return isDisabled ? (
+                                                                        <Button variant="outline" size="sm" disabled title={title}>
+                                                                            <Package className="mr-2 h-4 w-4" />
+                                                                            Receive
+                                                                        </Button>
+                                                                    ) : (
+                                                                        <Button asChild variant="outline" size="sm">
+                                                                            <Link href={`/dashboard/purchases/grn/new?po=${order.id}`}>
+                                                                                <Package className="mr-2 h-4 w-4" />
+                                                                                Receive
+                                                                            </Link>
+                                                                        </Button>
+                                                                    )
+                                                                })()}
                                                             </div>
                                                         </TableCell>
                                                     </TableRow>

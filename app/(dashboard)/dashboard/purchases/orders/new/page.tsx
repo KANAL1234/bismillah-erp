@@ -6,6 +6,7 @@ import { useVendors } from '@/lib/queries/vendors'
 import { useProducts } from '@/lib/queries/products'
 import { useLocations } from '@/lib/queries/locations'
 import { useCreatePurchaseOrder } from '@/lib/queries/purchase-orders'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,6 +45,7 @@ type POItem = {
 
 export default function NewPurchaseOrderPage() {
     const router = useRouter()
+    const queryClient = useQueryClient()
 
     const [vendorId, setVendorId] = useState('')
     const [locationId, setLocationId] = useState('')
@@ -137,7 +139,11 @@ export default function NewPurchaseOrderPage() {
                 description: 'Purchase order created successfully!',
             })
 
+            await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+            await queryClient.refetchQueries({ queryKey: ['purchase-orders'] })
+
             router.push('/dashboard/purchases/orders')
+            router.refresh()
         } catch (error: any) {
             toast.error('Error', {
                 description: error.message,

@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation'
 import { usePurchaseOrder, useUpdatePOStatus } from '@/lib/queries/purchase-orders'
+import { createPurchaseOrderPDF } from '@/lib/utils/export'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,7 +16,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, X, Send, Printer } from 'lucide-react'
+import { ArrowLeft, Check, X, Send, Printer, Download } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 
@@ -24,6 +25,27 @@ export default function PurchaseOrderDetailPage() {
     const id = params.id as string
     const { data: order, isLoading } = usePurchaseOrder(id)
     const updateStatus = useUpdatePOStatus()
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'DRAFT':
+                return <Badge variant="secondary">Draft</Badge>
+            case 'PENDING_APPROVAL':
+                return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
+            case 'APPROVED':
+                return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>
+            case 'SENT_TO_VENDOR':
+                return <Badge className="bg-purple-500 hover:bg-purple-600">Sent</Badge>
+            case 'PARTIALLY_RECEIVED':
+                return <Badge className="bg-indigo-500 hover:bg-indigo-600">Partial</Badge>
+            case 'RECEIVED':
+                return <Badge className="bg-green-500 hover:bg-green-600">Received</Badge>
+            case 'CANCELLED':
+                return <Badge variant="destructive">Cancelled</Badge>
+            default:
+                return <Badge variant="outline">{status}</Badge>
+        }
+    }
 
     const handleStatusChange = async (newStatus: string) => {
         try {
@@ -38,8 +60,43 @@ export default function PurchaseOrderDetailPage() {
         }
     }
 
+    const buildPDF = () => {
+        return createPurchaseOrderPDF({
+            po_number: order.po_number,
+            po_date: format(new Date(order.po_date), 'MMM dd, yyyy'),
+            expected_delivery_date: order.expected_delivery_date ? format(new Date(order.expected_delivery_date), 'MMM dd, yyyy') : null,
+            status: order.status,
+            vendor_name: order.vendors?.name || 'Vendor',
+            vendor_code: order.vendors?.vendor_code || null,
+            location_name: order.locations ? `${order.locations.name} (${order.locations.code})` : null,
+            items: (order.purchase_order_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                line_total: item.line_total || item.quantity * item.unit_price,
+            })),
+            subtotal: order.subtotal || 0,
+            tax_amount: order.tax_amount || 0,
+            discount_amount: order.discount_amount || 0,
+            total_amount: order.total_amount || 0,
+            notes: order.notes || undefined,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+    }
+
     const handlePrint = () => {
-        window.print()
+        const doc = buildPDF()
+        doc.autoPrint()
+        const url = doc.output('bloburl')
+        window.open(url, '_blank', 'noopener,noreferrer')
+    }
+
+    const handleDownload = () => {
+        const doc = buildPDF()
+        doc.save(`PurchaseOrder_${order.po_number}.pdf`)
     }
 
     if (isLoading) {
@@ -63,14 +120,16 @@ export default function PurchaseOrderDetailPage() {
                     <h2 className="text-3xl font-bold text-gray-900 ml-4">
                         {order.po_number}
                     </h2>
-                    <Badge className="ml-4" variant="outline">
-                        {order.status.replace('_', ' ')}
-                    </Badge>
+                    <span className="ml-4">{getStatusBadge(order.status)}</span>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={handlePrint}>
                         <Printer className="mr-2 h-4 w-4" />
                         Print
+                    </Button>
+                    <Button variant="outline" onClick={handleDownload}>
+                        <Download className="mr-2 h-4 w-4" />
+                        PDF
                     </Button>
 
                     {order.status === 'DRAFT' && (
@@ -124,10 +183,10 @@ export default function PurchaseOrderDetailPage() {
                             <CardTitle>Vendor Details</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-lg font-semibold">{order.vendors.name}</div>
-                            <div className="text-gray-500">{order.vendors.address}</div>
-                            <div className="text-gray-500">{order.vendors.phone}</div>
-                            <div className="text-gray-500">{order.vendors.email}</div>
+                            <div className="text-lg font-semibold">{order.vendors?.name || '-'}</div>
+                            <div className="text-gray-500">{order.vendors?.address || '-'}</div>
+                            <div className="text-gray-500">{order.vendors?.phone || '-'}</div>
+                            <div className="text-gray-500">{order.vendors?.email || '-'}</div>
                         </CardContent>
                     </Card>
 
@@ -148,7 +207,7 @@ export default function PurchaseOrderDetailPage() {
                             </div>
                             <div className="flex justify-between py-1">
                                 <span className="text-gray-500">Location:</span>
-                                <span className="font-medium">{order.locations.name} ({order.locations.code})</span>
+                                <span className="font-medium">{order.locations ? `${order.locations.name} (${order.locations.code})` : '-'}</span>
                             </div>
                             <div className="flex justify-between py-1">
                                 <span className="text-gray-500">Requested By:</span>
@@ -180,10 +239,17 @@ export default function PurchaseOrderDetailPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {order.purchase_order_items.map((item: any) => (
+                            {(order.purchase_order_items || []).length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                                        No items found for this purchase order.
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                (order.purchase_order_items || []).map((item: any) => (
                                     <TableRow key={item.id}>
-                                        <TableCell className="font-medium">{item.products.name}</TableCell>
-                                        <TableCell>{item.products.sku}</TableCell>
+                                        <TableCell className="font-medium">{item.products?.name || 'Item'}</TableCell>
+                                        <TableCell>{item.products?.sku || '-'}</TableCell>
                                         <TableCell className="text-right">{item.quantity}</TableCell>
                                         <TableCell className="text-right">
                                             <span className={item.quantity_received < item.quantity ? 'text-orange-500' : 'text-green-600'}>
@@ -193,7 +259,8 @@ export default function PurchaseOrderDetailPage() {
                                         <TableCell className="text-right">Rs. {item.unit_price.toLocaleString()}</TableCell>
                                         <TableCell className="text-right">Rs. {item.line_total.toLocaleString()}</TableCell>
                                     </TableRow>
-                                ))}
+                                ))
+                            )}
                             </TableBody>
                         </Table>
                     </CardContent>

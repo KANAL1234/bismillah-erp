@@ -661,6 +661,239 @@ export function createSalesOrderPDF(order: SalesOrderPDFData, companyInfo?: {
 }
 
 // ============================================================================
+// PURCHASE ORDER PDF GENERATION
+// ============================================================================
+
+export interface PurchaseOrderPDFData {
+    po_number: string
+    po_date: string
+    expected_delivery_date?: string | null
+    status?: string | null
+    vendor_name: string
+    vendor_code?: string | null
+    location_name?: string | null
+    items: {
+        description: string
+        quantity: number
+        unit_price: number
+        line_total: number
+    }[]
+    subtotal: number
+    tax_amount: number
+    discount_amount: number
+    total_amount: number
+    notes?: string | null
+}
+
+export function createPurchaseOrderPDF(order: PurchaseOrderPDFData, companyInfo?: {
+    name: string
+    address?: string
+    phone?: string
+    email?: string
+}) {
+    const doc = new jsPDF()
+
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyInfo?.name || 'Company Name', 14, 20)
+
+    if (companyInfo?.address) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(companyInfo.address, 14, 27)
+    }
+    if (companyInfo?.phone) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Phone: ${companyInfo.phone}`, 14, 32)
+    }
+
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.text('PURCHASE ORDER', 130, 20)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`PO #: ${order.po_number}`, 140, 30)
+    doc.text(`Date: ${order.po_date}`, 140, 36)
+    if (order.expected_delivery_date) {
+        doc.text(`Expected: ${order.expected_delivery_date}`, 140, 42)
+    }
+    if (order.status) {
+        doc.text(`Status: ${order.status}`, 140, 48)
+    }
+
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Vendor:', 14, 50)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(order.vendor_name, 14, 57)
+    if (order.vendor_code) {
+        doc.text(`Vendor Code: ${order.vendor_code}`, 14, 63)
+    }
+    if (order.location_name) {
+        doc.text(`Receiving Location: ${order.location_name}`, 14, 69)
+    }
+
+    autoTable(doc, {
+        startY: 80,
+        head: [['Description', 'Qty', 'Unit Price', 'Line Total']],
+        body: order.items.map((item) => [
+            item.description,
+            item.quantity,
+            `Rs. ${item.unit_price.toLocaleString()}`,
+            `Rs. ${item.line_total.toLocaleString()}`,
+        ]),
+        theme: 'grid',
+        headStyles: {
+            fillColor: [71, 85, 105],
+            textColor: 255,
+            fontStyle: 'bold',
+        },
+        columnStyles: {
+            0: { cellWidth: 90 },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 35, halign: 'right' },
+            3: { cellWidth: 35, halign: 'right' },
+        },
+    })
+
+    const finalY = (doc as any).lastAutoTable.finalY + 10
+    doc.setFontSize(10)
+    doc.text('Subtotal:', 140, finalY)
+    doc.text(`Rs. ${order.subtotal.toLocaleString()}`, 180, finalY, { align: 'right' })
+
+    doc.text('Tax:', 140, finalY + 6)
+    doc.text(`Rs. ${order.tax_amount.toLocaleString()}`, 180, finalY + 6, { align: 'right' })
+
+    doc.text('Discount:', 140, finalY + 12)
+    doc.text(`Rs. ${order.discount_amount.toLocaleString()}`, 180, finalY + 12, { align: 'right' })
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.text('Total:', 140, finalY + 20)
+    doc.text(`Rs. ${order.total_amount.toLocaleString()}`, 180, finalY + 20, { align: 'right' })
+
+    if (order.notes) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.text('Notes:', 14, finalY + 30)
+        doc.text(order.notes, 14, finalY + 36, { maxWidth: 180 })
+    }
+
+    return doc
+}
+
+// ============================================================================
+// GOODS RECEIPT (GRN) PDF GENERATION
+// ============================================================================
+
+export interface GoodsReceiptPDFData {
+    grn_number: string
+    receipt_date: string
+    status?: string | null
+    po_number?: string | null
+    vendor_name: string
+    location_name?: string | null
+    items: {
+        description: string
+        quantity_received: number
+        unit_cost: number
+        line_total: number
+    }[]
+    total_amount: number
+    notes?: string | null
+}
+
+export function createGoodsReceiptPDF(grn: GoodsReceiptPDFData, companyInfo?: {
+    name: string
+    address?: string
+    phone?: string
+    email?: string
+}) {
+    const doc = new jsPDF()
+
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyInfo?.name || 'Company Name', 14, 20)
+
+    if (companyInfo?.address) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(companyInfo.address, 14, 27)
+    }
+    if (companyInfo?.phone) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Phone: ${companyInfo.phone}`, 14, 32)
+    }
+
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.text('GOODS RECEIPT', 130, 20)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`GRN #: ${grn.grn_number}`, 140, 30)
+    doc.text(`Date: ${grn.receipt_date}`, 140, 36)
+    if (grn.po_number) {
+        doc.text(`PO #: ${grn.po_number}`, 140, 42)
+    }
+    if (grn.status) {
+        doc.text(`Status: ${grn.status}`, 140, 48)
+    }
+
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Vendor:', 14, 50)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(grn.vendor_name, 14, 57)
+    if (grn.location_name) {
+        doc.text(`Location: ${grn.location_name}`, 14, 63)
+    }
+
+    autoTable(doc, {
+        startY: 75,
+        head: [['Description', 'Qty', 'Unit Cost', 'Line Total']],
+        body: grn.items.map((item) => [
+            item.description,
+            item.quantity_received,
+            `Rs. ${item.unit_cost.toLocaleString()}`,
+            `Rs. ${item.line_total.toLocaleString()}`,
+        ]),
+        theme: 'grid',
+        headStyles: {
+            fillColor: [71, 85, 105],
+            textColor: 255,
+            fontStyle: 'bold',
+        },
+        columnStyles: {
+            0: { cellWidth: 90 },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 35, halign: 'right' },
+            3: { cellWidth: 35, halign: 'right' },
+        },
+    })
+
+    const finalY = (doc as any).lastAutoTable.finalY + 10
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Total:', 140, finalY)
+    doc.text(`Rs. ${grn.total_amount.toLocaleString()}`, 180, finalY, { align: 'right' })
+
+    if (grn.notes) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.text('Notes:', 14, finalY + 10)
+        doc.text(grn.notes, 14, finalY + 16, { maxWidth: 180 })
+    }
+
+    return doc
+}
+
+// ============================================================================
 // DELIVERY NOTE PDF GENERATION
 // ============================================================================
 

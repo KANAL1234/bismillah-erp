@@ -77,9 +77,9 @@ function SalesQuotationsContent() {
         switch (status) {
             case 'draft': return <Badge variant="secondary">Draft</Badge>
             case 'pending': return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
-            case 'approved': return <Badge className="bg-green-500 hover:bg-green-600">Approved</Badge>
+            case 'approved': return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>
             case 'rejected': return <Badge variant="destructive">Rejected</Badge>
-            case 'converted': return <Badge className="bg-green-600 hover:bg-green-700">Completed</Badge>
+            case 'converted': return <Badge className="bg-green-700 hover:bg-green-800">Completed</Badge>
             case 'expired': return <Badge variant="outline" className="text-gray-500">Expired</Badge>
             default: return <Badge variant="outline">{status}</Badge>
         }
@@ -159,7 +159,7 @@ function SalesQuotationsContent() {
                                         </TableCell>
                                         <TableCell>{formatDate(quotation.valid_until)}</TableCell>
                                         <TableCell className="font-medium">
-                                            ${quotation.total_amount.toLocaleString()}
+                                            Rs. {quotation.total_amount.toLocaleString()}
                                         </TableCell>
                                         <TableCell>{getStatusBadge(quotation.status)}</TableCell>
                                         <TableCell className="text-right">

@@ -274,7 +274,7 @@ export default function NewQuotationPage() {
                                                     >
                                                         <div className="font-medium">{p.name}</div>
                                                         <div className="text-xs text-muted-foreground">
-                                                            {p.sku} - ${p.selling_price}
+                                                            {p.sku} - Rs. {p.selling_price}
                                                         </div>
                                                     </div>
                                                 ))
@@ -328,7 +328,7 @@ export default function NewQuotationPage() {
                                                         />
                                                     </TableCell>
                                                     <TableCell className="font-medium">
-                                                        ${item.line_total.toFixed(2)}
+                                                        Rs. {item.line_total.toFixed(2)}
                                                     </TableCell>
                                                     <TableCell>
                                                         <Button
@@ -383,7 +383,7 @@ export default function NewQuotationPage() {
                             <div className="space-y-2 text-sm">
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Subtotal</span>
-                                    <span>${subtotal.toFixed(2)}</span>
+                                    <span>Rs. {subtotal.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className="text-muted-foreground">Discount (%)</span>
@@ -397,12 +397,12 @@ export default function NewQuotationPage() {
                                 {globalDiscountPercent > 0 && (
                                     <div className="flex justify-between text-red-600">
                                         <span>Discount Amount</span>
-                                        <span>-${discountAmount.toFixed(2)}</span>
+                                        <span>-Rs. {discountAmount.toFixed(2)}</span>
                                     </div>
                                 )}
                                 <div className="flex justify-between items-center">
                                     <span className="text-muted-foreground">Tax Total</span>
-                                    <span>${taxAmount.toFixed(2)}</span>
+                                    <span>Rs. {taxAmount.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className="text-muted-foreground">Shipping</span>
@@ -415,7 +415,7 @@ export default function NewQuotationPage() {
                                 </div>
                                 <div className="border-t pt-2 flex justify-between font-bold text-lg">
                                     <span>Total</span>
-                                    <span>${finalTotal.toFixed(2)}</span>
+                                    <span>Rs. {finalTotal.toFixed(2)}</span>
                                 </div>
                             </div>
 

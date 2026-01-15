@@ -168,8 +168,8 @@ function DeliveryNotesContent() {
     const getStatusBadge = (status: DeliveryNote['status']) => {
         switch (status) {
             case 'draft': return <Badge variant="secondary">Draft</Badge>
-            case 'shipped': return <Badge className="bg-blue-600 hover:bg-blue-700">Shipped</Badge>
-            case 'delivered': return <Badge className="bg-green-600 hover:bg-green-700">Delivered</Badge>
+            case 'shipped': return <Badge className="bg-purple-500 hover:bg-purple-600">Shipped</Badge>
+            case 'delivered': return <Badge className="bg-green-500 hover:bg-green-600">Delivered</Badge>
             case 'cancelled': return <Badge variant="destructive">Cancelled</Badge>
             default: return <Badge variant="outline">{status}</Badge>
         }

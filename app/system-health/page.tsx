@@ -484,6 +484,7 @@ export default function SystemHealthPage() {
         let testCustomerId: string | null = null
         let saleId: string | null = null
         let saleNumber: string | null = null
+        let journalEntryId: string | null = null
 
         try {
             // 1. Dependencies
@@ -565,6 +566,57 @@ export default function SystemHealthPage() {
             if (custCheck?.current_balance !== total) throw new Error(`Balance mismatch: Expected ${total}, got ${custCheck?.current_balance}`)
             log(id, 'Customer balance verified', 'success')
 
+            // 7. Verify Accounting (GL Posting)
+            log(id, 'Verifying POS accounting entries...')
+            const { data: posPost, error: posPostError } = await supabase.rpc('post_pos_sale', { p_sale_id: sale.id })
+            if (posPostError) throw posPostError
+            if (!posPost?.success) throw new Error(`POS GL posting failed: ${posPost?.error || 'Unknown error'}`)
+
+            const { data: posJournal } = await supabase
+                .from('journal_entries')
+                .select('id, total_debit, total_credit')
+                .eq('reference_type', 'POS_SALE')
+                .eq('reference_id', sale.id)
+                .single()
+
+            if (!posJournal) throw new Error('POS journal entry not found')
+            journalEntryId = posJournal.id
+
+            if (Number(posJournal.total_debit) !== total || Number(posJournal.total_credit) !== total) {
+                throw new Error(`POS journal totals mismatch: Expected ${total}, got Dr ${posJournal.total_debit} / Cr ${posJournal.total_credit}`)
+            }
+
+            const { data: posAccounts } = await supabase
+                .from('chart_of_accounts')
+                .select('id, account_code')
+                .in('account_code', ['1100', '4010', '2100'])
+
+            const arAccount = posAccounts?.find(a => a.account_code === '1100')
+            const salesAccount = posAccounts?.find(a => a.account_code === '4010')
+            const taxAccount = posAccounts?.find(a => a.account_code === '2100')
+
+            if (!arAccount || !salesAccount) throw new Error('Required POS GL accounts missing (1100/4010)')
+
+            const { data: posLines } = await supabase
+                .from('journal_entry_lines')
+                .select('account_id, debit_amount, credit_amount')
+                .eq('journal_entry_id', posJournal.id)
+
+            const arLine = posLines?.find(l => l.account_id === arAccount.id)
+            const salesLine = posLines?.find(l => l.account_id === salesAccount.id)
+            const taxLine = taxAccount ? posLines?.find(l => l.account_id === taxAccount.id) : null
+
+            if (!arLine || Number(arLine.debit_amount) !== total) {
+                throw new Error(`AR line mismatch: Expected debit ${total}`)
+            }
+            if (!salesLine || Number(salesLine.credit_amount) !== subtotal) {
+                throw new Error(`Sales line mismatch: Expected credit ${subtotal}`)
+            }
+            if (taxAmount > 0 && (!taxLine || Number(taxLine.credit_amount) !== taxAmount)) {
+                throw new Error(`Tax line mismatch: Expected credit ${taxAmount}`)
+            }
+            log(id, 'POS accounting entries verified', 'success')
+
             updateModule(id, { status: 'success' })
 
         } catch (error: any) {
@@ -572,6 +624,10 @@ export default function SystemHealthPage() {
             updateModule(id, { status: 'failure' })
         } finally {
             try {
+                if (journalEntryId) {
+                    await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', journalEntryId)
+                    await supabase.from('journal_entries').delete().eq('id', journalEntryId)
+                }
                 if (saleId) {
                     await supabase.from('pos_sale_items').delete().eq('sale_id', saleId)
                     await supabase.from('pos_sales').delete().eq('id', saleId)
@@ -1021,13 +1077,17 @@ export default function SystemHealthPage() {
         let invId: string | null = null
         let delId: string | null = null
         let retId: string | null = null
+        let accountingInvoiceId: string | null = null
+        let deliveryJournalId: string | null = null
+        let invoiceJournalId: string | null = null
 
         try {
             // 1. Dependencies
             const { data: loc } = await supabase.from('locations').select('id, name').limit(1).single()
             const { data: cat } = await supabase.from('product_categories').select('id').limit(1).single()
             const { data: uom } = await supabase.from('units_of_measure').select('id').limit(1).single()
-            if (!loc || !cat || !uom) throw new Error('Missing dependencies')
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!loc || !cat || !uom || !user) throw new Error('Missing dependencies')
 
             // 2. Create Test Customer
             const custName = `TEST-B2B-CUST-${Date.now()}`
@@ -1046,6 +1106,16 @@ export default function SystemHealthPage() {
             }).select().single()
             if (prodErr) throw prodErr
             prodId = prod.id
+
+            await supabase.from('inventory_stock').insert({
+                product_id: prod.id,
+                location_id: loc.id,
+                quantity_on_hand: 100,
+                quantity_available: 100,
+                quantity_reserved: 0,
+                average_cost: 120,
+                total_value: 12000
+            })
 
             // 4. Create Quotation
             const quoteNum = `QT-${Date.now()}`
@@ -1069,7 +1139,7 @@ export default function SystemHealthPage() {
             const orderNum = `SO-${Date.now()}`
             const { data: order, error: ordErr } = await supabase.from('sales_orders').insert({
                 order_number: orderNum, customer_id: cust.id, quotation_id: quote.id,
-                order_date: new Date().toISOString(), status: 'confirmed', total_amount: 2000
+                order_date: new Date().toISOString(), status: 'confirmed', total_amount: 2000, location_id: loc.id
             }).select().single()
             if (ordErr) throw ordErr
             orderId = order.id
@@ -1127,6 +1197,55 @@ export default function SystemHealthPage() {
             if (deliveryCheck?.status !== 'delivered') throw new Error('Delivery note status did not update to delivered')
             if (quoteId && quoteCheck?.status !== 'converted') throw new Error('Quotation status did not update to converted')
 
+            // 6c. Verify Delivery Note accounting (COGS)
+            log(id, 'Verifying delivery note accounting entries...')
+            const { data: deliveryPost, error: deliveryPostError } = await supabase.rpc('post_delivery_note', { p_delivery_note_id: del.id })
+            if (deliveryPostError) throw deliveryPostError
+            if (!deliveryPost?.success) throw new Error(`Delivery GL posting failed: ${deliveryPost?.error || 'Unknown error'}`)
+
+            const deliveryCogs = Number(deliveryPost?.total_cogs || 0)
+            const { data: deliveryJournal } = await supabase
+                .from('journal_entries')
+                .select('id, total_debit, total_credit')
+                .eq('reference_type', 'DELIVERY_NOTE')
+                .eq('reference_id', del.id)
+                .single()
+
+            if (!deliveryJournal) throw new Error('Delivery journal entry not found')
+            deliveryJournalId = deliveryJournal.id
+
+            if (Number(deliveryJournal.total_debit) !== deliveryCogs || Number(deliveryJournal.total_credit) !== deliveryCogs) {
+                throw new Error(`Delivery journal totals mismatch: Expected ${deliveryCogs}, got Dr ${deliveryJournal.total_debit} / Cr ${deliveryJournal.total_credit}`)
+            }
+
+            const { data: deliveryAccounts } = await supabase
+                .from('chart_of_accounts')
+                .select('id, account_code')
+                .in('account_code', ['5010', '5000', '1300', '1310', '1200'])
+
+            const cogsAccount = deliveryAccounts?.find(a => a.account_code === '5010') || deliveryAccounts?.find(a => a.account_code === '5000')
+            const inventoryAccount = deliveryAccounts?.find(a => a.account_code === '1300')
+                || deliveryAccounts?.find(a => a.account_code === '1310')
+                || deliveryAccounts?.find(a => a.account_code === '1200')
+
+            if (!cogsAccount || !inventoryAccount) throw new Error('Required delivery GL accounts missing (COGS/Inventory)')
+
+            const { data: deliveryLines } = await supabase
+                .from('journal_entry_lines')
+                .select('account_id, debit_amount, credit_amount')
+                .eq('journal_entry_id', deliveryJournal.id)
+
+            const cogsLine = deliveryLines?.find(l => l.account_id === cogsAccount.id)
+            const inventoryLine = deliveryLines?.find(l => l.account_id === inventoryAccount.id)
+
+            if (!cogsLine || Number(cogsLine.debit_amount) !== deliveryCogs) {
+                throw new Error(`Delivery COGS line mismatch: Expected debit ${deliveryCogs}`)
+            }
+            if (!inventoryLine || Number(inventoryLine.credit_amount) !== deliveryCogs) {
+                throw new Error(`Delivery Inventory line mismatch: Expected credit ${deliveryCogs}`)
+            }
+            log(id, 'Delivery accounting entries verified', 'success')
+
             // 7. Create Invoice
             const invNum = `INV-${Date.now()}`
             log(id, `Generating Invoice: ${invNum}`)
@@ -1148,6 +1267,73 @@ export default function SystemHealthPage() {
                 tax_percentage: 0
             })
 
+            // 7b. Verify Invoice accounting entries
+            log(id, 'Verifying invoice accounting entries...')
+            const { data: accInv, error: accInvErr } = await supabase.from('customer_invoices_accounting').insert({
+                customer_id: cust.id,
+                sales_order_id: order.id,
+                invoice_number: invNum,
+                invoice_date: new Date().toISOString().split('T')[0],
+                due_date: new Date().toISOString().split('T')[0],
+                subtotal: 2000,
+                tax_amount: 0,
+                discount_amount: 0,
+                total_amount: 2000,
+                status: 'posted',
+                created_by: user.id
+            }).select().single()
+            if (accInvErr) throw accInvErr
+            accountingInvoiceId = accInv.id
+
+            const { data: invPost, error: invPostError } = await supabase.rpc('post_customer_invoice', { p_invoice_id: accInv.id })
+            if (invPostError) throw invPostError
+            if (!invPost?.success) throw new Error(`Invoice GL posting failed: ${invPost?.error || 'Unknown error'}`)
+
+            const { data: invJournal } = await supabase
+                .from('journal_entries')
+                .select('id, total_debit, total_credit')
+                .eq('reference_type', 'CUSTOMER_INVOICE')
+                .eq('reference_id', accInv.id)
+                .single()
+
+            if (!invJournal) throw new Error('Invoice journal entry not found')
+            invoiceJournalId = invJournal.id
+
+            if (Number(invJournal.total_debit) !== 2000 || Number(invJournal.total_credit) !== 2000) {
+                throw new Error(`Invoice journal totals mismatch: Expected 2000, got Dr ${invJournal.total_debit} / Cr ${invJournal.total_credit}`)
+            }
+
+            const { data: invAccounts } = await supabase
+                .from('chart_of_accounts')
+                .select('id, account_code')
+                .in('account_code', ['1100', '4010', '2100'])
+
+            const invArAccount = invAccounts?.find(a => a.account_code === '1100')
+            const invSalesAccount = invAccounts?.find(a => a.account_code === '4010')
+            const invTaxAccount = invAccounts?.find(a => a.account_code === '2100')
+
+            if (!invArAccount || !invSalesAccount) throw new Error('Required invoice GL accounts missing (1100/4010)')
+
+            const { data: invLines } = await supabase
+                .from('journal_entry_lines')
+                .select('account_id, debit_amount, credit_amount')
+                .eq('journal_entry_id', invJournal.id)
+
+            const invArLine = invLines?.find(l => l.account_id === invArAccount.id)
+            const invSalesLine = invLines?.find(l => l.account_id === invSalesAccount.id)
+            const invTaxLine = invTaxAccount ? invLines?.find(l => l.account_id === invTaxAccount.id) : null
+
+            if (!invArLine || Number(invArLine.debit_amount) !== 2000) {
+                throw new Error('Invoice AR line mismatch: Expected debit 2000')
+            }
+            if (!invSalesLine || Number(invSalesLine.credit_amount) !== 2000) {
+                throw new Error('Invoice sales line mismatch: Expected credit 2000')
+            }
+            if (invTaxLine && Number(invTaxLine.credit_amount) !== 0) {
+                throw new Error('Invoice tax line mismatch: Expected credit 0')
+            }
+            log(id, 'Invoice accounting entries verified', 'success')
+
             // 8. Create Return
             const retNum = `RTN-${Date.now()}`
             log(id, `Processing Return: ${retNum}`)
@@ -1167,6 +1353,17 @@ export default function SystemHealthPage() {
         } finally {
             try {
                 // Cleanup in reverse dependency order
+                if (invoiceJournalId) {
+                    await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', invoiceJournalId)
+                    await supabase.from('journal_entries').delete().eq('id', invoiceJournalId)
+                }
+                if (deliveryJournalId) {
+                    await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', deliveryJournalId)
+                    await supabase.from('journal_entries').delete().eq('id', deliveryJournalId)
+                }
+                if (accountingInvoiceId) {
+                    await supabase.from('customer_invoices_accounting').delete().eq('id', accountingInvoiceId)
+                }
                 if (retId) {
                     await supabase.from('sales_return_items').delete().eq('return_id', retId)
                     await supabase.from('sales_returns').delete().eq('id', retId)
@@ -1618,12 +1815,27 @@ export default function SystemHealthPage() {
 
             // 5. Test Payroll Period Creation & Process
             const periodName = `HEALTH-TEST-${Date.now()}`
-            log(id, `Creating payroll period: ${periodName}`)
+            let periodDate = new Date().toISOString().split('T')[0]
+            for (let i = 0; i < 7; i += 1) {
+                const candidate = new Date(Date.now() + i * 86400000).toISOString().split('T')[0]
+                const { data: existing } = await supabase
+                    .from('payroll_periods')
+                    .select('id')
+                    .eq('start_date', candidate)
+                    .eq('end_date', candidate)
+                    .maybeSingle()
+                if (!existing) {
+                    periodDate = candidate
+                    break
+                }
+            }
+
+            log(id, `Creating payroll period: ${periodName} (${periodDate})`)
             const { data: period, error: periodErr } = await supabase.from('payroll_periods').insert({
                 period_name: periodName,
-                start_date: new Date().toISOString().split('T')[0],
-                end_date: new Date().toISOString().split('T')[0],
-                payment_date: new Date().toISOString().split('T')[0], // Fixed: Added required payment_date
+                start_date: periodDate,
+                end_date: periodDate,
+                payment_date: periodDate,
                 status: 'DRAFT'
             }).select().single()
             if (periodErr) throw periodErr
@@ -1706,12 +1918,11 @@ export default function SystemHealthPage() {
             log(id, '✅ AUTONOMOUS WORKFLOW VERIFIED: Vehicle → Mobile Store (Location) auto-linked', 'success')
 
             // 3. Create Driver
-            log(id, 'Assigning Driver...')
+            log(id, 'Creating Driver...')
             const { data: drv, error: drvError } = await supabase.from('fleet_drivers').insert({
                 employee_id: employeeId,
                 license_number: `LIC-${Date.now()}`,
                 license_expiry: new Date(Date.now() + 31536000000).toISOString().slice(0, 10),
-                vehicle_id: vehicleId,
                 status: 'ACTIVE'
             }).select().single()
 

@@ -326,7 +326,7 @@ function EditQuotationContent() {
                                             >
                                                 <div className="font-medium">{product.name}</div>
                                                 <div className="text-sm text-muted-foreground">
-                                                    {product.sku} • ${product.selling_price}
+                                                    {product.sku} • Rs. {product.selling_price}
                                                 </div>
                                             </div>
                                         ))}
@@ -398,7 +398,7 @@ function EditQuotationContent() {
                                                 />
                                             </TableCell>
                                             <TableCell className="text-right font-medium">
-                                                ${item.line_total.toLocaleString()}
+                                                Rs. {item.line_total.toLocaleString()}
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)}>
@@ -456,23 +456,23 @@ function EditQuotationContent() {
                             <div className="space-y-2 text-sm">
                                 <div className="flex justify-between">
                                     <span>Subtotal</span>
-                                    <span>${subtotal.toLocaleString()}</span>
+                                    <span>Rs. {subtotal.toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span>Discount</span>
-                                    <span>${discountAmount.toLocaleString()}</span>
+                                    <span>Rs. {discountAmount.toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span>Tax</span>
-                                    <span>${taxAmount.toLocaleString()}</span>
+                                    <span>Rs. {taxAmount.toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span>Shipping</span>
-                                    <span>${shippingCharges.toLocaleString()}</span>
+                                    <span>Rs. {shippingCharges.toLocaleString()}</span>
                                 </div>
                                 <div className="border-t pt-2 flex justify-between font-semibold">
                                     <span>Total</span>
-                                    <span>${finalTotal.toLocaleString()}</span>
+                                    <span>Rs. {finalTotal.toLocaleString()}</span>
                                 </div>
                             </div>
                         </CardContent>

@@ -244,7 +244,7 @@ function SalesOrdersContent() {
                                         <TableCell>{getStatusBadge(order.status)}</TableCell>
                                         <TableCell>{getPaymentBadge(order.payment_status)}</TableCell>
                                         <TableCell className="text-right font-medium">
-                                            ${order.total_amount.toLocaleString()}
+                                            Rs. {order.total_amount.toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex items-center justify-end gap-2">

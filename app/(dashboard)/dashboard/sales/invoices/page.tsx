@@ -168,10 +168,10 @@ function SalesInvoicesContent() {
     const getStatusBadge = (status: SalesInvoice['status'], dueDate: string) => {
         const isOverdue = status !== 'paid' && status !== 'void' && isPast(parseISO(dueDate));
 
-        if (status === 'paid') return <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Paid</Badge>
+        if (status === 'paid') return <Badge className="bg-green-500 hover:bg-green-600">Paid</Badge>
         if (status === 'void') return <Badge variant="destructive">Void</Badge>
         if (isOverdue) return <Badge variant="destructive">Overdue</Badge>
-        if (status === 'posted') return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200">Posted</Badge>
+        if (status === 'posted') return <Badge className="bg-blue-500 hover:bg-blue-600">Posted</Badge>
 
         return <Badge variant="secondary">Draft</Badge>
     }
@@ -251,10 +251,10 @@ function SalesInvoicesContent() {
                                         <TableCell>{formatDate(invoice.due_date)}</TableCell>
                                         <TableCell>{getStatusBadge(invoice.status, invoice.due_date)}</TableCell>
                                         <TableCell className="text-right font-medium">
-                                            ${invoice.total_amount.toLocaleString()}
+                                            Rs. {invoice.total_amount.toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-right text-red-600">
-                                            ${(invoice.total_amount - invoice.amount_paid).toLocaleString()}
+                                            Rs. {(invoice.total_amount - invoice.amount_paid).toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex items-center justify-end gap-2">

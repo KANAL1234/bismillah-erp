@@ -12,15 +12,14 @@ export function usePurchaseOrders(status?: string) {
             let query = supabase
                 .from('purchase_orders')
                 .select(`
-          *,
+          id,
+          po_number,
+          po_date,
+          expected_delivery_date,
+          status,
+          total_amount,
           vendors(id, vendor_code, name),
-          locations(id, code, name),
-          purchase_order_items(
-            *,
-            products(id, sku, name)
-          ),
-          requested_by_user:user_profiles!requested_by(id, full_name),
-          approved_by_user:user_profiles!approved_by(id, full_name)
+          locations(id, code, name)
         `)
                 .order('created_at', { ascending: false })
 
@@ -41,24 +40,70 @@ export function usePurchaseOrder(id: string) {
     return useQuery({
         queryKey: ['purchase-orders', id],
         queryFn: async () => {
-            const { data, error } = await supabase
+            const { data: order, error } = await supabase
                 .from('purchase_orders')
-                .select(`
-          *,
-          vendors(id, vendor_code, name, phone, address),
-          locations(id, code, name),
-          purchase_order_items(
-            *,
-            products(id, sku, name, cost_price)
-          ),
-          requested_by_user:user_profiles!requested_by(id, full_name),
-          approved_by_user:user_profiles!approved_by(id, full_name)
-        `)
+                .select('*')
                 .eq('id', id)
-                .single()
+                .maybeSingle()
 
             if (error) throw error
-            return data
+            if (!order) return null
+
+            const [
+                vendorRes,
+                locationRes,
+                itemsRes,
+                requestedRes,
+                approvedRes,
+            ] = await Promise.all([
+                supabase.from('vendors').select('id, vendor_code, name, phone, address').eq('id', order.vendor_id).maybeSingle(),
+                supabase.from('locations').select('id, code, name').eq('id', order.location_id).maybeSingle(),
+                supabase.from('purchase_order_items')
+                    .select('*, products!fk_po_items_product(id, sku, name, cost_price)')
+                    .eq('po_id', id),
+                order.requested_by
+                    ? supabase.from('user_profiles').select('id, full_name').eq('id', order.requested_by).maybeSingle()
+                    : Promise.resolve({ data: null, error: null }),
+                order.approved_by
+                    ? supabase.from('user_profiles').select('id, full_name').eq('id', order.approved_by).maybeSingle()
+                    : Promise.resolve({ data: null, error: null }),
+            ])
+
+            if (vendorRes.error) console.warn('Purchase order vendor fetch failed:', vendorRes.error)
+            if (locationRes.error) console.warn('Purchase order location fetch failed:', locationRes.error)
+            if (itemsRes.error) console.warn('Purchase order items fetch failed:', itemsRes.error)
+            if (requestedRes.error) console.warn('Purchase order requester fetch failed:', requestedRes.error)
+            if (approvedRes.error) console.warn('Purchase order approver fetch failed:', approvedRes.error)
+
+            let items = itemsRes.data || []
+            if (items.length > 0) {
+                const missingProducts = items.filter((item: any) => !item.products).map((item: any) => item.product_id)
+                if (missingProducts.length > 0) {
+                    const { data: productsData, error: productsError } = await supabase
+                        .from('products')
+                        .select('id, sku, name, cost_price')
+                        .in('id', missingProducts)
+
+                    if (productsError) {
+                        console.warn('Purchase order product fallback fetch failed:', productsError)
+                    } else {
+                        const productMap = new Map(productsData?.map(p => [p.id, p]) || [])
+                        items = items.map((item: any) => ({
+                            ...item,
+                            products: item.products || productMap.get(item.product_id) || null
+                        }))
+                    }
+                }
+            }
+
+            return {
+                ...order,
+                vendors: vendorRes.data || null,
+                locations: locationRes.data || null,
+                purchase_order_items: items,
+                requested_by_user: requestedRes.data || null,
+                approved_by_user: approvedRes.data || null,
+            }
         },
         enabled: !!id,
     })

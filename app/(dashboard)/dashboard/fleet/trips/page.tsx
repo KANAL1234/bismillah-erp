@@ -263,7 +263,7 @@ function TripsContent() {
                                         </TableCell>
                                         <TableCell>{log.vehicle?.registration_number}</TableCell>
                                         <TableCell>{log.liters} L</TableCell>
-                                        <TableCell>${log.total_cost?.toFixed(2)}</TableCell>
+                                        <TableCell>Rs. {log.total_cost?.toFixed(2)}</TableCell>
                                         <TableCell>{log.odometer_reading?.toLocaleString()} km</TableCell>
                                     </TableRow>
                                 ))}

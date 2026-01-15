@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState, use } from 'react'
+import React from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
     ArrowLeft,
     Printer,
+    Download,
     CheckCircle,
     XCircle,
     Trash2,
@@ -14,6 +15,7 @@ import {
     User
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { createPurchaseOrderPDF } from '@/lib/utils/export'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -45,8 +47,8 @@ import {
 import { toast } from 'sonner'
 import { PurchaseOrder } from '@/lib/types/database'
 
-export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = use(params)
+export default function PurchaseOrderDetailPage({ params }: { params: { id: string } }) {
+    const { id } = params
     const router = useRouter()
     const { data: po, isLoading } = usePurchaseOrder(id)
     const updateStatus = useUpdatePOStatus()
@@ -73,17 +75,66 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case 'DRAFT': return <Badge variant="secondary">Draft</Badge>
-            case 'APPROVED': return <Badge className="bg-blue-600">Approved</Badge>
-            case 'PARTIAL': return <Badge className="bg-yellow-600">Partial</Badge>
-            case 'COMPLETED': return <Badge className="bg-green-600">Completed</Badge>
-            case 'CANCELLED': return <Badge variant="destructive">Cancelled</Badge>
-            default: return <Badge variant="outline">{status}</Badge>
+            case 'DRAFT':
+                return <Badge variant="secondary">Draft</Badge>
+            case 'PENDING_APPROVAL':
+                return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
+            case 'APPROVED':
+                return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>
+            case 'SENT_TO_VENDOR':
+                return <Badge className="bg-purple-500 hover:bg-purple-600">Sent</Badge>
+            case 'PARTIALLY_RECEIVED':
+                return <Badge className="bg-indigo-500 hover:bg-indigo-600">Partial</Badge>
+            case 'RECEIVED':
+                return <Badge className="bg-green-500 hover:bg-green-600">Received</Badge>
+            case 'CANCELLED':
+                return <Badge variant="destructive">Cancelled</Badge>
+            default:
+                return <Badge variant="outline">{status}</Badge>
         }
     }
 
     if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading details...</div>
     if (!po) return <div className="p-8 text-center text-red-500">Purchase Order not found</div>
+
+    const buildPDF = () => {
+        return createPurchaseOrderPDF({
+            po_number: po.po_number,
+            po_date: format(new Date(po.po_date), 'MMM dd, yyyy'),
+            expected_delivery_date: po.expected_delivery_date ? format(new Date(po.expected_delivery_date), 'MMM dd, yyyy') : null,
+            status: po.status,
+            vendor_name: po.vendors?.name || 'Vendor',
+            vendor_code: po.vendors?.vendor_code || null,
+            location_name: po.locations ? `${po.locations.name} (${po.locations.code})` : null,
+            items: (po.purchase_order_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                line_total: item.line_total || item.quantity * item.unit_price,
+            })),
+            subtotal: po.subtotal || 0,
+            tax_amount: po.tax_amount || 0,
+            discount_amount: po.discount_amount || 0,
+            total_amount: po.total_amount || 0,
+            notes: po.notes || undefined,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+    }
+
+    const handlePrint = () => {
+        const doc = buildPDF()
+        doc.autoPrint()
+        const url = doc.output('bloburl')
+        window.open(url, '_blank', 'noopener,noreferrer')
+    }
+
+    const handleDownload = () => {
+        const doc = buildPDF()
+        doc.save(`PurchaseOrder_${po.po_number}.pdf`)
+    }
 
     return (
         <div className="max-w-5xl mx-auto space-y-6 pb-20">
@@ -106,9 +157,13 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => window.print()}>
+                    <Button variant="outline" onClick={handlePrint}>
                         <Printer className="mr-2 h-4 w-4" />
                         Print
+                    </Button>
+                    <Button variant="outline" onClick={handleDownload}>
+                        <Download className="mr-2 h-4 w-4" />
+                        PDF
                     </Button>
 
                     {po.status === 'DRAFT' && (
@@ -148,7 +203,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                     )}
 
                     {po.status === 'APPROVED' && (
-                        <Link href={`/dashboard/procurement/goods-receipts/new?po_id=${po.id}`}>
+                        <Link href={`/dashboard/purchases/grn/new?po=${po.id}`}>
                             <Button>
                                 <Truck className="mr-2 h-4 w-4" />
                                 Receive Goods
@@ -257,10 +312,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                                                 {item.quantity_received} / {item.quantity}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-right">${item.unit_price.toFixed(2)}</TableCell>
+                                        <TableCell className="text-right">Rs. {item.unit_price.toFixed(2)}</TableCell>
                                         <TableCell className="text-right">{item.tax_percentage}%</TableCell>
                                         <TableCell className="text-right font-medium">
-                                            ${lineTotal.toFixed(2)}
+                                            Rs. {lineTotal.toFixed(2)}
                                         </TableCell>
                                     </TableRow>
                                 )
@@ -276,22 +331,22 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                     <CardContent className="p-6 space-y-2 text-sm">
                         <div className="flex justify-between text-muted-foreground">
                             <span>Subtotal</span>
-                            <span>${po.subtotal?.toFixed(2)}</span>
+                            <span>Rs. {po.subtotal?.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-muted-foreground">
                             <span>Tax</span>
-                            <span>${po.tax_amount?.toFixed(2)}</span>
+                            <span>Rs. {po.tax_amount?.toFixed(2)}</span>
                         </div>
                         {po.discount_amount > 0 && (
                             <div className="flex justify-between text-red-600">
                                 <span>Discount</span>
-                                <span>-${po.discount_amount?.toFixed(2)}</span>
+                                <span>-Rs. {po.discount_amount?.toFixed(2)}</span>
                             </div>
                         )}
                         <Separator className="my-2" />
                         <div className="flex justify-between font-bold text-lg">
                             <span>Total</span>
-                            <span>${po.total_amount?.toFixed(2)}</span>
+                            <span>Rs. {po.total_amount?.toFixed(2)}</span>
                         </div>
                     </CardContent>
                 </Card>

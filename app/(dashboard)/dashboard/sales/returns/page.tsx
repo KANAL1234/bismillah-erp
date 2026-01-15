@@ -188,7 +188,7 @@ function SalesReturnsContent() {
                                             <div className="text-xs text-muted-foreground">{ret.customers?.customer_code}</div>
                                         </TableCell>
                                         <TableCell>{ret.sales_invoices?.invoice_number || 'N/A'}</TableCell>
-                                        <TableCell className="font-medium">${ret.refund_amount.toLocaleString()}</TableCell>
+                                        <TableCell className="font-medium">Rs. {ret.refund_amount.toLocaleString()}</TableCell>
                                         <TableCell>{getStatusBadge(ret.status)}</TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex items-center justify-end gap-2">
