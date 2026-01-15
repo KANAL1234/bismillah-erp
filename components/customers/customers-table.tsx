@@ -11,11 +11,10 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Edit, Eye, Trash2, CreditCard, Receipt } from 'lucide-react'
+import { Edit, Eye, Trash2, CreditCard } from 'lucide-react'
 import Link from 'next/link'
 import type { Customer } from '@/lib/types/database'
 import { CustomerDialog } from './customer-dialog'
-import { CustomerPaymentDialog } from './customer-payment-dialog'
 import { useDeleteCustomer } from '@/lib/queries/customers'
 import { toast } from 'sonner'
 import {
@@ -37,7 +36,6 @@ interface CustomersTableProps {
 export function CustomersTable({ customers, isLoading }: CustomersTableProps) {
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-    const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false)
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
     const deleteCustomer = useDeleteCustomer()
 
@@ -106,20 +104,6 @@ export function CustomersTable({ customers, isLoading }: CustomersTableProps) {
                                     <span className={customer.current_balance > 0 ? "text-red-600 font-bold" : "text-slate-900"}>
                                         PKR {customer.current_balance?.toLocaleString() || '0'}
                                     </span>
-                                    {customer.current_balance > 0 && (
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            className="h-7 w-7 text-emerald-600 border-emerald-100 hover:bg-emerald-50"
-                                            onClick={() => {
-                                                setSelectedCustomer(customer)
-                                                setIsPaymentDialogOpen(true)
-                                            }}
-                                            title="Receive Payment"
-                                        >
-                                            <Receipt className="h-3.5 w-3.5" />
-                                        </Button>
-                                    )}
                                 </div>
                             </TableCell>
                             <TableCell className="text-right font-mono text-slate-500">
@@ -170,11 +154,6 @@ export function CustomersTable({ customers, isLoading }: CustomersTableProps) {
                     <CustomerDialog
                         open={isEditDialogOpen}
                         onOpenChange={setIsEditDialogOpen}
-                        customer={selectedCustomer}
-                    />
-                    <CustomerPaymentDialog
-                        open={isPaymentDialogOpen}
-                        onOpenChange={setIsPaymentDialogOpen}
                         customer={selectedCustomer}
                     />
                     <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

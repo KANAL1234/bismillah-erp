@@ -201,6 +201,15 @@ export function useCreateDeliveryNote() {
                         .update({ status: 'converted' })
                         .eq('id', salesOrder.quotation_id)
                 }
+
+                // Post COGS/Inventory to GL (non-blocking)
+                try {
+                    await supabase.rpc('post_delivery_note', {
+                        p_delivery_note_id: note.id
+                    })
+                } catch (glError) {
+                    console.warn('Delivery note GL posting failed (non-critical):', glError)
+                }
             }
 
             return note

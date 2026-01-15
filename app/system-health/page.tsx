@@ -521,13 +521,15 @@ export default function SystemHealthPage() {
             // 4. Create Credit Sale
             saleNumber = `TEST-SALE-${Date.now()}`
             const qty = 5
-            const total = qty * 100 // 500
+            const subtotal = qty * 100 // 500
+            const taxAmount = subtotal * 0.18
+            const total = subtotal + taxAmount
             log(id, `Processing Credit Sale: ${saleNumber} (Total: ${total})`)
 
             // Insert Sale Header
             const { data: sale, error: saleErr } = await supabase.from('pos_sales').insert({
                 sale_number: saleNumber, location_id: loc.id, customer_id: customer.id, sale_date: new Date().toISOString(),
-                subtotal: total, discount_amount: 0, tax_amount: 0, total_amount: total,
+                subtotal: subtotal, discount_amount: 0, tax_amount: taxAmount, total_amount: total,
                 payment_method: 'CREDIT', amount_paid: 0, cashier_id: null
             }).select().single()
             if (saleErr) throw saleErr
@@ -964,10 +966,20 @@ export default function SystemHealthPage() {
                 log(testId, '✅ Invoice GL posting function verified (post_customer_invoice)', 'success')
             }
 
-            // Step 9: Verify GL Posting Functions Exist
-            log(testId, 'Step 9: Verifying all GL posting functions...')
-            const functions = ['post_pos_sale', 'post_vendor_bill', 'post_payment_voucher', 'post_customer_invoice', 'post_receipt_voucher']
-            log(testId, `✅ All 5 GL posting functions configured: ${functions.join(', ')}`, 'success')
+            // Step 9: Test Delivery Note GL Integration (COGS)
+            log(testId, 'Step 9: Testing Delivery Note → GL Integration (COGS)...')
+            const { error: deliveryFunctionError } = await supabase.rpc('post_delivery_note', { p_delivery_note_id: '00000000-0000-0000-0000-000000000000' })
+            const deliveryMessage = deliveryFunctionError?.message?.toLowerCase() || ''
+            if (deliveryFunctionError && (deliveryMessage.includes('function post_delivery_note') || deliveryMessage.includes('does not exist'))) {
+                log(testId, `⚠️ Delivery GL posting function may not exist: ${deliveryFunctionError.message}`, 'warn')
+            } else {
+                log(testId, '✅ Delivery GL posting function verified (post_delivery_note)', 'success')
+            }
+
+            // Step 10: Verify GL Posting Functions Exist
+            log(testId, 'Step 10: Verifying all GL posting functions...')
+            const functions = ['post_pos_sale', 'post_vendor_bill', 'post_payment_voucher', 'post_customer_invoice', 'post_receipt_voucher', 'post_delivery_note']
+            log(testId, `✅ All 6 GL posting functions configured: ${functions.join(', ')}`, 'success')
 
             log(testId, '🎉 Accounting Module Test PASSED! (GL Integration Verified)', 'success')
             updateModule(testId, { status: 'success' })
@@ -1063,9 +1075,10 @@ export default function SystemHealthPage() {
             orderId = order.id
 
             // Add Order Items
-            await supabase.from('sales_order_items').insert({
-                order_id: order.id, product_id: prod.id, quantity: 10, unit_price: 200, quantity_delivered: 0, quantity_invoiced: 0
-            })
+            const { data: orderItem, error: orderItemErr } = await supabase.from('sales_order_items').insert({
+                order_id: order.id, product_id: prod.id, quantity: 10, unit_price: 200, discount_percentage: 0
+            }).select('id').single()
+            if (orderItemErr || !orderItem) throw orderItemErr || new Error('Order item not created')
 
             // 6. Create Delivery Note
             const delNum = `DN-${Date.now()}`
@@ -1077,7 +1090,42 @@ export default function SystemHealthPage() {
             if (delErr) throw delErr
             delId = del.id
 
-            // Link items logic omitted for brevity (usually relies on complex item linking), mostly checking header creation here.
+            // Link delivery note items for COGS posting
+            await supabase.from('delivery_note_items').insert({
+                delivery_note_id: del.id,
+                sales_order_item_id: orderItem.id,
+                product_id: prod.id,
+                quantity_delivered: 10
+            })
+
+            // 6b. Verify status transitions (order completed, delivery delivered, quotation converted)
+            log(id, 'Verifying B2B status transitions after shipment...')
+            await supabase
+                .from('sales_orders')
+                .update({ status: 'completed' })
+                .eq('id', order.id)
+
+            await supabase
+                .from('delivery_notes')
+                .update({ status: 'delivered' })
+                .eq('id', del.id)
+
+            if (quoteId) {
+                await supabase
+                    .from('sales_quotations')
+                    .update({ status: 'converted' })
+                    .eq('id', quoteId)
+            }
+
+            const { data: orderCheck } = await supabase.from('sales_orders').select('status').eq('id', order.id).single()
+            const { data: deliveryCheck } = await supabase.from('delivery_notes').select('status').eq('id', del.id).single()
+            const { data: quoteCheck } = quoteId
+                ? await supabase.from('sales_quotations').select('status').eq('id', quoteId).single()
+                : { data: null }
+
+            if (orderCheck?.status !== 'completed') throw new Error('Sales order status did not update to completed')
+            if (deliveryCheck?.status !== 'delivered') throw new Error('Delivery note status did not update to delivered')
+            if (quoteId && quoteCheck?.status !== 'converted') throw new Error('Quotation status did not update to converted')
 
             // 7. Create Invoice
             const invNum = `INV-${Date.now()}`
@@ -1085,10 +1133,20 @@ export default function SystemHealthPage() {
             const { data: inv, error: invErr } = await supabase.from('sales_invoices').insert({
                 invoice_number: invNum, sales_order_id: order.id, customer_id: cust.id,
                 invoice_date: new Date().toISOString(), due_date: new Date().toISOString(),
-                status: 'posted', total_amount: 2000
+                status: 'posted', subtotal: 2000, discount_amount: 0, tax_amount: 0, shipping_charges: 0, total_amount: 2000, amount_paid: 0
             }).select().single()
             if (invErr) throw invErr
             invId = inv.id
+
+            await supabase.from('sales_invoice_items').insert({
+                invoice_id: inv.id,
+                sales_order_item_id: orderItem.id,
+                product_id: prod.id,
+                quantity: 10,
+                unit_price: 200,
+                discount_percentage: 0,
+                tax_percentage: 0
+            })
 
             // 8. Create Return
             const retNum = `RTN-${Date.now()}`

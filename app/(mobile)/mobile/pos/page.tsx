@@ -168,6 +168,7 @@ export default function MobilePOSPage() {
     const calculateTotal = () => {
         return cart.reduce((sum, item) => sum + ((item.selling_price || 0) * item.quantity), 0)
     }
+    const taxRate = 0.18
 
     const handleCompleteSale = async () => {
         if (!locationId) {
@@ -179,7 +180,9 @@ export default function MobilePOSPage() {
             return
         }
 
-        const total = calculateTotal()
+        const subtotal = calculateTotal()
+        const taxAmount = subtotal * taxRate
+        const total = subtotal + taxAmount
         const paid = parseFloat(amountPaid) || 0
 
         if (paid < total) {
@@ -191,8 +194,8 @@ export default function MobilePOSPage() {
             location_id: locationId,
             customer_id: customerId || null,
             total_amount: total,
-            subtotal: total,
-            tax_amount: 0,
+            subtotal: subtotal,
+            tax_amount: taxAmount,
             discount_amount: 0,
             amount_paid: paid,
             payment_method: 'CASH',
@@ -267,7 +270,10 @@ export default function MobilePOSPage() {
         setCustomerId('')
     }
 
-    const change = (parseFloat(amountPaid) || 0) - calculateTotal()
+    const subtotal = calculateTotal()
+    const taxAmount = subtotal * taxRate
+    const totalWithTax = subtotal + taxAmount
+    const change = (parseFloat(amountPaid) || 0) - totalWithTax
 
     // Show loading state while checking trip
     if (tripLoading) {
@@ -466,14 +472,14 @@ export default function MobilePOSPage() {
                         <div className="flex items-center justify-between mb-4">
                             <div>
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Estimated Total</p>
-                                <p className="text-2xl font-black text-slate-900 leading-none mt-1 uppercase">
+                            <p className="text-2xl font-black text-slate-900 leading-none mt-1 uppercase">
                                     <span className="text-sm font-bold mr-1">Rs.</span>
-                                    {calculateTotal().toLocaleString()}
-                                </p>
+                                    {totalWithTax.toLocaleString()}
+                            </p>
                             </div>
                             <Button
                                 onClick={() => {
-                                    setAmountPaid(calculateTotal().toString())
+                                    setAmountPaid(totalWithTax.toString())
                                     setIsCheckoutOpen(true)
                                 }}
                                 size="lg"
@@ -508,30 +514,34 @@ export default function MobilePOSPage() {
                             </Select>
                         </div>
 
-                        <div className="bg-slate-50 p-4 rounded-xl space-y-3">
-                            <div className="flex justify-between items-center text-slate-600">
-                                <span>Total Amount</span>
-                                <span className="font-bold text-slate-900">Rs. {calculateTotal().toLocaleString()}</span>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-xs uppercase font-bold text-slate-400">Amount Received</Label>
-                                <Input
-                                    type="number"
-                                    value={amountPaid}
-                                    onChange={(e) => setAmountPaid(e.target.value)}
-                                    placeholder="Enter amount..."
-                                    className="text-2xl h-14 font-bold text-blue-600 focus:ring-blue-500"
-                                    autoFocus
-                                />
-                            </div>
-                            <Separator />
-                            <div className="flex justify-between items-center">
-                                <span className="text-slate-600">Change Due</span>
-                                <span className={`text-2xl font-black ${change < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                            <div className="bg-slate-50 p-4 rounded-xl space-y-3">
+                                <div className="flex justify-between items-center text-slate-600">
+                                    <span>Subtotal</span>
+                                    <span className="font-bold text-slate-900">Rs. {subtotal.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-slate-600">
+                                    <span>Tax (18%)</span>
+                                    <span className="font-bold text-slate-900">Rs. {taxAmount.toLocaleString()}</span>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-xs uppercase font-bold text-slate-400">Amount Received</Label>
+                                    <Input
+                                        type="number"
+                                        value={amountPaid}
+                                        onChange={(e) => setAmountPaid(e.target.value)}
+                                        placeholder="Enter amount..."
+                                        className="text-2xl h-14 font-bold text-blue-600 focus:ring-blue-500"
+                                        autoFocus
+                                    />
+                                </div>
+                                <Separator />
+                                <div className="flex justify-between items-center">
+                                    <span className="text-slate-600">Change Due</span>
+                                    <span className={`text-2xl font-black ${change < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
                                     Rs. {change > 0 ? change.toLocaleString() : '0'}
-                                </span>
+                                    </span>
+                                </div>
                             </div>
-                        </div>
                     </div>
                     <DialogFooter className="sm:justify-start gap-2">
                         <Button

@@ -59,6 +59,7 @@ function POSContent() {
     const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CREDIT'>('CASH')
     const [amountPaid, setAmountPaid] = useState('')
     const [discountAmount, setDiscountAmount] = useState('')
+    const taxRate = 0.18
 
     // Queries
     const { data: products } = useProducts()
@@ -166,7 +167,9 @@ function POSContent() {
     // Calculate totals
     const subtotal = cart.reduce((sum, item) => sum + item.line_total, 0)
     const discount = Number(discountAmount) || 0
-    const total = subtotal - discount
+    const taxableAmount = subtotal - discount
+    const taxAmount = taxableAmount * taxRate
+    const total = taxableAmount + taxAmount
     const paid = Number(amountPaid) || 0
     const change = paid - total
 
@@ -441,26 +444,31 @@ function POSContent() {
                         <CardContent className="pt-6 space-y-4">
                             {/* Totals */}
                             <div className="space-y-2">
-                                <div className="flex justify-between text-sm">
-                                    <span>Subtotal:</span>
-                                    <span>Rs. {subtotal.toLocaleString()}</span>
-                                </div>
+                            <div className="flex justify-between text-sm">
+                                <span>Subtotal:</span>
+                                <span>Rs. {subtotal.toLocaleString()}</span>
+                            </div>
 
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm">Discount:</span>
-                                    <Input
-                                        type="number"
-                                        value={discountAmount}
-                                        onChange={(e) => setDiscountAmount(e.target.value)}
-                                        className="w-32 text-right"
-                                        placeholder="0"
-                                    />
-                                </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm">Discount:</span>
+                                <Input
+                                    type="number"
+                                    value={discountAmount}
+                                    onChange={(e) => setDiscountAmount(e.target.value)}
+                                    className="w-32 text-right"
+                                    placeholder="0"
+                                />
+                            </div>
 
-                                <div className="flex justify-between text-lg font-bold border-t pt-2">
-                                    <span>Total:</span>
-                                    <span>Rs. {total.toLocaleString()}</span>
-                                </div>
+                            <div className="flex justify-between text-sm">
+                                <span>Tax (18%):</span>
+                                <span>Rs. {taxAmount.toLocaleString()}</span>
+                            </div>
+
+                            <div className="flex justify-between text-lg font-bold border-t pt-2">
+                                <span>Total:</span>
+                                <span>Rs. {total.toLocaleString()}</span>
+                            </div>
                             </div>
 
                             {/* Payment Method */}

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Truck, Download } from 'lucide-react'
+import { Plus, Search, Truck, Download, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
@@ -89,6 +89,61 @@ function DeliveryNotesContent() {
         })
 
         doc.save(`DeliveryNote_${note.delivery_note_number}.pdf`)
+    }
+
+    const handlePrint = async (noteId: string) => {
+        const { data: note, error } = await supabase
+            .from('delivery_notes')
+            .select(`
+                *,
+                customers (
+                    id,
+                    name,
+                    customer_code
+                ),
+                sales_orders (order_number),
+                delivery_note_items (
+                    *,
+                    products (
+                        id,
+                        name,
+                        sku,
+                        uom_id
+                    )
+                )
+            `)
+            .eq('id', noteId)
+            .single()
+
+        if (error || !note) {
+            toast.error('Failed to print delivery note')
+            return
+        }
+
+        const doc = createDeliveryNotePDF({
+            delivery_note_number: note.delivery_note_number,
+            delivery_date: formatDate(note.delivery_date),
+            status: note.status,
+            tracking_number: note.tracking_number,
+            driver_name: note.driver_name,
+            vehicle_number: note.vehicle_number,
+            customer_name: note.customers?.name || 'Customer',
+            customer_code: note.customers?.customer_code || '',
+            order_number: note.sales_orders?.order_number || '',
+            items: (note.delivery_note_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity_delivered: item.quantity_delivered,
+            })),
+            notes: note.notes,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+
+        doc.autoPrint()
+        const url = doc.output('bloburl')
+        window.open(url, '_blank', 'noopener,noreferrer')
     }
 
     const filteredNotes = notes?.filter(note => {
@@ -206,6 +261,14 @@ function DeliveryNotesContent() {
                                                         <Truck className="mr-2 h-4 w-4" />
                                                         View
                                                     </Link>
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handlePrint(note.id)}
+                                                >
+                                                    <Printer className="mr-2 h-4 w-4" />
+                                                    Print
                                                 </Button>
                                                 <Button
                                                     variant="outline"

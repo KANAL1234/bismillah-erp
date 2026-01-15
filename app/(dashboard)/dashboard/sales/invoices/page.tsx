@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Eye, Download, CheckCircle } from 'lucide-react'
+import { Plus, Search, Eye, Download, CheckCircle, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
@@ -90,6 +90,60 @@ function SalesInvoicesContent() {
         }, {
             filename: `Invoice_${invoice.invoice_number}.pdf`,
         })
+    }
+
+    const handlePrint = async (invoiceId: string) => {
+        const { data: invoice, error } = await supabase
+            .from('sales_invoices')
+            .select(`
+                *,
+                customers (
+                    id,
+                    name,
+                    customer_code
+                ),
+                sales_invoice_items (
+                    *,
+                    products (
+                        id,
+                        name,
+                        sku,
+                        uom_id
+                    )
+                )
+            `)
+            .eq('id', invoiceId)
+            .single()
+
+        if (error || !invoice) {
+            toast.error('Failed to print invoice')
+            return
+        }
+
+        const doc = generateInvoicePDF({
+            invoice_number: invoice.invoice_number,
+            invoice_date: formatDate(invoice.invoice_date),
+            due_date: formatDate(invoice.due_date),
+            customer_name: invoice.customers?.name || 'Customer',
+            items: (invoice.sales_invoice_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                amount: item.line_total,
+            })),
+            subtotal: invoice.subtotal,
+            tax_amount: invoice.tax_amount,
+            total_amount: invoice.total_amount,
+            notes: invoice.notes || undefined,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+
+        doc.autoPrint()
+        const url = doc.output('bloburl')
+        window.open(url, '_blank', 'noopener,noreferrer')
     }
 
     const filteredInvoices = invoices?.filter(invoice => {
@@ -209,6 +263,14 @@ function SalesInvoicesContent() {
                                                         <Eye className="mr-2 h-4 w-4" />
                                                         View
                                                     </Link>
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handlePrint(invoice.id)}
+                                                >
+                                                    <Printer className="mr-2 h-4 w-4" />
+                                                    Print
                                                 </Button>
                                                 <Button
                                                     variant="outline"

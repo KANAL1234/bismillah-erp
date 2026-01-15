@@ -186,15 +186,30 @@ export function useUpdateInvoiceStatus() {
     return useMutation({
         mutationFn: async ({ id, status }: { id: string, status: SalesInvoice['status'] }) => {
             const supabase = createClient()
-            const { error } = await supabase
+            const { data: invoice, error } = await supabase
                 .from('sales_invoices')
                 .update({ status })
                 .eq('id', id)
+                .select('id, customer_id, total_amount, amount_paid')
+                .single()
 
             if (error) throw error
 
             // Post to General Ledger if status is posted (Accounting Integration)
             if (status === 'posted') {
+                if (invoice?.customer_id) {
+                    const balanceDelta = Number(invoice.total_amount || 0) - Number(invoice.amount_paid || 0)
+                    if (balanceDelta !== 0) {
+                        try {
+                            await supabase.rpc('update_customer_balance', {
+                                p_customer_id: invoice.customer_id,
+                                p_amount_change: balanceDelta
+                            })
+                        } catch (balanceError) {
+                            console.warn('Customer balance update failed (non-critical):', balanceError)
+                        }
+                    }
+                }
                 try {
                     await supabase.rpc('post_customer_invoice', {
                         p_invoice_id: id
@@ -210,6 +225,7 @@ export function useUpdateInvoiceStatus() {
             queryClient.invalidateQueries({ queryKey: ['sales-invoice', id] })
             queryClient.invalidateQueries({ queryKey: ['journal-entries'] })
             queryClient.invalidateQueries({ queryKey: ['chart-of-accounts'] })
+            queryClient.invalidateQueries({ queryKey: ['customers'] })
             toast.success('Invoice status updated')
         },
         onError: (error) => {

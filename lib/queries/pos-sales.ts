@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { POSSale, POSSaleItem, CartItem } from '@/lib/types/database'
 
 const supabase = createClient()
+const TAX_RATE = 0.18
 const formatPostgrestError = (error: any) => {
     if (!error) return null
     return {
@@ -247,7 +248,9 @@ export function useCreatePOSSale() {
 
             // Calculate totals
             const subtotal = items.reduce((sum, item) => sum + item.line_total, 0)
-            const total = subtotal - discountAmount
+            const taxableAmount = subtotal - discountAmount
+            const taxAmount = taxableAmount * TAX_RATE
+            const total = taxableAmount + taxAmount
             const amountDue = total - amountPaid
 
             // Generate sale number
@@ -263,7 +266,7 @@ export function useCreatePOSSale() {
                     sale_date: new Date().toISOString(),
                     subtotal,
                     discount_amount: discountAmount,
-                    tax_amount: 0, // Add tax logic if needed
+                    tax_amount: taxAmount,
                     total_amount: total,
                     payment_method: paymentMethod,
                     amount_paid: amountPaid,
