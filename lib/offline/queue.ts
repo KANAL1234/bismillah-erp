@@ -74,6 +74,19 @@ async function updateRetryCount(itemId: string, error: string): Promise<void> {
 async function processQueueItem(item: QueueItem): Promise<boolean> {
   const supabase = createClient()
 
+  // Helper to resolve driver_id from auth ID to fleet_drivers ID
+  const resolveDriverId = async (authId: string) => {
+    // 1. Check if authId is already a fleet_driver ID
+    const { data: d1 } = await supabase.from('fleet_drivers').select('id').eq('id', authId).maybeSingle()
+    if (d1) return d1.id
+
+    // 2. Check if authId is the employee_id
+    const { data: d2 } = await supabase.from('fleet_drivers').select('id').eq('employee_id', authId).maybeSingle()
+    if (d2) return d2.id
+
+    return authId // Fallback to original
+  }
+
   try {
     switch (item.action) {
       case 'CREATE_POS_SALE': {
@@ -102,7 +115,6 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
 
         // 2. Insert/Check sale items
         if (items && items.length > 0) {
-          // Check if items already exist for this sale to avoid duplicates on retry
           const { data: existingItems } = await supabase
             .from('pos_sale_items')
             .select('id')
@@ -124,18 +136,60 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
             if (itemsError) throw itemsError
           }
         }
-
-        console.log(`✅ Synced POS sale and items: ${item.id}`)
         return true
       }
 
       case 'CREATE_FUEL_LOG': {
-        const { error } = await supabase
-          .rpc('record_fuel_entry', item.data)
+        // Try RPC first
+        const { error: rpcError } = await supabase.rpc('record_fuel_entry', item.data)
 
-        if (error) throw error
-        console.log(`✅ Synced fuel log: ${item.id}`)
-        return true
+        if (!rpcError) return true
+
+        // If RPC fails (e.g. function missing), try manual insert as fallback
+        if (rpcError.code === 'P0001' || rpcError.message.includes('function') || rpcError.message.includes('not found')) {
+          console.log('Falling back to manual fuel log insert...')
+
+          const driverId = await resolveDriverId(item.data.p_driver_id)
+
+          // Try inserting into fleet_fuel_logs first
+          const { error: fleetError } = await supabase
+            .from('fleet_fuel_logs')
+            .insert({
+              vehicle_id: item.data.p_vehicle_id,
+              liters: item.data.p_quantity_liters,
+              cost_per_liter: item.data.p_price_per_liter,
+              total_cost: item.data.p_quantity_liters * item.data.p_price_per_liter,
+              odometer_reading: item.data.p_odometer_reading,
+              log_date: item.data.p_fuel_date || new Date().toISOString()
+            })
+
+          if (!fleetError) {
+            // Also update vehicle odometer
+            await supabase
+              .from('fleet_vehicles')
+              .update({ current_mileage: item.data.p_odometer_reading })
+              .eq('id', item.data.p_vehicle_id)
+            return true
+          }
+
+          // Last resort: try public.fuel_logs
+          const { error: fuelError } = await supabase
+            .from('fuel_logs')
+            .insert({
+              vehicle_id: item.data.p_vehicle_id,
+              log_date: item.data.p_fuel_date || new Date().toISOString(),
+              odometer_reading: item.data.p_odometer_reading,
+              fuel_quantity: item.data.p_quantity_liters,
+              fuel_rate: item.data.p_price_per_liter,
+              filled_by: item.data.p_driver_id, // Usually matches employee_id/auth_id
+              station_name: item.data.p_fuel_station
+            })
+
+          if (fuelError) throw fuelError
+          return true
+        }
+
+        throw rpcError
       }
 
       case 'UPDATE_ODOMETER': {
@@ -145,17 +199,28 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
           .eq('id', item.data.vehicle_id)
 
         if (error) throw error
-        console.log(`✅ Synced odometer: ${item.id}`)
         return true
       }
 
       case 'CREATE_TRIP': {
+        // Idempotency check
+        const { data: existing } = await supabase
+          .from('fleet_trips')
+          .select('id')
+          .eq('id', item.data.id)
+          .maybeSingle()
+
+        if (existing) return true
+
+        const driverId = await resolveDriverId(item.data.driver_id)
         const { error } = await supabase
           .from('fleet_trips')
-          .insert(item.data)
+          .insert({
+            ...item.data,
+            driver_id: driverId
+          })
 
         if (error) throw error
-        console.log(`✅ Synced trip start: ${item.id}`)
         return true
       }
 
@@ -166,7 +231,6 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
           .eq('id', item.data.id)
 
         if (error) throw error
-        console.log(`✅ Synced trip update: ${item.id}`)
         return true
       }
 
@@ -176,7 +240,6 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
           .insert(item.data)
 
         if (error) throw error
-        console.log(`✅ Synced location: ${item.id}`)
         return true
       }
 
