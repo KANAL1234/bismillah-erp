@@ -106,6 +106,11 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
     switch (item.action) {
       case 'CREATE_POS_SALE': {
         const { items, ...saleData } = item.data
+        // Safeguard: amount_due is a GENERATED ALWAYS column in Postgres
+        // We must remove it if it exists in the offline item data
+        if ('amount_due' in saleData) {
+          delete (saleData as any).amount_due
+        }
         console.log(`🛒 Syncing POS Sale: ${saleData.sale_number}`, saleData)
 
         // Resolve driver if it's on a trip

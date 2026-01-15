@@ -166,7 +166,6 @@ export default function MobilePOSPage() {
                 tax_amount: 0,
                 discount_amount: 0,
                 amount_paid: saleData.total_amount,
-                amount_due: 0,
                 is_synced: true,
                 trip_id: tripId
             }).select('id').single()
