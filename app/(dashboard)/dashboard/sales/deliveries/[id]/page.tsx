@@ -51,7 +51,7 @@ function DeliveryNoteDetailsContent() {
             customer_name: note.customers?.name || 'Customer',
             customer_code: note.customers?.customer_code || '',
             order_number: note.sales_orders?.order_number || '',
-            items: (note.delivery_note_items || []).map(item => ({
+            items: (note.delivery_note_items || []).map((item: any) => ({
                 description: item.products?.name || 'Item',
                 quantity_delivered: item.quantity_delivered,
             })),
@@ -75,7 +75,7 @@ function DeliveryNoteDetailsContent() {
             customer_name: note.customers?.name || 'Customer',
             customer_code: note.customers?.customer_code || '',
             order_number: note.sales_orders?.order_number || '',
-            items: (note.delivery_note_items || []).map(item => ({
+            items: (note.delivery_note_items || []).map((item: any) => ({
                 description: item.products?.name || 'Item',
                 quantity_delivered: item.quantity_delivered,
             })),
