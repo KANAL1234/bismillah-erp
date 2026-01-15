@@ -133,7 +133,7 @@ function DeliveryNoteDetailsContent() {
                             </TableHeader>
                             <TableBody>
                                 {note.delivery_note_items?.length ? (
-                                    note.delivery_note_items.map((item) => (
+                                    note.delivery_note_items.map((item: any) => (
                                         <TableRow key={item.id}>
                                             <TableCell className="font-medium">
                                                 {item.products?.name || 'Item'}
