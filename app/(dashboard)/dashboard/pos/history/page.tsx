@@ -45,15 +45,17 @@ export default function SalesHistoryPage() {
 }
 
 function SalesHistoryContent() {
-    const [locationId, setLocationId] = useState('')
-    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
+    // Default to last 30 days to show mobile app sales
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const [startDate, setStartDate] = useState(thirtyDaysAgo.toISOString().split('T')[0])
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null)
-    const { allowedLocationIds } = useLocation()
+    const { allowedLocationIds, currentLocationId } = useLocation()
 
     const { data: locations } = useLocations()
-    const { data: sales, isLoading } = usePOSSales(locationId, startDate, endDate)
+    const { data: sales, isLoading } = usePOSSales(currentLocationId || undefined, startDate, endDate)
 
     // Filter locations by LBAC
     const allowedLocations = locations?.filter(loc => allowedLocationIds.includes(loc.id))
@@ -92,6 +94,22 @@ function SalesHistoryContent() {
                 </Link>
                 <h2 className="text-3xl font-bold text-gray-900 ml-4">Sales History</h2>
             </div>
+
+            {/* Debug Info */}
+            <Card className="mb-6 bg-blue-50 border-blue-200">
+                <CardContent className="pt-6">
+                    <div className="text-sm space-y-2">
+                        <p><strong>Debug Info:</strong></p>
+                        <p>• Total sales fetched: {sales?.length || 0}</p>
+                        <p>• After LBAC filter: {accessibleSales?.length || 0}</p>
+                        <p>• After search filter: {filteredSales?.length || 0}</p>
+                        <p>• Current Location ID: {currentLocationId || 'All Locations'}</p>
+                        <p>• Allowed Location IDs: {allowedLocationIds.join(', ')}</p>
+                        <p>• Date Range: {startDate} to {endDate}</p>
+                        <p>• Loading: {isLoading ? 'Yes' : 'No'}</p>
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -139,24 +157,7 @@ function SalesHistoryContent() {
             {/* Filters */}
             <Card className="mb-6">
                 <CardContent className="pt-6">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium">Location</label>
-                            <Select value={locationId || "ALL"} onValueChange={(val) => setLocationId(val === "ALL" ? "" : val)}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="All My Locations" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="ALL">All My Locations</SelectItem>
-                                    {allowedLocations?.map((location) => (
-                                        <SelectItem key={location.id} value={location.id}>
-                                            {location.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Start Date</label>
                             <div className="relative">
