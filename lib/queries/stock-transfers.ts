@@ -140,12 +140,21 @@ export function useUpdateTransferStatus() {
             if (fetchError) throw fetchError
 
             // Update transfer status
-            const { error: updateError } = await supabase
+            const { data: updatedTransfer, error: updateError } = await supabase
                 .from('stock_transfers')
                 .update({ status })
                 .eq('id', id)
+                .neq('status', status) // Prevent duplicate processing if already updated
+                .select()
+                .maybeSingle()
 
             if (updateError) throw updateError
+
+            // If no update occurred (already completed/same status), skip inventory logic
+            if (!updatedTransfer) {
+                console.log('⚠️ Transfer status already matches target or updated concurrently. Skipping inventory processing.')
+                return { id, status }
+            }
 
             // If completing, update quantities and create inventory transactions
             if (status === 'COMPLETED') {

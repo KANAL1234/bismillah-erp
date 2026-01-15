@@ -134,12 +134,21 @@ export function useApproveAdjustment() {
             if (fetchError) throw fetchError
 
             // Update adjustment status
-            const { error: updateError } = await supabase
+            const { data: updatedAdjustment, error: updateError } = await supabase
                 .from('stock_adjustments')
                 .update({ status: 'APPROVED' })
                 .eq('id', id)
+                .neq('status', 'APPROVED') // Prevent double approval
+                .select()
+                .maybeSingle()
 
             if (updateError) throw updateError
+
+            // If already approved, skip processing
+            if (!updatedAdjustment) {
+                console.log('⚠️ Adjustment already approved. Skipping inventory update.')
+                return { id }
+            }
 
             // Update stock for each item
             for (const item of adjustment.stock_adjustment_items) {
