@@ -87,7 +87,7 @@ export default function MobilePOSPage() {
                     toast.error(`Max stock available is ${item.maxQuantity}`)
                     return item
                 }
-                return newQty > 0 ? { ...item, quantity: newQty } : item
+                return { ...item, quantity: newQty }
             }
             return item
         }).filter(item => item.quantity > 0))
@@ -242,8 +242,8 @@ export default function MobilePOSPage() {
                                                 <Badge
                                                     variant="secondary"
                                                     className={`text-[10px] px-1.5 py-0 font-bold ${product.quantity_on_hand <= 5
-                                                            ? "bg-rose-50 text-rose-600 border-rose-100"
-                                                            : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                                                        ? "bg-rose-50 text-rose-600 border-rose-100"
+                                                        : "bg-emerald-50 text-emerald-600 border-emerald-100"
                                                         }`}
                                                 >
                                                     {product.quantity_on_hand} in stock
@@ -263,7 +263,7 @@ export default function MobilePOSPage() {
 
             {/* Premium Cart Bottom Bar */}
             {cart.length > 0 && (
-                <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-200 z-30 pb-safe shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.05)]">
+                <div className="fixed bottom-16 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-200 z-30 pb-safe shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.05)]">
                     <ScrollArea className="max-h-[40vh]">
                         <div className="p-4 space-y-4">
                             <div className="flex items-center justify-between">
