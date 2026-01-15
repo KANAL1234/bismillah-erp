@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
     Select,
     SelectContent,
@@ -29,12 +30,13 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Receipt as ReceiptComponent } from '@/components/pos/receipt'
-import { ArrowLeft, Receipt, Search, Calendar } from 'lucide-react'
+import { ArrowLeft, Receipt, Search, Calendar, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { formatDate } from '@/lib/utils'
 import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
+import { toast } from 'sonner'
 
 export default function SalesHistoryPage() {
     return (
@@ -94,6 +96,28 @@ function SalesHistoryContent() {
                 </Link>
                 <h2 className="text-3xl font-bold text-gray-900 ml-4">Sales History</h2>
             </div>
+
+            {/* Location Context Alert */}
+            {currentLocationId && (
+                <Alert className="mb-6 bg-blue-50 border-blue-200">
+                    <AlertCircle className="h-4 w-4 text-blue-600" />
+                    <AlertDescription className="flex items-center justify-between">
+                        <span>
+                            Showing sales for: <strong>{locations?.find(l => l.id === currentLocationId)?.name || 'Selected Location'}</strong>
+                        </span>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                // This will be handled by changing the location selector in the header
+                                toast.info('To view all locations, change the location selector in the header to "All Locations"')
+                            }}
+                        >
+                            View All Locations
+                        </Button>
+                    </AlertDescription>
+                </Alert>
+            )}
 
             {/* Debug Info */}
             <Card className="mb-6 bg-blue-50 border-blue-200">
