@@ -29,20 +29,36 @@ export default function TripPage() {
     const [endOdometer, setEndOdometer] = useState('')
     const [loading, setLoading] = useState(false)
 
-    // Get Vehicles
+    // Get Vehicles (using fleet_vehicles table which matches the trips module)
     const { data: vehicles } = useQuery({
         queryKey: ['vehicles-list'],
         queryFn: async () => {
-            const { data } = await supabase.from('vehicles').select('id, license_plate, current_odometer')
+            const { data } = await supabase
+                .from('fleet_vehicles')
+                .select('id, registration_number, current_mileage, location_id')
+                .eq('status', 'ACTIVE')
             return data || []
         }
     })
 
-    // Auto-fill odometer when vehicle selected
+    // Auto-select vehicle based on login selection (cookie)
+    useEffect(() => {
+        const match = document.cookie.match(/driver_vehicle_id=([^;]+)/)
+        if (match && vehicles && vehicles.length > 0 && !vehicleId) {
+            const selectedLocationId = match[1]
+            const foundVehicle = vehicles.find((v: any) => v.location_id === selectedLocationId)
+            if (foundVehicle) {
+                setVehicleId(foundVehicle.id)
+                setOdometer(foundVehicle.current_mileage?.toString() || '')
+            }
+        }
+    }, [vehicles, vehicleId])
+
+    // Auto-fill odometer when vehicle selected manually
     useEffect(() => {
         if (vehicleId && vehicles && !isTracking) {
             const v = vehicles.find((v: any) => v.id === vehicleId)
-            if (v) setOdometer(v.current_odometer?.toString() || '')
+            if (v) setOdometer(v.current_mileage?.toString() || '')
         }
     }, [vehicleId, vehicles, isTracking])
 
@@ -186,7 +202,7 @@ export default function TripPage() {
                         <SelectContent>
                             {vehicles?.map((v: any) => (
                                 <SelectItem key={v.id} value={v.id}>
-                                    {v.license_plate}
+                                    {v.registration_number}
                                 </SelectItem>
                             ))}
                         </SelectContent>
