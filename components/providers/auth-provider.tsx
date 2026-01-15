@@ -104,26 +104,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Load user permissions
       await loadPermissions(authUser.id);
 
-      // Set up automatic permission refresh every 30 seconds
-      // Note: Ideally this should be in a separate useEffect, but keeping here for now.
-      // We removed the return statement to allow the function to complete.
-      const refreshInterval = setInterval(() => {
-        loadPermissions(authUser.id);
-      }, 30000);
-
       // Load allowed locations
-      const { data: locations } = await supabase
+      const { data: locations, error: locError } = await supabase
         .from('user_allowed_locations')
         .select(`
           location_id,
-          locations:location_id (
+          locations (
             name,
             code
           )
         `)
         .eq('user_id', authUser.id);
 
-      if (locations) {
+      if (locError) {
+        console.error('Error loading locations:', locError);
+      } else if (locations) {
         setAllowedLocations(locations.map((l: any) => ({
           location_id: l.location_id,
           location_name: l?.locations?.name || '',
@@ -131,9 +126,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })));
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading user data:', error);
-      toast.error('Failed to load user permissions');
+      toast.error('Failed to load user permissions: ' + (error.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
