@@ -35,7 +35,7 @@ export function InstallPrompt() {
     }
 
     window.addEventListener('beforeinstallprompt', handler)
-    
+
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
@@ -44,7 +44,7 @@ export function InstallPrompt() {
 
     installPrompt.prompt()
     const { outcome } = await installPrompt.userChoice
-    
+
     if (outcome === 'accepted') {
       console.log('User accepted install')
       setInstallPrompt(null)
@@ -82,7 +82,7 @@ export function InstallPrompt() {
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <div className="flex gap-2 mt-4">
           <Button
             onClick={handleInstall}
@@ -114,7 +114,7 @@ export function IOSInstallInstructions() {
     // Detect iOS Safari
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
     const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
-    
+
     if (isIOS && !isInStandaloneMode) {
       setShow(true)
     }
@@ -123,19 +123,17 @@ export function IOSInstallInstructions() {
   if (!show) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-blue-600 text-white p-4 z-50">
-      <div className="max-w-md mx-auto">
-        <p className="font-semibold mb-2">Install App on iOS</p>
-        <ol className="text-sm space-y-1 text-blue-100">
-          <li>1. Tap the Share button (bottom of screen)</li>
-          <li>2. Select "Add to Home Screen"</li>
-          <li>3. Tap "Add"</li>
-        </ol>
+    <div className="fixed bottom-0 left-0 right-0 bg-blue-600 text-white px-4 py-2 z-50 pb-safe shadow-lg">
+      <div className="max-w-md mx-auto flex items-center justify-between gap-4">
+        <div className="text-xs sm:text-sm">
+          <span className="font-bold block sm:inline">Install on iOS:</span>
+          <span className="opacity-90"> Tap the Share button <span className="inline-block border border-white/40 px-1 rounded text-[10px]">↑</span> then "Add to Home Screen"</span>
+        </div>
         <button
           onClick={() => setShow(false)}
-          className="mt-3 text-sm underline"
+          className="text-white/80 hover:text-white p-1"
         >
-          Got it, dismiss
+          <X className="w-4 h-4" />
         </button>
       </div>
     </div>

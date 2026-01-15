@@ -1,7 +1,7 @@
 // app/(mobile)/mobile/layout.tsx
 import { MobileNav } from '@/components/mobile/mobile-nav'
 import { OfflineIndicator } from '@/components/mobile/offline-indicator'
-import { InstallPrompt } from '@/components/mobile/install-prompt'
+import { InstallPrompt, IOSInstallInstructions } from '@/components/mobile/install-prompt'
 import '@/app/globals.css'
 
 export const metadata = {
@@ -37,6 +37,7 @@ export default function MobileLayout({
 
       {/* Install Prompt */}
       <InstallPrompt />
+      <IOSInstallInstructions />
     </div>
   )
 }
