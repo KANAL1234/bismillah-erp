@@ -28,9 +28,14 @@ export default function MobileProfilePage() {
     }, [showQueue, stats])
 
     const handleLogout = async () => {
-        await supabase.auth.signOut()
-        router.push('/login')
-        toast.success('Logged out successfully')
+        try {
+            await supabase.auth.signOut()
+            localStorage.clear()
+            window.location.href = '/login'
+        } catch (error) {
+            console.error('Logout error:', error)
+            toast.error('Logout failed')
+        }
     }
 
     return (
@@ -141,13 +146,12 @@ export default function MobileProfilePage() {
                                     {queueItems.map(item => (
                                         <div
                                             key={item.id}
-                                            className={`p-3 rounded-lg text-xs ${
-                                                item.retryCount >= 3
+                                            className={`p-3 rounded-lg text-xs ${item.retryCount >= 3
                                                     ? 'bg-rose-50 border border-rose-100'
                                                     : item.retryCount > 0
-                                                    ? 'bg-amber-50 border border-amber-100'
-                                                    : 'bg-gray-50 border border-gray-100'
-                                            }`}
+                                                        ? 'bg-amber-50 border border-amber-100'
+                                                        : 'bg-gray-50 border border-gray-100'
+                                                }`}
                                         >
                                             <div className="flex items-center justify-between mb-1">
                                                 <span className="font-medium">{item.action.replace(/_/g, ' ')}</span>

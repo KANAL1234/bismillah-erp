@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<PermissionCheck[]>([]);
   const [allowedLocations, setAllowedLocations] = useState<{ location_id: string; location_name: string; location_code: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const loadingRef = useRef(false);
+  const loadIdRef = useRef(0);
 
   useEffect(() => {
     loadUserData();
@@ -39,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
         loadUserData();
       } else if (event === 'SIGNED_OUT') {
+        loadIdRef.current++;
         setUser(null);
         setRoles([]);
         setPermissions([]);
@@ -51,13 +52,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const loadPermissions = async (userId: string) => {
+  const loadPermissions = async (userId: string, currentId: number) => {
     try {
-      const { data: userPermissions } = await supabase.rpc('get_user_permissions', {
+      const { data: userPermissions, error } = await supabase.rpc('get_user_permissions', {
         p_user_id: userId
       });
 
-      if (userPermissions) {
+      if (currentId !== loadIdRef.current) return;
+
+      if (error) {
+        console.error('Permissions RPC error:', error);
+      } else if (userPermissions) {
         setPermissions(userPermissions);
       }
     } catch (err) {
@@ -66,43 +71,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loadUserData = async () => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    const currentId = ++loadIdRef.current;
+
+    const timeoutId = setTimeout(() => {
+      if (currentId === loadIdRef.current) {
+        console.warn('Auth loading timed out after 10s. Forcing unlock.');
+        setLoading(false);
+      }
+    }, 10000);
 
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-      if (!authUser) {
-        setLoading(false);
-        loadingRef.current = false;
+      if (currentId !== loadIdRef.current) {
+        clearTimeout(timeoutId);
         return;
       }
 
-      // Load user profile
-      const { data: profile } = await supabase
+      if (authError || !authUser) {
+        console.log('No authenticated user found');
+        clearTimeout(timeoutId);
+        setLoading(false);
+        return;
+      }
+
+      console.log('Logged in as:', authUser.email);
+
+      // 1. Profile
+      const { data: profile, error: profileErr } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
 
-      if (profile) {
-        setUser(profile);
-        await supabase
-          .from('user_profiles')
-          .update({ last_login: new Date().toISOString() })
-          .eq('id', authUser.id);
+      if (currentId !== loadIdRef.current) {
+        clearTimeout(timeoutId);
+        return;
       }
 
-      const { data: userRoles } = await supabase.rpc('get_user_roles', {
+      if (profile) {
+        setUser(profile);
+        supabase.from('user_profiles')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', authUser.id)
+          .then(({ error }) => error && console.error('Last login update failed:', error));
+      } else if (profileErr && profileErr.code !== 'PGRST116') {
+        console.error('Profile load error:', profileErr);
+      }
+
+      // 2. Roles
+      const { data: userRoles, error: rolesErr } = await supabase.rpc('get_user_roles', {
         p_user_id: authUser.id
       });
 
-      if (userRoles) {
+      if (currentId !== loadIdRef.current) {
+        clearTimeout(timeoutId);
+        return;
+      }
+
+      if (rolesErr) {
+        console.error('Roles RPC error:', rolesErr);
+      } else if (userRoles) {
+        console.log(`Loaded ${userRoles.length} roles:`, userRoles.map((r: any) => r.role_code));
         setRoles(userRoles);
       }
 
-      await loadPermissions(authUser.id);
+      // 3. Permissions
+      await loadPermissions(authUser.id, currentId);
+      if (currentId !== loadIdRef.current) {
+        clearTimeout(timeoutId);
+        return;
+      }
 
+      // 4. Locations
       const { data: locations, error: locError } = await supabase
         .from('user_allowed_locations')
         .select(`
@@ -114,7 +155,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         `)
         .eq('user_id', authUser.id);
 
-      if (!locError && locations) {
+      if (currentId !== loadIdRef.current) {
+        clearTimeout(timeoutId);
+        return;
+      }
+
+      if (locError && locError.code !== 'PGRST116') {
+        console.error('Error loading locations:', locError);
+      } else if (locations) {
+        console.log(`Loaded ${locations.length} allowed locations`);
         setAllowedLocations(locations.map((l: any) => ({
           location_id: l.location_id,
           location_name: l?.locations?.name || '',
@@ -122,17 +171,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })));
       }
 
+      console.log('--- AUTH DATA LOADED ---');
+      console.log('UID:', authUser.id);
+      console.log('Email:', authUser.email);
+      console.log('Roles:', userRoles?.map((r: any) => r.role_code) || []);
+      console.log('Locs Count:', locations?.length || 0);
+      console.log('------------------------');
+
     } catch (error: any) {
-      // Ignore abort errors as they are typical during navigation or quick refreshes
-      if (error.name !== 'AbortError' && error.message !== 'The operation was aborted.') {
-        console.error('Error loading user data:', error);
-        toast.error('Failed to load user permissions');
+      if (currentId === loadIdRef.current &&
+        error.name !== 'AbortError' &&
+        !error.message?.includes('aborted')) {
+        console.error('Auth Data Load Error:', error);
+        toast.error('Session error. Please refresh.');
       }
     } finally {
-      setLoading(false);
-      loadingRef.current = false;
+      clearTimeout(timeoutId);
+      if (currentId === loadIdRef.current) {
+        setLoading(false);
+      }
     }
   };
+
 
 
   const hasPermission = (permissionCode: string): boolean => {
@@ -164,7 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Manual refresh function
   const refreshPermissions = async () => {
     if (user?.id) {
-      await loadPermissions(user.id);
+      await loadPermissions(user.id, loadIdRef.current);
     }
   };
 

@@ -4,6 +4,7 @@ import { LocationSelector } from '@/components/location-selector'
 
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -21,9 +22,20 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
     const { toggle, isOpen } = useSidebar()
 
     const handleLogout = async () => {
-        const supabase = createClient()
-        await supabase.auth.signOut()
-        router.push('/login')
+        const logoutToast = toast.loading('Logging out...');
+        try {
+            const supabase = createClient()
+            await supabase.auth.signOut()
+
+            // Clear all local storage to prevent state leakage
+            localStorage.clear();
+
+            // Use window.location.href instead of router.push for a full clean redirect
+            window.location.href = '/login'
+        } catch (error) {
+            console.error('Logout error:', error)
+            toast.error('Logout failed', { id: logoutToast });
+        }
     }
 
     return (
