@@ -157,7 +157,9 @@ export default function MobilePOSPage() {
 
         if (isOnline) {
             const saleNumber = `POS-${Date.now()}`
-            const { data: sale, error } = await supabase.from('pos_sales').insert({
+            const tripId = activeTrip?.id || localStorage.getItem('current_trip_id')
+
+            const { data: sale, error: saleError } = await supabase.from('pos_sales').insert({
                 ...saleData,
                 sale_number: saleNumber,
                 subtotal: saleData.total_amount,
@@ -165,11 +167,13 @@ export default function MobilePOSPage() {
                 discount_amount: 0,
                 amount_paid: saleData.total_amount,
                 amount_due: 0,
-                is_synced: true
+                is_synced: true,
+                trip_id: tripId
             }).select('id').single()
 
-            if (error) {
-                toast.error('Failed to save sale')
+            if (saleError) {
+                console.error('POS Error:', saleError)
+                toast.error('Failed to save sale: ' + saleError.message)
                 return
             }
 
@@ -189,12 +193,12 @@ export default function MobilePOSPage() {
 
                 if (itemsError) {
                     console.error('Failed to save sale items:', itemsError)
-                    // Sale was created but items failed - still show success
                 }
             }
 
             toast.success('Sale completed successfully!')
         } else {
+            const tripId = localStorage.getItem('current_trip_id')
             await addToQueue('CREATE_POS_SALE', {
                 ...saleData,
                 items: cart.map(item => ({
@@ -208,7 +212,8 @@ export default function MobilePOSPage() {
                 tax_amount: 0,
                 discount_amount: 0,
                 amount_paid: saleData.total_amount,
-                is_synced: false
+                is_synced: false,
+                trip_id: tripId
             })
             toast.success('Sale saved offline. Syncing soon.')
         }

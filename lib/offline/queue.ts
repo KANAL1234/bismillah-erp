@@ -106,6 +106,7 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
     switch (item.action) {
       case 'CREATE_POS_SALE': {
         const { items, ...saleData } = item.data
+        console.log(`🛒 Syncing POS Sale: ${saleData.sale_number}`, saleData)
 
         // Resolve driver if it's on a trip
         if (saleData.trip_id) {
@@ -125,12 +126,19 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
           // Insert the main sale record
           const { data: sale, error: saleError } = await supabase
             .from('pos_sales')
-            .insert(saleData)
+            .insert({
+              ...saleData,
+              is_synced: true // Ensure it's marked as synced in DB
+            })
             .select()
             .single()
 
-          if (saleError) throw saleError
+          if (saleError) {
+            console.error(`❌ POS Sale Main Insert Failed:`, saleError)
+            throw saleError
+          }
           saleId = sale.id
+          console.log(`✅ POS Sale created with ID: ${saleId}`)
         }
 
         // 2. Insert/Check sale items
@@ -153,12 +161,17 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
               .from('pos_sale_items')
               .insert(saleItems)
 
-            if (itemsError) throw itemsError
+            if (itemsError) {
+              console.error(`❌ POS Sale Items Insert Failed:`, itemsError)
+              throw itemsError
+            }
+            console.log(`✅ ${saleItems.length} items synced for sale ${saleId}`)
           }
         }
         // 3. Create a Visit record if linked to a trip (Automation)
         if (saleData.trip_id && saleData.customer_id) {
           try {
+            console.log(`📍 Recording auto-visit for Customer: ${saleData.customer_id}`)
             // Check if visit already recorded for this sale/trip/customer combo to avoid duplicates
             const { data: existingVisit } = await supabase
               .from('fleet_trip_visits')
@@ -176,6 +189,7 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
                 visit_time: new Date().toISOString(),
                 notes: `Auto-recorded via Sale #${saleData.sale_number}`
               })
+              console.log(`✅ Auto-visit recorded`)
             }
           } catch (vErr) {
             console.error('Non-critical: Failed to record auto-visit:', vErr)
