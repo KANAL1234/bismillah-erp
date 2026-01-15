@@ -8,7 +8,10 @@ const supabase = createClient()
 export function usePurchaseOrders(status?: string) {
     return useQuery({
         queryKey: ['purchase-orders', status],
-        queryFn: async () => {
+        queryFn: async (): Promise<Array<PurchaseOrder & {
+            vendors: { id: string; vendor_code: string; name: string } | null
+            locations: { id: string; code: string; name: string } | null
+        }>> => {
             let query = supabase
                 .from('purchase_orders')
                 .select(`
@@ -18,8 +21,8 @@ export function usePurchaseOrders(status?: string) {
           expected_delivery_date,
           status,
           total_amount,
-          vendors(id, vendor_code, name),
-          locations(id, code, name)
+          vendors!inner(id, vendor_code, name),
+          locations!inner(id, code, name)
         `)
                 .order('created_at', { ascending: false })
 
@@ -30,7 +33,7 @@ export function usePurchaseOrders(status?: string) {
             const { data, error } = await query
 
             if (error) throw error
-            return data
+            return data as any
         },
     })
 }
