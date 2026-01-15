@@ -39,6 +39,7 @@ function SalesQuotationDetailsContent() {
     const convertToOrder = useConvertQuotationToOrder()
 
     const buildQuotationPDF = () => {
+        if (!quotation) return null
         return createQuotationPDF({
             quotation_number: quotation.quotation_number,
             quotation_date: new Date(quotation.quotation_date).toLocaleDateString(),
@@ -46,7 +47,7 @@ function SalesQuotationDetailsContent() {
             reference_number: quotation.reference_number,
             customer_name: quotation.customers?.name || 'Customer',
             customer_code: quotation.customers?.customer_code || '',
-            items: (quotation.sales_quotation_items || []).map(item => ({
+            items: (quotation.sales_quotation_items || []).map((item: any) => ({
                 description: item.products?.name || item.description || 'Item',
                 quantity: item.quantity,
                 unit_price: item.unit_price,
@@ -68,6 +69,7 @@ function SalesQuotationDetailsContent() {
 
     const handlePrint = () => {
         const doc = buildQuotationPDF()
+        if (!doc) return
         doc.autoPrint()
         const url = doc.output('bloburl')
         window.open(url, '_blank', 'noopener,noreferrer')
@@ -75,7 +77,9 @@ function SalesQuotationDetailsContent() {
 
     const handleDownload = () => {
         const doc = buildQuotationPDF()
-        doc.save(`Quotation_${quotation.quotation_number}.pdf`)
+        if (!doc) return
+        const quoteNumber = quotation?.quotation_number || 'Quotation'
+        doc.save(`Quotation_${quoteNumber}.pdf`)
     }
 
     const statusBadge = useMemo(() => {

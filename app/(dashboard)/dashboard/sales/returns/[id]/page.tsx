@@ -50,7 +50,7 @@ function SalesReturnDetailsContent() {
             customer_code: salesReturn.customers?.customer_code || '',
             invoice_number: salesReturn.sales_invoices?.invoice_number || '',
             refund_amount: salesReturn.refund_amount,
-            items: (salesReturn.sales_return_items || []).map(item => ({
+            items: (salesReturn.sales_return_items || []).map((item: any) => ({
                 description: item.products?.name || 'Item',
                 quantity_returned: item.quantity_returned,
                 condition: item.condition,
@@ -74,7 +74,7 @@ function SalesReturnDetailsContent() {
             customer_code: salesReturn.customers?.customer_code || '',
             invoice_number: salesReturn.sales_invoices?.invoice_number || '',
             refund_amount: salesReturn.refund_amount,
-            items: (salesReturn.sales_return_items || []).map(item => ({
+            items: (salesReturn.sales_return_items || []).map((item: any) => ({
                 description: item.products?.name || 'Item',
                 quantity_returned: item.quantity_returned,
                 condition: item.condition,
@@ -135,7 +135,7 @@ function SalesReturnDetailsContent() {
                             </TableHeader>
                             <TableBody>
                                 {salesReturn.sales_return_items?.length ? (
-                                    salesReturn.sales_return_items.map((item) => (
+                                    salesReturn.sales_return_items.map((item: any) => (
                                         <TableRow key={item.id}>
                                             <TableCell className="font-medium">
                                                 {item.products?.name || 'Item'}
