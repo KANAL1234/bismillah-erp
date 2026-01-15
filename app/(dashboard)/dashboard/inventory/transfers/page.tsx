@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useLocation } from '@/components/providers/location-provider'
 import { useStockTransfers, useUpdateTransferStatus, useDeleteTransfer } from '@/lib/queries/stock-transfers'
 import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,7 +16,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, ArrowRight, Check, X, Trash2 } from 'lucide-react'
+import { Plus, ArrowRight, Check, X, Trash2, Eye, Send, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
@@ -40,8 +41,19 @@ export default function StockTransfersPage() {
 }
 
 function StockTransfersContent() {
-    const { data: allTransfers, isLoading } = useStockTransfers()
+    const { currentLocationId } = useLocation()
+    const { data: allTransfersData, isLoading } = useStockTransfers()
     const updateStatus = useUpdateTransferStatus()
+
+    // Filter transfers based on location selection
+    // Show transfer if it corresponds to FROM or TO the selected location
+    const allTransfers = allTransfersData?.filter(transfer => {
+        if (!currentLocationId || currentLocationId === '') return true
+        return (
+            transfer.from_location_id === currentLocationId ||
+            transfer.to_location_id === currentLocationId
+        )
+    })
     const deleteTransfer = useDeleteTransfer()
     const [itemToDelete, setItemToDelete] = useState<{ id: string, number: string } | null>(null)
 
@@ -111,8 +123,12 @@ function StockTransfersContent() {
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900">Stock Transfers</h2>
-                    <p className="text-slate-500">Manage movement of goods between locations.</p>
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Stock Transfers</h1>
+                    <p className="text-slate-500">
+                        {currentLocationId
+                            ? 'Showing transfers for selected location'
+                            : 'Manage movement of goods between locations (all locations)'}
+                    </p>
                 </div>
                 <Link href="/dashboard/inventory/transfers/new">
                     <Button className="w-full md:w-auto">
@@ -191,10 +207,15 @@ function StockTransfersContent() {
                                                                 </Badge>
                                                             </TableCell>
                                                             <TableCell className="text-right">
-                                                                <div className="flex justify-end gap-1">
+                                                                <div className="flex justify-end gap-2">
                                                                     <Link href={`/dashboard/inventory/transfers/${transfer.id}`}>
-                                                                        <Button variant="ghost" size="sm" className="h-8">
-                                                                            View
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                                                            title="View Details"
+                                                                        >
+                                                                            <Eye className="h-4 w-4" />
                                                                         </Button>
                                                                     </Link>
 
@@ -202,17 +223,19 @@ function StockTransfersContent() {
                                                                         <>
                                                                             <Button
                                                                                 variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                                                 onClick={() => handleStatusChange(transfer.id, 'PENDING_APPROVAL')}
+                                                                                title="Submit for Approval"
                                                                             >
-                                                                                Submit
+                                                                                <Send className="h-4 w-4" />
                                                                             </Button>
                                                                             <Button
                                                                                 variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
                                                                                 onClick={() => handleDelete(transfer.id, transfer.transfer_number)}
+                                                                                title="Delete Transfer"
                                                                             >
                                                                                 <Trash2 className="h-4 w-4" />
                                                                             </Button>
@@ -223,17 +246,19 @@ function StockTransfersContent() {
                                                                         <>
                                                                             <Button
                                                                                 variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
                                                                                 onClick={() => handleStatusChange(transfer.id, 'APPROVED')}
+                                                                                title="Approve Transfer"
                                                                             >
                                                                                 <Check className="h-4 w-4" />
                                                                             </Button>
                                                                             <Button
                                                                                 variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
                                                                                 onClick={() => handleStatusChange(transfer.id, 'CANCELLED')}
+                                                                                title="Cancel Transfer"
                                                                             >
                                                                                 <X className="h-4 w-4" />
                                                                             </Button>
@@ -243,11 +268,12 @@ function StockTransfersContent() {
                                                                     {transfer.status === 'APPROVED' && (
                                                                         <Button
                                                                             variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-8 text-green-600 hover:text-green-700 hover:bg-green-50 font-bold"
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
                                                                             onClick={() => handleStatusChange(transfer.id, 'COMPLETED')}
+                                                                            title="Mark as Completed"
                                                                         >
-                                                                            Complete
+                                                                            <CheckCircle className="h-4 w-4" />
                                                                         </Button>
                                                                     )}
                                                                 </div>

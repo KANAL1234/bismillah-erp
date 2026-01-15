@@ -117,13 +117,48 @@ export async function POST() {
             if (!error) logs.push(`✅ Deleted ${ids.length} stale employees`)
         }
 
-        const { data: stalePayroll } = await adminSupabase.from('payroll_periods').select('id')
-            .or('period_name.ilike.TEST-%,period_name.ilike.HEALTH-TEST-%')
-        if (stalePayroll?.length) {
-            const ids = stalePayroll.map(p => p.id)
-            await adminSupabase.from('payslips').delete().in('payroll_period_id', ids)
-            const { error } = await adminSupabase.from('payroll_periods').delete().in('id', ids)
-            if (!error) logs.push(`✅ Deleted ${ids.length} stale payroll periods`)
+        // --- FLEET MANAGEMENT ---
+        const { data: staleVehicles } = await adminSupabase.from('fleet_vehicles').select('id, location_id')
+            .or('registration_number.ilike.TEST-%,registration_number.ilike.HLT-%')
+        if (staleVehicles?.length) {
+            const vehIds = staleVehicles.map(v => v.id)
+            const locIds = staleVehicles.map(v => v.location_id).filter(id => id !== null)
+
+            // Get trip IDs for cascade cleanup
+            const { data: trips } = await adminSupabase.from('fleet_trips').select('id').in('vehicle_id', vehIds)
+            const tripIds = trips?.map(t => t.id) || []
+
+            // Cleanup new Fleet Business Workflow tables
+            if (tripIds.length) {
+                await adminSupabase.from('fleet_cash_deposits').delete().in('trip_id', tripIds)
+                await adminSupabase.from('fleet_fuel_allowances').delete().in('trip_id', tripIds)
+                await adminSupabase.from('fleet_expense_variances').delete().in('trip_id', tripIds)
+            }
+
+            // Cleanup existing fleet tables
+            await adminSupabase.from('fleet_fuel_logs').delete().in('vehicle_id', vehIds)
+            await adminSupabase.from('fleet_maintenance').delete().in('vehicle_id', vehIds)
+            await adminSupabase.from('fleet_trip_locations').delete().in('trip_id', tripIds)
+            await adminSupabase.from('fleet_trips').delete().in('vehicle_id', vehIds)
+            await adminSupabase.from('fleet_drivers').delete().in('vehicle_id', vehIds)
+
+            await adminSupabase.from('fleet_vehicles').delete().in('id', vehIds)
+
+            // Delete associated locations (Mobile Stores)
+            if (locIds.length) {
+                await adminSupabase.from('inventory_stock').delete().in('location_id', locIds)
+                await adminSupabase.from('locations').delete().in('id', locIds)
+            }
+            logs.push(`✅ Deleted ${vehIds.length} stale fleet vehicles & mobile stores (including workflow data)`)
+        }
+
+        const { data: staleDrivers } = await adminSupabase.from('fleet_drivers').select('id')
+            .or('license_number.ilike.TEST-%,license_number.ilike.LIC-%')
+        if (staleDrivers?.length) {
+            const ids = staleDrivers.map(d => d.id)
+            await adminSupabase.from('fleet_trips').delete().in('driver_id', ids)
+            const { error } = await adminSupabase.from('fleet_drivers').delete().in('id', ids)
+            if (!error) logs.push(`✅ Deleted ${ids.length} stale drivers`)
         }
 
         console.log('🧹 [API] Cleanup Complete', logs)

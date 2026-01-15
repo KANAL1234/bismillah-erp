@@ -8,7 +8,7 @@ import { useCustomerInvoices, useApproveCustomerInvoice } from '@/lib/queries/cu
 import { PermissionGuard } from '@/components/permission-guard'
 import { FileText, Plus, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 
 export default function CustomerInvoicesPage() {
     return (
@@ -133,8 +133,8 @@ function CustomerInvoicesContent() {
                                     <TableRow key={invoice.id}>
                                         <TableCell className="font-mono font-medium">{invoice.invoice_number}</TableCell>
                                         <TableCell>{(invoice as any).customers?.name}</TableCell>
-                                        <TableCell>{format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}</TableCell>
-                                        <TableCell>{format(new Date(invoice.due_date), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
+                                        <TableCell>{formatDate(invoice.due_date)}</TableCell>
                                         <TableCell className="text-right font-mono">
                                             PKR {invoice.total_amount.toLocaleString()}
                                         </TableCell>

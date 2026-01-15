@@ -14,16 +14,23 @@ import {
     ChevronDown,
     Settings,
     UserCog,
-    ShieldCheck
+    ShieldCheck,
+    PanelLeft
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { NavLink } from '@/components/nav-link'
+import { Button } from '@/components/ui/button'
+import { useSidebar } from '@/components/providers/sidebar-provider'
 
 export function Sidebar() {
     const pathname = usePathname()
     const { isAdmin } = useAuth()
     const [expandedSections, setExpandedSections] = useState<string[]>(['sales', 'inventory', 'procurement', 'hr', 'fleet', 'accounting', 'settings'])
+    const { isOpen } = useSidebar()
+    // Mini-collapsing disabled in favor of full hide.
+    const isCollapsed = false
+
 
     const toggleSection = (section: string) => {
         setExpandedSections(prev =>
@@ -45,27 +52,27 @@ export function Sidebar() {
     const subLinkClass = (path: string, exact = true) => cn(
         "flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors",
         (exact ? pathname === path : pathname?.startsWith(path))
-            ? "bg-slate-200 font-medium text-slate-900"
+            ? "bg-slate-900 font-medium text-white"
             : "text-slate-600 hover:bg-slate-100"
     )
 
     return (
-        <div className="flex h-full w-64 flex-col border-r bg-slate-50">
+        <div className={cn("flex h-full flex-col border-r bg-slate-50 transition-all duration-300", isOpen ? "w-64" : "w-0 overflow-hidden border-none")}>
             {/* Logo/Brand */}
             <div className="flex h-16 items-center border-b px-6">
-                <h1 className="text-xl font-bold text-slate-900">Bismillah ERP</h1>
+                <h1 className="text-xl font-bold text-slate-900 truncate">Bismillah ERP</h1>
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+            <nav className="flex-1 space-y-1 overflow-y-auto p-4 scrolbar-hide">
                 {/* Dashboard */}
                 <NavLink
                     href="/dashboard"
                     permission="dashboard.overview.view"
                     className={linkClass('/dashboard')}
                 >
-                    <LayoutDashboard className="h-4 w-4" />
-                    Dashboard
+                    <LayoutDashboard className="h-4 w-4 shrink-0" />
+                    {!isCollapsed && <span>Dashboard</span>}
                 </NavLink>
 
                 {/* Sales & POS */}
@@ -73,51 +80,54 @@ export function Sidebar() {
                     <button
                         onClick={() => toggleSection('sales')}
                         className={cn(
-                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            "flex w-full items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                             isActive('/dashboard/pos') || isActive('/dashboard/sales')
-                                ? "bg-slate-200 text-slate-900"
-                                : "text-slate-700 hover:bg-slate-200"
+                                ? "bg-slate-900 text-white"
+                                : "text-slate-700 hover:bg-slate-200",
+                            isCollapsed ? "justify-center" : "justify-between"
                         )}
                     >
                         <div className="flex items-center gap-3">
-                            <ShoppingCart className="h-4 w-4" />
-                            Sales & POS
+                            <ShoppingCart className="h-4 w-4 shrink-0" />
+                            {!isCollapsed && <span>Sales & POS</span>}
                         </div>
-                        {expandedSections.includes('sales') ? (
+                        {!isCollapsed && (expandedSections.includes('sales') ? (
                             <ChevronDown className="h-4 w-4" />
                         ) : (
                             <ChevronRight className="h-4 w-4" />
-                        )}
+                        ))}
                     </button>
                     {expandedSections.includes('sales') && (
-                        <div className="ml-4 mt-1 space-y-1 border-l pl-4">
+                        <div className={cn("mt-1 space-y-1", !isCollapsed && "ml-4 border-l pl-4")}>
+                            {!isCollapsed && <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-3 py-1">B2C (Retail)</div>}
                             <NavLink permission="pos.sales.create" href="/dashboard/pos" className={subLinkClass('/dashboard/pos')}>
-                                POS Terminal
+                                {!isCollapsed && <span>POS Terminal</span>}
                             </NavLink>
                             <NavLink permission="pos.sales.view" href="/dashboard/pos/history" className={subLinkClass('/dashboard/pos/history')}>
-                                Sales History
+                                {!isCollapsed && <span>Sales History</span>}
                             </NavLink>
                             <NavLink permission="pos.closing.view" href="/dashboard/pos/closing" className={subLinkClass('/dashboard/pos/closing')}>
-                                Daily Closing
+                                {!isCollapsed && <span>Daily Closing</span>}
                             </NavLink>
-                            <div className="my-2 border-t"></div>
+
+                            {!isCollapsed && <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-3 py-1 mt-3 pt-3 border-t">B2B (Wholesale)</div>}
                             <NavLink permission="sales.quotations.read" href="/dashboard/sales/quotations" className={subLinkClass('/dashboard/sales/quotations', false)}>
-                                Quotations
+                                {!isCollapsed && <span>Quotations</span>}
                             </NavLink>
                             <NavLink permission="sales.orders.read" href="/dashboard/sales/orders" className={subLinkClass('/dashboard/sales/orders', false)}>
-                                Sales Orders
+                                {!isCollapsed && <span>Sales Orders</span>}
                             </NavLink>
                             <NavLink permission="sales.invoices.read" href="/dashboard/sales/invoices" className={subLinkClass('/dashboard/sales/invoices', false)}>
-                                Sales Invoices
+                                {!isCollapsed && <span>Sales Invoices</span>}
                             </NavLink>
                             <NavLink permission="sales.customers.read" href="/dashboard/sales/customers" className={subLinkClass('/dashboard/sales/customers', false)}>
-                                Customer List
+                                {!isCollapsed && <span>Customer List</span>}
                             </NavLink>
                             <NavLink permission="sales.deliveries.read" href="/dashboard/sales/deliveries" className={subLinkClass('/dashboard/sales/deliveries', false)}>
-                                Delivery Notes
+                                {!isCollapsed && <span>Delivery Notes</span>}
                             </NavLink>
                             <NavLink permission="sales.returns.read" href="/dashboard/sales/returns" className={subLinkClass('/dashboard/sales/returns', false)}>
-                                Sales Returns
+                                {!isCollapsed && <span>Sales Returns</span>}
                             </NavLink>
                         </div>
                     )}
@@ -269,19 +279,16 @@ export function Sidebar() {
                     </button>
                     {expandedSections.includes('fleet') && (
                         <div className="ml-4 mt-1 space-y-1 border-l pl-4">
-                            <NavLink permission="fleet.view" href="/dashboard/fleet" className={subLinkClass('/dashboard/fleet')}>
-                                Dashboard
-                            </NavLink>
-                            <NavLink permission="fleet.vehicles.view" href="/dashboard/fleet/vehicles" className={subLinkClass('/dashboard/fleet/vehicles')}>
+                            <NavLink permission="fleet:vehicles:view" href="/dashboard/fleet/vehicles" className={subLinkClass('/dashboard/fleet/vehicles')}>
                                 Vehicles
                             </NavLink>
-                            <NavLink permission="fleet.drivers.view" href="/dashboard/fleet/drivers" className={subLinkClass('/dashboard/fleet/drivers')}>
+                            <NavLink permission="fleet:drivers:view" href="/dashboard/fleet/drivers" className={subLinkClass('/dashboard/fleet/drivers')}>
                                 Drivers
                             </NavLink>
-                            <NavLink permission="fleet.trips.view" href="/dashboard/fleet/trips" className={subLinkClass('/dashboard/fleet/trips')}>
+                            <NavLink permission="fleet:trips:view" href="/dashboard/fleet/trips" className={subLinkClass('/dashboard/fleet/trips')}>
                                 Trips & Fuel
                             </NavLink>
-                            <NavLink permission="fleet.maintenance.view" href="/dashboard/fleet/maintenance" className={subLinkClass('/dashboard/fleet/maintenance')}>
+                            <NavLink permission="fleet:maintenance:view" href="/dashboard/fleet/maintenance" className={subLinkClass('/dashboard/fleet/maintenance')}>
                                 Maintenance
                             </NavLink>
                         </div>

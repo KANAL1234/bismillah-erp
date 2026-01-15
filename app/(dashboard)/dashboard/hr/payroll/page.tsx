@@ -16,7 +16,7 @@ import {
 import { usePayrollPeriods, useProcessPayroll, usePayslips } from '@/lib/queries/hr'
 import { PermissionGuard } from '@/components/permission-guard'
 import { formatCurrency } from '@/lib/utils'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 import { PayrollPeriodDialog } from '@/components/hr/payroll/payroll-period-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
@@ -71,7 +71,7 @@ export default function PayrollPage() {
                                                 <div>
                                                     <div className="font-bold">{period.period_name}</div>
                                                     <div className="text-xs text-muted-foreground">
-                                                        {format(new Date(period.start_date), 'MMM d')} - {format(new Date(period.end_date), 'MMM d, yyyy')}
+                                                        {formatDate(period.start_date)} - {formatDate(period.end_date)}
                                                     </div>
                                                 </div>
                                                 <Badge variant={period.status === 'PAID' ? 'success' : 'outline'}>

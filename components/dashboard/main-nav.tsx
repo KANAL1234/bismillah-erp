@@ -198,9 +198,14 @@ export function MainNav({
                     <DropdownMenuItem asChild>
                         <Link href="/dashboard/accounting/reports/trial-balance">Trial Balance</Link>
                     </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/reports/sales-tax">Sales Tax Return (FBR)</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/reports/wht">WHT Return (FBR)</Link>
+                    </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-
             {/* Fleet Management */}
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -218,10 +223,7 @@ export function MainNav({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                    <DropdownMenuLabel>Fleet Operations</DropdownMenuLabel>
-                    <DropdownMenuItem asChild>
-                        <Link href="/dashboard/fleet">Overview</Link>
-                    </DropdownMenuItem>
+                    <DropdownMenuLabel>Operations</DropdownMenuLabel>
                     <DropdownMenuItem asChild>
                         <Link href="/dashboard/fleet/vehicles">Mobile Store Vehicles</Link>
                     </DropdownMenuItem>
@@ -237,6 +239,11 @@ export function MainNav({
                     <DropdownMenuLabel>Maintenance</DropdownMenuLabel>
                     <DropdownMenuItem asChild>
                         <Link href="/dashboard/fleet/maintenance">Service Records</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Financial</DropdownMenuLabel>
+                    <DropdownMenuItem asChild>
+                        <Link href="/dashboard/fleet/variances">Variance Dashboard</Link>
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict fGOD3gSB0fLp1UhuSZkeGvQnMKLpygynLSVieMBAnCpZaK51B2ImFxeATXsiw2U
+\restrict SD6Qi5uHXzyP5voOugdngUQb8rNsTYt46fGxwOlWN3PEuDruUnTfkB5aizcGb2D
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.7 (Homebrew)
@@ -1385,6 +1385,35 @@ $$;
 
 
 --
+-- Name: get_fleet_variance_dashboard(date, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_fleet_variance_dashboard(p_start_date date DEFAULT (CURRENT_DATE - '30 days'::interval), p_end_date date DEFAULT CURRENT_DATE) RETURNS TABLE(total_variances bigint, total_variance_amount numeric, cash_variances bigint, fuel_variances bigint, open_alerts bigint, avg_variance_percentage numeric)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        COUNT(*)::bigint as total_variances,
+        COALESCE(SUM(variance_amount), 0) as total_variance_amount,
+        COUNT(*) FILTER (WHERE variance_type = 'CASH')::bigint as cash_variances,
+        COUNT(*) FILTER (WHERE variance_type = 'FUEL')::bigint as fuel_variances,
+        COUNT(*) FILTER (WHERE status = 'OPEN' AND is_alert_triggered = true)::bigint as open_alerts,
+        COALESCE(AVG(variance_percentage), 0) as avg_variance_percentage
+    FROM fleet_expense_variances
+    WHERE variance_date BETWEEN p_start_date AND p_end_date;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION get_fleet_variance_dashboard(p_start_date date, p_end_date date); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.get_fleet_variance_dashboard(p_start_date date, p_end_date date) IS 'Returns aggregated variance metrics for dashboard display';
+
+
+--
 -- Name: get_inventory_valuation(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2335,6 +2364,89 @@ Adjusts stock based on the difference between physical and system quantities.';
 
 
 --
+-- Name: handle_fleet_vehicle_location(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.handle_fleet_vehicle_location() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_type_id uuid;
+    v_location_id uuid;
+BEGIN
+    -- Get the 'mobile' type ID
+    SELECT id INTO v_type_id FROM public.location_types WHERE name = 'mobile' LIMIT 1;
+    
+    -- If 'mobile' type doesn't exist (unlikely due to step 1), use any type or create it
+    IF v_type_id IS NULL THEN
+        INSERT INTO public.location_types (name, description) VALUES ('mobile', 'Mobile Store')
+        RETURNING id INTO v_type_id;
+    END IF;
+
+    -- Create a new location in public.locations for the vehicle
+    INSERT INTO public.locations (
+        type_id,
+        code,
+        name,
+        vehicle_number,
+        is_active
+    ) VALUES (
+        v_type_id,
+        'VEH-' || NEW.registration_number,
+        'Mobile Store - ' || NEW.registration_number,
+        NEW.registration_number,
+        true
+    ) RETURNING id INTO v_location_id;
+
+    -- Update the vehicle with the new location_id
+    UPDATE public.fleet_vehicles SET location_id = v_location_id WHERE id = NEW.id;
+    
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: handle_fleet_vehicle_location_manual(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.handle_fleet_vehicle_location_manual(p_vehicle_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_registration_number text;
+    v_type_id uuid;
+    v_location_id uuid;
+BEGIN
+    SELECT registration_number INTO v_registration_number FROM public.fleet_vehicles WHERE id = p_vehicle_id;
+    
+    SELECT id INTO v_type_id FROM public.location_types WHERE name = 'mobile' LIMIT 1;
+    
+    IF v_type_id IS NULL THEN
+        INSERT INTO public.location_types (name, description) VALUES ('mobile', 'Mobile Store')
+        RETURNING id INTO v_type_id;
+    END IF;
+
+    INSERT INTO public.locations (
+        type_id,
+        code,
+        name,
+        vehicle_number,
+        is_active
+    ) VALUES (
+        v_type_id,
+        'VEH-' || v_registration_number,
+        'Mobile Store - ' || v_registration_number,
+        v_registration_number,
+        true
+    ) RETURNING id INTO v_location_id;
+
+    UPDATE public.fleet_vehicles SET location_id = v_location_id WHERE id = p_vehicle_id;
+END;
+$$;
+
+
+--
 -- Name: handle_transfer_completion(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2621,6 +2733,237 @@ EXCEPTION WHEN OTHERS THEN
     'success', false,
     'error', SQLERRM
   );
+END;
+$$;
+
+
+--
+-- Name: post_fleet_fuel_expense(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.post_fleet_fuel_expense(p_fuel_log_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_fuel_log RECORD;
+    v_vehicle RECORD;
+    v_journal_entry_id uuid;
+    v_journal_number text;
+    v_fiscal_year_id uuid;
+    v_fuel_expense_account_id uuid;
+    v_cash_account_id uuid;
+    v_ap_account_id uuid;
+    v_credit_account_id uuid;
+    v_next_number integer;
+BEGIN
+    SELECT * INTO v_fuel_log FROM fleet_fuel_logs WHERE id = p_fuel_log_id;
+
+    IF v_fuel_log IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Fuel log not found');
+    END IF;
+
+    IF v_fuel_log.journal_entry_id IS NOT NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Fuel log already posted to accounting');
+    END IF;
+
+    SELECT * INTO v_vehicle FROM fleet_vehicles WHERE id = v_fuel_log.vehicle_id;
+
+    SELECT id INTO v_fiscal_year_id FROM fiscal_years WHERE is_closed = false LIMIT 1;
+
+    SELECT id INTO v_fuel_expense_account_id FROM chart_of_accounts WHERE account_code = '5220';
+    SELECT id INTO v_cash_account_id FROM chart_of_accounts WHERE account_code = '1010';
+    SELECT id INTO v_ap_account_id FROM chart_of_accounts WHERE account_code = '2010';
+
+    IF v_fuel_log.payment_method = 'CREDIT' THEN
+        v_credit_account_id := v_ap_account_id;
+    ELSE
+        v_credit_account_id := v_cash_account_id;
+    END IF;
+
+    SELECT COALESCE(MAX(CAST(SUBSTRING(journal_number FROM 9) AS INTEGER)), 0) + 1
+    INTO v_next_number
+    FROM journal_entries
+    WHERE journal_number LIKE 'JE-FUEL-%';
+
+    v_journal_number := 'JE-FUEL-' || LPAD(v_next_number::text, 4, '0');
+
+    INSERT INTO journal_entries (
+        id, journal_number, journal_type, journal_date, fiscal_year_id,
+        reference_type, reference_id, reference_number, narration,
+        total_debit, total_credit, status, posted_at, created_at
+    ) VALUES (
+        gen_random_uuid(),
+        v_journal_number,
+        'AUTO',
+        v_fuel_log.log_date::date,
+        v_fiscal_year_id,
+        'FLEET_FUEL',
+        p_fuel_log_id,
+        v_journal_number,
+        'Fuel expense for vehicle ' || COALESCE(v_vehicle.registration_number, 'Unknown') || ' - ' || v_fuel_log.liters || ' liters',
+        v_fuel_log.total_cost,
+        v_fuel_log.total_cost,
+        'posted',
+        NOW(),
+        NOW()
+    ) RETURNING id INTO v_journal_entry_id;
+
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_fuel_expense_account_id,
+        v_fuel_log.total_cost,
+        0,
+        'Fuel expense - ' || v_fuel_log.liters || ' liters @ ' || v_fuel_log.cost_per_liter || '/liter'
+    );
+
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_credit_account_id,
+        0,
+        v_fuel_log.total_cost,
+        CASE WHEN v_fuel_log.payment_method = 'CREDIT' THEN 'Payable for fuel' ELSE 'Cash payment for fuel' END
+    );
+
+    UPDATE fleet_fuel_logs
+    SET journal_entry_id = v_journal_entry_id
+    WHERE id = p_fuel_log_id;
+
+    PERFORM update_account_balances();
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'journal_entry_id', v_journal_entry_id,
+        'journal_number', v_journal_number,
+        'message', 'Fuel expense posted successfully'
+    );
+END;
+$$;
+
+
+--
+-- Name: post_fleet_maintenance_expense(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.post_fleet_maintenance_expense(p_maintenance_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_maintenance RECORD;
+    v_vehicle RECORD;
+    v_journal_entry_id uuid;
+    v_journal_number text;
+    v_fiscal_year_id uuid;
+    v_maintenance_expense_account_id uuid;
+    v_cash_account_id uuid;
+    v_ap_account_id uuid;
+    v_credit_account_id uuid;
+    v_next_number integer;
+BEGIN
+    -- Get maintenance details
+    SELECT * INTO v_maintenance FROM fleet_maintenance WHERE id = p_maintenance_id;
+
+    IF v_maintenance IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Maintenance record not found');
+    END IF;
+
+    -- Check if already posted
+    IF v_maintenance.journal_entry_id IS NOT NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Maintenance already posted to accounting');
+    END IF;
+
+    -- Get vehicle details for narration
+    SELECT * INTO v_vehicle FROM fleet_vehicles WHERE id = v_maintenance.vehicle_id;
+
+    -- Get fiscal year
+    SELECT id INTO v_fiscal_year_id FROM fiscal_years WHERE is_closed = false LIMIT 1;
+
+    -- Get account IDs
+    SELECT id INTO v_maintenance_expense_account_id FROM chart_of_accounts WHERE account_code = '5210';
+    SELECT id INTO v_cash_account_id FROM chart_of_accounts WHERE account_code = '1010';
+    SELECT id INTO v_ap_account_id FROM chart_of_accounts WHERE account_code = '2010';
+
+    -- Determine credit account based on payment method
+    IF v_maintenance.payment_method = 'CREDIT' THEN
+        v_credit_account_id := v_ap_account_id;
+    ELSE
+        v_credit_account_id := v_cash_account_id;
+    END IF;
+
+    -- Generate journal number
+    SELECT COALESCE(MAX(CAST(SUBSTRING(journal_number FROM 10) AS INTEGER)), 0) + 1
+    INTO v_next_number
+    FROM journal_entries
+    WHERE journal_number LIKE 'JE-MAINT-%';
+
+    v_journal_number := 'JE-MAINT-' || LPAD(v_next_number::text, 4, '0');
+
+    -- Create journal entry
+    INSERT INTO journal_entries (
+        id, journal_number, journal_type, journal_date, fiscal_year_id,
+        reference_type, reference_id, reference_number, narration,
+        total_debit, total_credit, status, posted_at, created_at
+    ) VALUES (
+        gen_random_uuid(),
+        v_journal_number,
+        'AUTO',
+        v_maintenance.service_date,
+        v_fiscal_year_id,
+        'FLEET_MAINTENANCE',
+        p_maintenance_id,
+        v_journal_number,
+        v_maintenance.service_type || ' for vehicle ' || COALESCE(v_vehicle.registration_number, 'Unknown') ||
+        CASE WHEN v_maintenance.vendor_name IS NOT NULL THEN ' - ' || v_maintenance.vendor_name ELSE '' END,
+        v_maintenance.cost,
+        v_maintenance.cost,
+        'posted',
+        NOW(),
+        NOW()
+    ) RETURNING id INTO v_journal_entry_id;
+
+    -- Create journal entry lines
+    -- Debit: Maintenance Expense
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_maintenance_expense_account_id,
+        v_maintenance.cost,
+        0,
+        v_maintenance.service_type || COALESCE(' - ' || v_maintenance.description, '')
+    );
+
+    -- Credit: Cash or Accounts Payable
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_credit_account_id,
+        0,
+        v_maintenance.cost,
+        CASE WHEN v_maintenance.payment_method = 'CREDIT'
+             THEN 'Payable to ' || COALESCE(v_maintenance.vendor_name, 'vendor')
+             ELSE 'Cash payment for maintenance'
+        END
+    );
+
+    -- Update maintenance record with journal entry reference
+    UPDATE fleet_maintenance
+    SET journal_entry_id = v_journal_entry_id
+    WHERE id = p_maintenance_id;
+
+    -- Update account balances
+    PERFORM update_account_balances();
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'journal_entry_id', v_journal_entry_id,
+        'journal_number', v_journal_number,
+        'message', 'Maintenance expense posted successfully'
+    );
 END;
 $$;
 
@@ -3049,6 +3392,194 @@ EXCEPTION WHEN OTHERS THEN
   );
 END;
 $$;
+
+
+--
+-- Name: process_fleet_cash_deposit(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.process_fleet_cash_deposit(p_deposit_id uuid, p_approved_by uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_deposit record;
+    v_journal_entry_id uuid;
+    v_cash_account_id uuid;
+    v_sales_account_id uuid;
+    v_variance_account_id uuid;
+    v_result json;
+BEGIN
+    -- Get deposit details
+    SELECT * INTO v_deposit
+    FROM fleet_cash_deposits
+    WHERE id = p_deposit_id;
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Cash deposit not found';
+    END IF;
+    
+    IF v_deposit.status != 'PENDING' THEN
+        RAISE EXCEPTION 'Deposit already processed';
+    END IF;
+    
+    -- Get chart of accounts IDs
+    SELECT id INTO v_cash_account_id
+    FROM chart_of_accounts
+    WHERE account_code = '1010' -- Cash in Hand
+    LIMIT 1;
+    
+    SELECT id INTO v_sales_account_id
+    FROM chart_of_accounts
+    WHERE account_code = '4000' -- Sales Revenue
+    LIMIT 1;
+    
+    SELECT id INTO v_variance_account_id
+    FROM chart_of_accounts
+    WHERE account_code = '5900' -- Other Expenses (for shortages) or 4900 (for overages)
+    LIMIT 1;
+    
+    -- Create Journal Entry
+    INSERT INTO journal_entries (
+        journal_number,
+        journal_type,
+        journal_date,
+        reference_type,
+        reference_id,
+        narration,
+        status,
+        created_by
+    ) VALUES (
+        'JE-FLEET-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || SUBSTRING(p_deposit_id::text, 1, 8),
+        'AUTO',
+        v_deposit.deposit_date,
+        'FLEET_CASH_DEPOSIT',
+        p_deposit_id,
+        'Fleet cash deposit - Trip #' || v_deposit.trip_id::text,
+        'posted',
+        p_approved_by
+    ) RETURNING id INTO v_journal_entry_id;
+    
+    -- Debit: Cash Account (Actual Cash)
+    INSERT INTO journal_entry_lines (
+        journal_entry_id,
+        account_id,
+        debit_amount,
+        credit_amount,
+        description
+    ) VALUES (
+        v_journal_entry_id,
+        v_cash_account_id,
+        v_deposit.actual_cash,
+        0,
+        'Cash deposited from fleet trip'
+    );
+    
+    -- Credit: Sales Account (Expected Cash)
+    INSERT INTO journal_entry_lines (
+        journal_entry_id,
+        account_id,
+        debit_amount,
+        credit_amount,
+        description
+    ) VALUES (
+        v_journal_entry_id,
+        v_sales_account_id,
+        0,
+        v_deposit.expected_cash,
+        'Fleet sales revenue'
+    );
+    
+    -- Handle Variance
+    IF v_deposit.variance != 0 THEN
+        IF v_deposit.variance < 0 THEN
+            -- Shortage: Debit Expense
+            INSERT INTO journal_entry_lines (
+                journal_entry_id,
+                account_id,
+                debit_amount,
+                credit_amount,
+                description
+            ) VALUES (
+                v_journal_entry_id,
+                v_variance_account_id,
+                ABS(v_deposit.variance),
+                0,
+                'Cash shortage variance'
+            );
+        ELSE
+            -- Overage: Credit Other Income
+            INSERT INTO journal_entry_lines (
+                journal_entry_id,
+                account_id,
+                debit_amount,
+                credit_amount,
+                description
+            ) VALUES (
+                v_journal_entry_id,
+                v_variance_account_id,
+                0,
+                v_deposit.variance,
+                'Cash overage variance'
+            );
+        END IF;
+    END IF;
+    
+    -- Update totals in journal entry
+    UPDATE journal_entries
+    SET 
+        total_debit = (SELECT SUM(debit_amount) FROM journal_entry_lines WHERE journal_entry_id = v_journal_entry_id),
+        total_credit = (SELECT SUM(credit_amount) FROM journal_entry_lines WHERE journal_entry_id = v_journal_entry_id),
+        posted_at = NOW(),
+        posted_by = p_approved_by
+    WHERE id = v_journal_entry_id;
+    
+    -- Update deposit status
+    UPDATE fleet_cash_deposits
+    SET 
+        status = 'POSTED',
+        approved_by = p_approved_by,
+        approved_at = NOW(),
+        journal_entry_id = v_journal_entry_id,
+        updated_at = NOW()
+    WHERE id = p_deposit_id;
+    
+    -- Create variance record if significant
+    IF ABS(v_deposit.variance) > (v_deposit.expected_cash * 0.05) THEN
+        INSERT INTO fleet_expense_variances (
+            trip_id,
+            variance_type,
+            variance_category,
+            budgeted_amount,
+            actual_amount,
+            variance_date,
+            alert_threshold_percentage
+        ) VALUES (
+            v_deposit.trip_id,
+            'CASH',
+            CASE WHEN v_deposit.variance < 0 THEN 'MISSING_DEPOSIT' ELSE 'OVER_BUDGET' END,
+            v_deposit.expected_cash,
+            v_deposit.actual_cash,
+            v_deposit.deposit_date,
+            5.0
+        );
+    END IF;
+    
+    v_result := json_build_object(
+        'success', true,
+        'journal_entry_id', v_journal_entry_id,
+        'variance', v_deposit.variance
+    );
+    
+    RETURN v_result;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION process_fleet_cash_deposit(p_deposit_id uuid, p_approved_by uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.process_fleet_cash_deposit(p_deposit_id uuid, p_approved_by uuid) IS 'Approves cash deposit and creates corresponding GL journal entry';
 
 
 --
@@ -3721,6 +4252,83 @@ $$;
 
 
 --
+-- Name: update_fleet_timestamp(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_fleet_timestamp() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: update_fuel_allowance_actual(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_fuel_allowance_actual(p_allowance_id uuid, p_fuel_log_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_fuel_log record;
+BEGIN
+    -- Get fuel log details
+    SELECT quantity, amount INTO v_fuel_log
+    FROM fleet_fuel_logs
+    WHERE id = p_fuel_log_id;
+    
+    -- Update allowance with actual consumption
+    UPDATE fleet_fuel_allowances
+    SET 
+        actual_fuel_liters = actual_fuel_liters + v_fuel_log.quantity,
+        actual_fuel_cost = actual_fuel_cost + v_fuel_log.amount,
+        status = CASE 
+            WHEN (actual_fuel_cost + v_fuel_log.amount) > budgeted_fuel_cost THEN 'EXCEEDED'
+            ELSE status
+        END,
+        updated_at = NOW()
+    WHERE id = p_allowance_id;
+    
+    -- Check for variance alert
+    IF EXISTS (
+        SELECT 1 FROM fleet_fuel_allowances
+        WHERE id = p_allowance_id
+        AND ABS(cost_variance) > (budgeted_fuel_cost * 0.10)
+    ) THEN
+        -- Create variance record
+        INSERT INTO fleet_expense_variances (
+            trip_id,
+            variance_type,
+            variance_category,
+            budgeted_amount,
+            actual_amount,
+            alert_threshold_percentage
+        )
+        SELECT 
+            trip_id,
+            'FUEL',
+            'EXCESS_CONSUMPTION',
+            budgeted_fuel_cost,
+            actual_fuel_cost,
+            10.0
+        FROM fleet_fuel_allowances
+        WHERE id = p_allowance_id;
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION update_fuel_allowance_actual(p_allowance_id uuid, p_fuel_log_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.update_fuel_allowance_actual(p_allowance_id uuid, p_fuel_log_id uuid) IS 'Updates fuel allowance with actual consumption from fuel logs';
+
+
+--
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4367,6 +4975,249 @@ CREATE TABLE public.fiscal_years (
 
 
 --
+-- Name: fleet_cash_deposits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_cash_deposits (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    trip_id uuid NOT NULL,
+    driver_id uuid NOT NULL,
+    vehicle_id uuid NOT NULL,
+    expected_cash numeric(15,2) DEFAULT 0 NOT NULL,
+    actual_cash numeric(15,2) NOT NULL,
+    variance numeric(15,2) GENERATED ALWAYS AS ((actual_cash - expected_cash)) STORED,
+    deposit_date date DEFAULT CURRENT_DATE NOT NULL,
+    deposit_time time without time zone DEFAULT CURRENT_TIME NOT NULL,
+    bank_account_id uuid,
+    deposit_slip_number text,
+    status text DEFAULT 'PENDING'::text NOT NULL,
+    submitted_by uuid,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    journal_entry_id uuid,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fleet_cash_deposits_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'APPROVED'::text, 'REJECTED'::text, 'POSTED'::text])))
+);
+
+
+--
+-- Name: TABLE fleet_cash_deposits; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.fleet_cash_deposits IS 'Tracks end-of-day cash deposits from fleet drivers with accounting integration';
+
+
+--
+-- Name: fleet_drivers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_drivers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_id uuid NOT NULL,
+    license_number text NOT NULL,
+    license_expiry date NOT NULL,
+    status text DEFAULT 'ACTIVE'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fleet_drivers_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'SUSPENDED'::text, 'ON_LEAVE'::text])))
+);
+
+
+--
+-- Name: fleet_expense_variances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_expense_variances (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    trip_id uuid NOT NULL,
+    variance_type text NOT NULL,
+    variance_category text NOT NULL,
+    budgeted_amount numeric(15,2) NOT NULL,
+    actual_amount numeric(15,2) NOT NULL,
+    variance_amount numeric(15,2) GENERATED ALWAYS AS ((actual_amount - budgeted_amount)) STORED,
+    variance_percentage numeric(5,2) GENERATED ALWAYS AS (
+CASE
+    WHEN (budgeted_amount > (0)::numeric) THEN (((actual_amount - budgeted_amount) / budgeted_amount) * (100)::numeric)
+    ELSE (0)::numeric
+END) STORED,
+    alert_threshold_percentage numeric(5,2) DEFAULT 10.0,
+    is_alert_triggered boolean GENERATED ALWAYS AS (
+CASE
+    WHEN (budgeted_amount > (0)::numeric) THEN (abs((((actual_amount - budgeted_amount) / budgeted_amount) * (100)::numeric)) > alert_threshold_percentage)
+    ELSE false
+END) STORED,
+    status text DEFAULT 'OPEN'::text NOT NULL,
+    resolved_by uuid,
+    resolved_at timestamp with time zone,
+    resolution_notes text,
+    variance_date date DEFAULT CURRENT_DATE NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fleet_expense_variances_category_check CHECK ((variance_category = ANY (ARRAY['OVER_BUDGET'::text, 'UNDER_BUDGET'::text, 'MISSING_DEPOSIT'::text, 'EXCESS_CONSUMPTION'::text]))),
+    CONSTRAINT fleet_expense_variances_status_check CHECK ((status = ANY (ARRAY['OPEN'::text, 'INVESTIGATING'::text, 'RESOLVED'::text, 'ESCALATED'::text]))),
+    CONSTRAINT fleet_expense_variances_type_check CHECK ((variance_type = ANY (ARRAY['FUEL'::text, 'CASH'::text, 'MAINTENANCE'::text, 'OTHER'::text])))
+);
+
+
+--
+-- Name: TABLE fleet_expense_variances; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.fleet_expense_variances IS 'Centralized variance tracking for all fleet expenses with automated alerts';
+
+
+--
+-- Name: fleet_fuel_allowances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_fuel_allowances (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    trip_id uuid NOT NULL,
+    driver_id uuid NOT NULL,
+    vehicle_id uuid NOT NULL,
+    allowance_date date DEFAULT CURRENT_DATE NOT NULL,
+    budgeted_fuel_liters numeric(10,2) NOT NULL,
+    budgeted_fuel_cost numeric(15,2) NOT NULL,
+    actual_fuel_liters numeric(10,2) DEFAULT 0,
+    actual_fuel_cost numeric(15,2) DEFAULT 0,
+    fuel_variance_liters numeric(10,2) GENERATED ALWAYS AS ((actual_fuel_liters - budgeted_fuel_liters)) STORED,
+    cost_variance numeric(15,2) GENERATED ALWAYS AS ((actual_fuel_cost - budgeted_fuel_cost)) STORED,
+    variance_percentage numeric(5,2) GENERATED ALWAYS AS (
+CASE
+    WHEN (budgeted_fuel_cost > (0)::numeric) THEN (((actual_fuel_cost - budgeted_fuel_cost) / budgeted_fuel_cost) * (100)::numeric)
+    ELSE (0)::numeric
+END) STORED,
+    status text DEFAULT 'ACTIVE'::text NOT NULL,
+    approved_by uuid,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fleet_fuel_allowances_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'COMPLETED'::text, 'EXCEEDED'::text, 'CANCELLED'::text])))
+);
+
+
+--
+-- Name: TABLE fleet_fuel_allowances; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.fleet_fuel_allowances IS 'Manages daily fuel budgets and tracks actual consumption vs allowance';
+
+
+--
+-- Name: fleet_fuel_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_fuel_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    vehicle_id uuid NOT NULL,
+    trip_id uuid,
+    log_date timestamp with time zone DEFAULT now() NOT NULL,
+    liters numeric NOT NULL,
+    cost_per_liter numeric NOT NULL,
+    total_cost numeric NOT NULL,
+    odometer_reading numeric NOT NULL,
+    receipt_url text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payment_method text DEFAULT 'CASH'::text,
+    journal_entry_id uuid
+);
+
+
+--
+-- Name: fleet_maintenance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_maintenance (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    vehicle_id uuid NOT NULL,
+    service_type text NOT NULL,
+    service_date date NOT NULL,
+    odometer_reading numeric NOT NULL,
+    cost numeric NOT NULL,
+    description text,
+    vendor_name text,
+    next_service_due_date date,
+    next_service_due_mileage numeric,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    payment_method text DEFAULT 'CASH'::text,
+    journal_entry_id uuid
+);
+
+
+--
+-- Name: fleet_trip_locations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_trip_locations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    trip_id uuid NOT NULL,
+    latitude numeric(10,8) NOT NULL,
+    longitude numeric(11,8) NOT NULL,
+    accuracy numeric,
+    altitude numeric,
+    speed numeric,
+    heading numeric,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: fleet_trip_visits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_trip_visits (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    trip_id uuid NOT NULL,
+    customer_id uuid NOT NULL,
+    visit_time timestamp with time zone DEFAULT now() NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: fleet_trips; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_trips (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    vehicle_id uuid NOT NULL,
+    driver_id uuid NOT NULL,
+    start_time timestamp with time zone NOT NULL,
+    end_time timestamp with time zone,
+    start_location text NOT NULL,
+    end_location text,
+    start_mileage numeric NOT NULL,
+    end_mileage numeric,
+    trip_purpose text,
+    status text DEFAULT 'PLANNED'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    gps_path jsonb DEFAULT '[]'::jsonb,
+    CONSTRAINT fleet_trips_status_check CHECK ((status = ANY (ARRAY['PLANNED'::text, 'IN_PROGRESS'::text, 'COMPLETED'::text, 'CANCELLED'::text])))
+);
+
+
+--
+-- Name: fleet_vehicles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fleet_vehicles (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    registration_number text NOT NULL,
+    make text NOT NULL,
+    model text NOT NULL,
+    year integer NOT NULL,
+    status text DEFAULT 'ACTIVE'::text NOT NULL,
+    current_mileage numeric DEFAULT 0 NOT NULL,
+    last_service_date date,
+    last_service_mileage numeric,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    location_id uuid,
+    CONSTRAINT fleet_vehicles_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'MAINTENANCE'::text, 'RETIRED'::text])))
+);
+
+
+--
 -- Name: fuel_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4936,7 +5787,8 @@ CREATE TABLE public.pos_sales (
     device_id text,
     cashier_id uuid,
     notes text,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    trip_id uuid
 );
 
 
@@ -5224,6 +6076,7 @@ CREATE TABLE public.sales_invoices (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
+    trip_id uuid,
     CONSTRAINT sales_invoices_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'posted'::text, 'paid'::text, 'void'::text, 'overdue'::text])))
 );
 
@@ -6016,6 +6869,102 @@ ALTER TABLE ONLY public.fiscal_years
 
 ALTER TABLE ONLY public.fiscal_years
     ADD CONSTRAINT fiscal_years_year_name_key UNIQUE (year_name);
+
+
+--
+-- Name: fleet_cash_deposits fleet_cash_deposits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_drivers fleet_drivers_employee_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_drivers
+    ADD CONSTRAINT fleet_drivers_employee_id_key UNIQUE (employee_id);
+
+
+--
+-- Name: fleet_drivers fleet_drivers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_drivers
+    ADD CONSTRAINT fleet_drivers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_expense_variances fleet_expense_variances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_expense_variances
+    ADD CONSTRAINT fleet_expense_variances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_fuel_allowances fleet_fuel_allowances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_allowances
+    ADD CONSTRAINT fleet_fuel_allowances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_fuel_logs fleet_fuel_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_logs
+    ADD CONSTRAINT fleet_fuel_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_maintenance fleet_maintenance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_maintenance
+    ADD CONSTRAINT fleet_maintenance_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_trip_locations fleet_trip_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trip_locations
+    ADD CONSTRAINT fleet_trip_locations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_trip_visits fleet_trip_visits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trip_visits
+    ADD CONSTRAINT fleet_trip_visits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_trips fleet_trips_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trips
+    ADD CONSTRAINT fleet_trips_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_vehicles fleet_vehicles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_vehicles
+    ADD CONSTRAINT fleet_vehicles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fleet_vehicles fleet_vehicles_registration_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_vehicles
+    ADD CONSTRAINT fleet_vehicles_registration_number_key UNIQUE (registration_number);
 
 
 --
@@ -7153,6 +8102,83 @@ CREATE INDEX idx_emp_salary_comp_employee ON public.employee_salary_components U
 
 
 --
+-- Name: idx_fleet_cash_deposits_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_cash_deposits_date ON public.fleet_cash_deposits USING btree (deposit_date);
+
+
+--
+-- Name: idx_fleet_cash_deposits_driver; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_cash_deposits_driver ON public.fleet_cash_deposits USING btree (driver_id);
+
+
+--
+-- Name: idx_fleet_cash_deposits_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_cash_deposits_status ON public.fleet_cash_deposits USING btree (status);
+
+
+--
+-- Name: idx_fleet_cash_deposits_trip; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_cash_deposits_trip ON public.fleet_cash_deposits USING btree (trip_id);
+
+
+--
+-- Name: idx_fleet_expense_variances_alert; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_expense_variances_alert ON public.fleet_expense_variances USING btree (is_alert_triggered) WHERE (is_alert_triggered = true);
+
+
+--
+-- Name: idx_fleet_expense_variances_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_expense_variances_date ON public.fleet_expense_variances USING btree (variance_date);
+
+
+--
+-- Name: idx_fleet_expense_variances_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_expense_variances_status ON public.fleet_expense_variances USING btree (status);
+
+
+--
+-- Name: idx_fleet_expense_variances_trip; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_expense_variances_trip ON public.fleet_expense_variances USING btree (trip_id);
+
+
+--
+-- Name: idx_fleet_fuel_allowances_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_fuel_allowances_date ON public.fleet_fuel_allowances USING btree (allowance_date);
+
+
+--
+-- Name: idx_fleet_fuel_allowances_driver; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_fuel_allowances_driver ON public.fleet_fuel_allowances USING btree (driver_id);
+
+
+--
+-- Name: idx_fleet_fuel_allowances_trip; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fleet_fuel_allowances_trip ON public.fleet_fuel_allowances USING btree (trip_id);
+
+
+--
 -- Name: idx_fuel_logs_date; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7538,6 +8564,13 @@ CREATE INDEX idx_vb_vendor_id ON public.vendor_bills USING btree (vendor_id);
 
 
 --
+-- Name: fleet_vehicles trg_create_vehicle_location; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_create_vehicle_location AFTER INSERT ON public.fleet_vehicles FOR EACH ROW EXECUTE FUNCTION public.handle_fleet_vehicle_location();
+
+
+--
 -- Name: customer_invoices_accounting trg_update_customer_balance_invoice; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7633,6 +8666,20 @@ CREATE TRIGGER update_delivery_notes_updated_at BEFORE UPDATE ON public.delivery
 --
 
 CREATE TRIGGER update_employees_updated_at BEFORE UPDATE ON public.employees FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: fleet_cash_deposits update_fleet_cash_deposits_timestamp; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_fleet_cash_deposits_timestamp BEFORE UPDATE ON public.fleet_cash_deposits FOR EACH ROW EXECUTE FUNCTION public.update_fleet_timestamp();
+
+
+--
+-- Name: fleet_fuel_allowances update_fleet_fuel_allowances_timestamp; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_fleet_fuel_allowances_timestamp BEFORE UPDATE ON public.fleet_fuel_allowances FOR EACH ROW EXECUTE FUNCTION public.update_fleet_timestamp();
 
 
 --
@@ -8110,6 +9157,206 @@ ALTER TABLE ONLY public.product_suppliers
 
 
 --
+-- Name: fleet_cash_deposits fleet_cash_deposits_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.user_profiles(id);
+
+
+--
+-- Name: fleet_cash_deposits fleet_cash_deposits_bank_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_bank_account_id_fkey FOREIGN KEY (bank_account_id) REFERENCES public.bank_accounts(id);
+
+
+--
+-- Name: fleet_cash_deposits fleet_cash_deposits_driver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.fleet_drivers(id);
+
+
+--
+-- Name: fleet_cash_deposits fleet_cash_deposits_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES public.journal_entries(id);
+
+
+--
+-- Name: fleet_cash_deposits fleet_cash_deposits_submitted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_submitted_by_fkey FOREIGN KEY (submitted_by) REFERENCES public.user_profiles(id);
+
+
+--
+-- Name: fleet_cash_deposits fleet_cash_deposits_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_cash_deposits fleet_cash_deposits_vehicle_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_cash_deposits
+    ADD CONSTRAINT fleet_cash_deposits_vehicle_id_fkey FOREIGN KEY (vehicle_id) REFERENCES public.fleet_vehicles(id);
+
+
+--
+-- Name: fleet_drivers fleet_drivers_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_drivers
+    ADD CONSTRAINT fleet_drivers_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_expense_variances fleet_expense_variances_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_expense_variances
+    ADD CONSTRAINT fleet_expense_variances_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.user_profiles(id);
+
+
+--
+-- Name: fleet_expense_variances fleet_expense_variances_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_expense_variances
+    ADD CONSTRAINT fleet_expense_variances_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_fuel_allowances fleet_fuel_allowances_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_allowances
+    ADD CONSTRAINT fleet_fuel_allowances_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.user_profiles(id);
+
+
+--
+-- Name: fleet_fuel_allowances fleet_fuel_allowances_driver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_allowances
+    ADD CONSTRAINT fleet_fuel_allowances_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.fleet_drivers(id);
+
+
+--
+-- Name: fleet_fuel_allowances fleet_fuel_allowances_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_allowances
+    ADD CONSTRAINT fleet_fuel_allowances_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_fuel_allowances fleet_fuel_allowances_vehicle_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_allowances
+    ADD CONSTRAINT fleet_fuel_allowances_vehicle_id_fkey FOREIGN KEY (vehicle_id) REFERENCES public.fleet_vehicles(id);
+
+
+--
+-- Name: fleet_fuel_logs fleet_fuel_logs_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_logs
+    ADD CONSTRAINT fleet_fuel_logs_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES public.journal_entries(id);
+
+
+--
+-- Name: fleet_fuel_logs fleet_fuel_logs_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_logs
+    ADD CONSTRAINT fleet_fuel_logs_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE SET NULL;
+
+
+--
+-- Name: fleet_fuel_logs fleet_fuel_logs_vehicle_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_logs
+    ADD CONSTRAINT fleet_fuel_logs_vehicle_id_fkey FOREIGN KEY (vehicle_id) REFERENCES public.fleet_vehicles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_maintenance fleet_maintenance_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_maintenance
+    ADD CONSTRAINT fleet_maintenance_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES public.journal_entries(id);
+
+
+--
+-- Name: fleet_maintenance fleet_maintenance_vehicle_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_maintenance
+    ADD CONSTRAINT fleet_maintenance_vehicle_id_fkey FOREIGN KEY (vehicle_id) REFERENCES public.fleet_vehicles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_trip_locations fleet_trip_locations_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trip_locations
+    ADD CONSTRAINT fleet_trip_locations_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_trip_visits fleet_trip_visits_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trip_visits
+    ADD CONSTRAINT fleet_trip_visits_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_trip_visits fleet_trip_visits_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trip_visits
+    ADD CONSTRAINT fleet_trip_visits_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_trips fleet_trips_driver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trips
+    ADD CONSTRAINT fleet_trips_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.fleet_drivers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_trips fleet_trips_vehicle_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_trips
+    ADD CONSTRAINT fleet_trips_vehicle_id_fkey FOREIGN KEY (vehicle_id) REFERENCES public.fleet_vehicles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fleet_vehicles fleet_vehicles_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_vehicles
+    ADD CONSTRAINT fleet_vehicles_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(id) ON DELETE SET NULL;
+
+
+--
 -- Name: fuel_logs fuel_logs_filled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8502,6 +9749,14 @@ ALTER TABLE ONLY public.pos_sales
 
 
 --
+-- Name: pos_sales pos_sales_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pos_sales
+    ADD CONSTRAINT pos_sales_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE SET NULL;
+
+
+--
 -- Name: product_barcodes product_barcodes_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8707,6 +9962,14 @@ ALTER TABLE ONLY public.sales_invoices
 
 ALTER TABLE ONLY public.sales_invoices
     ADD CONSTRAINT sales_invoices_sales_order_id_fkey FOREIGN KEY (sales_order_id) REFERENCES public.sales_orders(id);
+
+
+--
+-- Name: sales_invoices sales_invoices_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_invoices
+    ADD CONSTRAINT sales_invoices_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE SET NULL;
 
 
 --
@@ -9165,6 +10428,76 @@ CREATE POLICY "Allow all for authenticated" ON public.pos_sale_items TO authenti
 --
 
 CREATE POLICY "Allow all for authenticated" ON public.purchase_order_items TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: fleet_cash_deposits Allow authenticated full access on fleet_cash_deposits; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_cash_deposits" ON public.fleet_cash_deposits TO authenticated USING (true);
+
+
+--
+-- Name: fleet_drivers Allow authenticated full access on fleet_drivers; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_drivers" ON public.fleet_drivers TO authenticated USING (true);
+
+
+--
+-- Name: fleet_expense_variances Allow authenticated full access on fleet_expense_variances; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_expense_variances" ON public.fleet_expense_variances TO authenticated USING (true);
+
+
+--
+-- Name: fleet_fuel_allowances Allow authenticated full access on fleet_fuel_allowances; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_fuel_allowances" ON public.fleet_fuel_allowances TO authenticated USING (true);
+
+
+--
+-- Name: fleet_fuel_logs Allow authenticated full access on fleet_fuel_logs; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_fuel_logs" ON public.fleet_fuel_logs TO authenticated USING (true);
+
+
+--
+-- Name: fleet_maintenance Allow authenticated full access on fleet_maintenance; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_maintenance" ON public.fleet_maintenance TO authenticated USING (true);
+
+
+--
+-- Name: fleet_trip_locations Allow authenticated full access on fleet_trip_locations; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_trip_locations" ON public.fleet_trip_locations TO authenticated USING (true);
+
+
+--
+-- Name: fleet_trip_visits Allow authenticated full access on fleet_trip_visits; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_trip_visits" ON public.fleet_trip_visits TO authenticated USING (true);
+
+
+--
+-- Name: fleet_trips Allow authenticated full access on fleet_trips; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_trips" ON public.fleet_trips TO authenticated USING (true);
+
+
+--
+-- Name: fleet_vehicles Allow authenticated full access on fleet_vehicles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Allow authenticated full access on fleet_vehicles" ON public.fleet_vehicles TO authenticated USING (true);
 
 
 --
@@ -9773,6 +11106,66 @@ ALTER TABLE public.employee_salary_components ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: fleet_cash_deposits; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_cash_deposits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_drivers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_drivers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_expense_variances; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_expense_variances ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_fuel_allowances; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_fuel_allowances ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_fuel_logs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_fuel_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_maintenance; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_maintenance ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_trip_locations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_trip_locations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_trip_visits; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_trip_visits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_trips; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_trips ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fleet_vehicles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fleet_vehicles ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: fuel_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10010,5 +11403,5 @@ ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fGOD3gSB0fLp1UhuSZkeGvQnMKLpygynLSVieMBAnCpZaK51B2ImFxeATXsiw2U
+\unrestrict SD6Qi5uHXzyP5voOugdngUQb8rNsTYt46fGxwOlWN3PEuDruUnTfkB5aizcGb2D
 

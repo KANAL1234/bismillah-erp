@@ -25,10 +25,14 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, Check, X, Trash2, Settings2, Send } from 'lucide-react'
+import { Plus, Check, X, Trash2, Settings2, Send, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
+
+import { useLocation } from '@/components/providers/location-provider'
+
+// ... imports remain the same
 
 export default function StockAdjustmentsPage() {
     return (
@@ -39,10 +43,17 @@ export default function StockAdjustmentsPage() {
 }
 
 function StockAdjustmentsContent() {
-    const { data: allAdjustments, isLoading } = useStockAdjustments()
+    const { currentLocationId } = useLocation()
+    const { data: allAdjustmentsData, isLoading } = useStockAdjustments()
     const submitAdjustment = useSubmitAdjustment()
     const approveAdjustment = useApproveAdjustment()
     const deleteAdjustment = useDeleteAdjustment()
+
+    // Filter adjustments based on location selection
+    const allAdjustments = allAdjustmentsData?.filter(adjustment => {
+        if (!currentLocationId || currentLocationId === '') return true
+        return adjustment.location_id === currentLocationId
+    })
 
     const [showApproveDialog, setShowApproveDialog] = useState(false)
     const [selectedAdjustment, setSelectedAdjustment] = useState<{ id: string, number: string } | null>(null)
@@ -147,8 +158,12 @@ function StockAdjustmentsContent() {
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900">Stock Adjustments</h2>
-                    <p className="text-slate-500">Correct inventory levels and record losses.</p>
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Stock Adjustments</h1>
+                    <p className="text-slate-500">
+                        {currentLocationId
+                            ? 'Showing adjustments for selected location'
+                            : 'Correct inventory levels and record losses (all locations)'}
+                    </p>
                 </div>
                 <Link href="/dashboard/inventory/adjustments/new">
                     <Button className="w-full md:w-auto bg-slate-900 hover:bg-slate-800">
@@ -225,10 +240,15 @@ function StockAdjustmentsContent() {
                                                                 </Badge>
                                                             </TableCell>
                                                             <TableCell className="text-right">
-                                                                <div className="flex justify-end gap-1">
+                                                                <div className="flex justify-end gap-2">
                                                                     <Link href={`/dashboard/inventory/adjustments/${adjustment.id}`}>
-                                                                        <Button variant="ghost" size="sm" className="h-8">
-                                                                            View
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                                                            title="View Details"
+                                                                        >
+                                                                            <Eye className="h-4 w-4" />
                                                                         </Button>
                                                                     </Link>
 
@@ -236,17 +256,19 @@ function StockAdjustmentsContent() {
                                                                         <>
                                                                             <Button
                                                                                 variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                                                 onClick={() => handleSubmit(adjustment.id, adjustment.adjustment_number)}
+                                                                                title="Submit for Approval"
                                                                             >
-                                                                                Submit
+                                                                                <Send className="h-4 w-4" />
                                                                             </Button>
                                                                             <Button
                                                                                 variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
                                                                                 onClick={() => handleDelete(adjustment.id, adjustment.adjustment_number)}
+                                                                                title="Delete Adjustment"
                                                                             >
                                                                                 <Trash2 className="h-4 w-4" />
                                                                             </Button>
@@ -256,9 +278,10 @@ function StockAdjustmentsContent() {
                                                                     {adjustment.status === 'PENDING_APPROVAL' && (
                                                                         <Button
                                                                             variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
                                                                             onClick={() => handleApprove(adjustment.id, adjustment.adjustment_number)}
+                                                                            title="Approve Adjustment"
                                                                         >
                                                                             <Check className="h-4 w-4" />
                                                                         </Button>

@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Truck, MoreHorizontal } from 'lucide-react'
+import { Plus, Search, Truck, MoreHorizontal, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import {
     Table,
@@ -23,8 +24,9 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useDeliveryNotes } from '@/lib/queries/delivery-notes'
+import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 import { DeliveryNote } from '@/lib/types/database'
 
 export default function DeliveryNotesPage() {
@@ -36,14 +38,28 @@ export default function DeliveryNotesPage() {
 }
 
 function DeliveryNotesContent() {
+    const { currentLocationId } = useLocation()
     const { data: notes, isLoading } = useDeliveryNotes()
     const [searchTerm, setSearchTerm] = useState('')
 
-    const filteredNotes = notes?.filter(note =>
-        note.delivery_note_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        note.customers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        note.sales_orders?.order_number?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    const filteredNotes = notes?.filter(note => {
+        // Location filter
+        if (currentLocationId) {
+            const locationId = (note as any).warehouse_location_id || (note as any).location_id
+            if (locationId && locationId !== currentLocationId) {
+                return false
+            }
+        }
+
+        // Search filter
+        if (searchTerm) {
+            return note.delivery_note_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                note.customers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                note.sales_orders?.order_number?.toLowerCase().includes(searchTerm.toLowerCase())
+        }
+
+        return true
+    })
 
     const getStatusBadge = (status: DeliveryNote['status']) => {
         switch (status) {
@@ -64,7 +80,11 @@ function DeliveryNotesContent() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Delivery Notes</h1>
-                    <p className="text-muted-foreground">Track shipments and deliveries.</p>
+                    <p className="text-muted-foreground">
+                        {currentLocationId
+                            ? 'Showing deliveries for selected location'
+                            : 'Track shipments and deliveries (all locations)'}
+                    </p>
                 </div>
                 {/* 
                   Usually Delivery Notes are created from Sales Orders, 
@@ -119,7 +139,7 @@ function DeliveryNotesContent() {
                                 filteredNotes?.map((note) => (
                                     <TableRow key={note.id}>
                                         <TableCell className="font-medium">{note.delivery_note_number}</TableCell>
-                                        <TableCell>{format(new Date(note.delivery_date), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(note.delivery_date)}</TableCell>
                                         <TableCell>
                                             <div className="font-medium">{note.customers?.name}</div>
                                             <div className="text-xs text-muted-foreground">{note.customers?.customer_code}</div>
@@ -145,6 +165,10 @@ function DeliveryNotesContent() {
                                                             <Truck className="mr-2 h-4 w-4" />
                                                             View Details
                                                         </Link>
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => toast.info("Downloading PDF...")}>
+                                                        <Download className="mr-2 h-4 w-4" />
+                                                        Download PDF
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>

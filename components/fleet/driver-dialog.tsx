@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -50,7 +50,7 @@ interface DriverDialogProps {
 export function DriverDialog({ driver, trigger, open, onOpenChange, onSuccess }: DriverDialogProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [employees, setEmployees] = useState<{ id: string, full_name: string }[]>([])
-    const supabase = createClient()
+    const supabase = useMemo(() => createClient(), [])
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
@@ -64,13 +64,30 @@ export function DriverDialog({ driver, trigger, open, onOpenChange, onSuccess }:
 
     useEffect(() => {
         const fetchEmployees = async () => {
-            const { data } = await supabase
-                .from("employees")
-                .select("id, full_name")
-                .eq("status", "active") // Assume 'active' status exists on employees
-                .order("full_name")
+            try {
+                // Fetch active employees
+                const { data, error } = await supabase
+                    .from("employees")
+                    .select("id, full_name")
+                    .eq("employment_status", "ACTIVE")
+                    .order("full_name")
 
-            if (data) setEmployees(data)
+                if (error) throw error
+
+                // If no active employees, maybe try fetching all to see if any exist
+                if (!data || data.length === 0) {
+                    const { data: allData } = await supabase
+                        .from("employees")
+                        .select("id, full_name")
+                        .limit(50)
+                    if (allData) setEmployees(allData)
+                } else {
+                    setEmployees(data)
+                }
+            } catch (err: any) {
+                console.error("Error fetching employees:", err)
+                toast.error("Failed to load employees list")
+            }
         }
         fetchEmployees()
     }, [supabase])
@@ -136,18 +153,24 @@ export function DriverDialog({ driver, trigger, open, onOpenChange, onSuccess }:
                             render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>Employee</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!!driver}>
+                                    <Select onValueChange={field.onChange} value={field.value || ""} disabled={!!driver}>
                                         <FormControl>
                                             <SelectTrigger>
                                                 <SelectValue placeholder="Select employee" />
                                             </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                            {employees.map((emp) => (
-                                                <SelectItem key={emp.id} value={emp.id}>
-                                                    {emp.full_name}
+                                            {employees.length === 0 ? (
+                                                <SelectItem value="none" disabled>
+                                                    No active employees found
                                                 </SelectItem>
-                                            ))}
+                                            ) : (
+                                                employees.map((emp) => (
+                                                    <SelectItem key={emp.id} value={emp.id}>
+                                                        {emp.full_name}
+                                                    </SelectItem>
+                                                ))
+                                            )}
                                         </SelectContent>
                                     </Select>
                                     <FormMessage />

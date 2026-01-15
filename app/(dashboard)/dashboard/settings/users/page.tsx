@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { formatDate } from '@/lib/utils';
 import { Users, Plus, Edit, Shield, Clock, MapPin, Mail, Phone, Key, UserPlus } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
@@ -27,6 +28,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 
 import { createUser } from '@/app/actions/users';
 import { Label } from '@/components/ui/label';
@@ -51,6 +59,7 @@ function UserManagementContent() {
             if (result.success) {
                 toast.success(result.message);
                 setShowCreateDialog(false);
+                setSelectedEmployeeId(""); // Reset selection
                 setLoading(true);
                 // Slight delay to ensure DB propagation
                 setTimeout(() => {
@@ -74,6 +83,9 @@ function UserManagementContent() {
     const [showLocationsDialog, setShowLocationsDialog] = useState(false);
     const [selectedUser, setSelectedUser] = useState<UserWithRoles | null>(null);
 
+    const [employees, setEmployees] = useState<any[]>([]);
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+
     useEffect(() => {
         loadData();
     }, []);
@@ -81,15 +93,19 @@ function UserManagementContent() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [usersRes, rolesRes, locationsRes] = await Promise.all([
+            const [usersRes, rolesRes, locationsRes, employeesRes] = await Promise.all([
                 supabase.rpc('get_all_users_with_roles'),
                 supabase.from('roles').select('*').eq('is_active', true).order('role_name'),
-                supabase.from('locations').select('*').order('name')
+                supabase.from('locations').select('*').order('name'),
+                supabase.from('employees').select('id, employee_code, full_name, email')
+                    .eq('employment_status', 'ACTIVE')
+                    .order('full_name') // Fetch active employees
             ]);
 
             if (usersRes.data) setUsers(usersRes.data);
             if (rolesRes.data) setRoles(rolesRes.data);
             if (locationsRes.data) setLocations(locationsRes.data);
+            if (employeesRes.data) setEmployees(employeesRes.data);
             return usersRes.data as UserWithRoles[];
         } catch (error) {
             console.error('Error loading data:', error);
@@ -99,6 +115,14 @@ function UserManagementContent() {
             setLoading(false);
         }
     };
+
+    const handleEmployeeSelect = (empId: string) => {
+        setSelectedEmployeeId(empId);
+        const emp = employees.find(e => e.id === empId);
+        if (emp) {
+            // Auto-fill hidden inputs logic handled by keeping values in form hidden fields
+        }
+    }
 
     const handleToggleStatus = async (userId: string, currentStatus: boolean) => {
         try {
@@ -214,7 +238,7 @@ function UserManagementContent() {
                                             {user.last_login ? (
                                                 <div className="flex items-center gap-1 text-xs">
                                                     <Clock className="h-3 w-3 text-muted-foreground" />
-                                                    {new Date(user.last_login).toLocaleDateString()}
+                                                    {formatDate(user.last_login)}
                                                 </div>
                                             ) : (
                                                 <span className="text-xs text-muted-foreground">Never</span>
@@ -285,20 +309,54 @@ function UserManagementContent() {
                     }}>
                         <div className="grid gap-4 py-4">
                             <div className="grid gap-2">
-                                <Label htmlFor="fullName">Full Name</Label>
-                                <Input id="fullName" name="fullName" placeholder="John Doe" required />
+                                <Label>Employee</Label>
+                                <Select value={selectedEmployeeId} onValueChange={handleEmployeeSelect} required>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select an employee" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {employees.map((emp) => (
+                                            <SelectItem key={emp.id} value={emp.id}>
+                                                {emp.full_name} ({emp.employee_code})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {employees.length === 0 && (
+                                    <p className="text-xs text-muted-foreground text-amber-600">
+                                        No active employees found. Please add employees in HR module first.
+                                    </p>
+                                )}
                             </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="email">Email</Label>
-                                <Input id="email" name="email" type="email" placeholder="john@example.com" required />
-                            </div>
+
+                            {selectedEmployeeId && (() => {
+                                const emp = employees.find(e => e.id === selectedEmployeeId);
+                                if (!emp) return null;
+                                return (
+                                    <>
+                                        <input type="hidden" name="fullName" value={emp.full_name} />
+                                        <input type="hidden" name="employeeCode" value={emp.employee_code} />
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="email">Email</Label>
+                                            <Input
+                                                id="email"
+                                                name="email"
+                                                type="email"
+                                                defaultValue={emp.email || ''}
+                                                required
+                                                placeholder="john@example.com"
+                                            />
+                                            <p className="text-[10px] text-muted-foreground">
+                                                Auto-filled from HR record. You can change it if needed.
+                                            </p>
+                                        </div>
+                                    </>
+                                )
+                            })()}
+
                             <div className="grid gap-2">
                                 <Label htmlFor="password">Password</Label>
                                 <Input id="password" name="password" type="password" required />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="employeeCode">Employee Code</Label>
-                                <Input id="employeeCode" name="employeeCode" placeholder="EMP-001" />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="roleId">Initial Role</Label>

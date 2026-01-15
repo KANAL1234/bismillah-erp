@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, FileText, MoreHorizontal } from 'lucide-react'
+import { Plus, Search, FileText, MoreHorizontal, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import {
     Table,
@@ -24,7 +25,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSalesOrders } from '@/lib/queries/sales-orders'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 import { SalesOrder } from '@/lib/types/database'
 import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
@@ -38,22 +39,27 @@ export default function SalesOrdersPage() {
 }
 
 function SalesOrdersContent() {
+    const { currentLocationId } = useLocation()
     const { data: orders, isLoading } = useSalesOrders()
     const [searchQuery, setSearchQuery] = useState('')
-    const { allowedLocationIds } = useLocation()
-    const [statusFilter, setStatusFilter] = useState<string>('all')
 
-    // Filter orders by allowed warehouse locations and search term
+    // Filter orders by selected location and search term
     const filteredOrders = orders?.filter(order => {
-        // LBAC: Only show orders from allowed warehouse locations
-        const warehouseId = (order as any).warehouse_location_id; // Assuming warehouse_location_id is the correct field
-        if (warehouseId && !allowedLocationIds.includes(warehouseId)) {
-            return false
+        // Location filter: Only show orders from selected location
+        if (currentLocationId) {
+            const warehouseId = (order as any).warehouse_location_id
+            if (warehouseId && warehouseId !== currentLocationId) {
+                return false
+            }
         }
 
         // Search filter
-        return order.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            order.customers?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+        if (searchQuery) {
+            return order.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                order.customers?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+        }
+
+        return true
     })
 
     const getStatusBadge = (status: SalesOrder['status']) => {
@@ -88,7 +94,11 @@ function SalesOrdersContent() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Sales Orders</h1>
-                    <p className="text-muted-foreground">Manage your customer orders and fulfillment.</p>
+                    <p className="text-muted-foreground">
+                        {currentLocationId
+                            ? 'Showing orders for selected location'
+                            : 'Manage your customer orders and fulfillment (all locations)'}
+                    </p>
                 </div>
                 <Link href="/dashboard/sales/orders/new">
                     <Button>
@@ -137,7 +147,7 @@ function SalesOrdersContent() {
                                 filteredOrders?.map((order) => (
                                     <TableRow key={order.id}>
                                         <TableCell className="font-medium">{order.order_number}</TableCell>
-                                        <TableCell>{format(new Date(order.order_date), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(order.order_date)}</TableCell>
                                         <TableCell>
                                             <div className="font-medium">{order.customers?.name}</div>
                                             <div className="text-xs text-muted-foreground">{order.customers?.customer_code}</div>
@@ -162,6 +172,10 @@ function SalesOrdersContent() {
                                                             <FileText className="mr-2 h-4 w-4" />
                                                             View Details
                                                         </Link>
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => toast.info("Downloading PDF...")}>
+                                                        <Download className="mr-2 h-4 w-4" />
+                                                        Download PDF
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>

@@ -45,11 +45,11 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
             full_name: formData.get('full_name') as string,
             cnic: formData.get('cnic') as string,
             designation: formData.get('designation') as string,
-            department_id: formData.get('department_id') as string || null,
+            department_id: (formData.get('department_id') === 'none' || !formData.get('department_id')) ? null : formData.get('department_id') as string,
             basic_salary: parseFloat(formData.get('basic_salary') as string) || 0,
             joining_date: formData.get('joining_date') as string,
             commission_rate: parseFloat(formData.get('commission_rate') as string) || 0,
-            commission_type: formData.get('commission_type') as string || null,
+            commission_type: formData.get('commission_type') as string || 'SALES_VALUE',
             phone: formData.get('phone') as string,
             email: formData.get('email') as string,
             employment_status: formData.get('employment_status') as string || 'ACTIVE',
@@ -135,6 +135,7 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
                                         <SelectValue placeholder="Select department" />
                                     </SelectTrigger>
                                     <SelectContent>
+                                        <SelectItem value="none">No Department</SelectItem>
                                         {departments?.map((dept) => (
                                             <SelectItem key={dept.id} value={dept.id}>
                                                 {dept.name}

@@ -15,17 +15,22 @@ export function useProducts() {
           *,
           product_categories(id, code, name, costing_method),
           units_of_measure(id, code, name),
-          inventory_stock(quantity_available)
+          inventory_stock(
+            location_id,
+            quantity_on_hand,
+            quantity_available,
+            quantity_reserved
+          )
         `)
                 .order('created_at', { ascending: false })
 
             if (error) throw error
 
-            // Aggregate stock across all locations
+            // Aggregate stock across all locations for total_stock
             const productsWithStock = data?.map((product: any) => ({
                 ...product,
                 total_stock: product.inventory_stock?.reduce(
-                    (sum: number, stock: any) => sum + (stock.quantity_available || 0),
+                    (sum: number, stock: any) => sum + (stock.quantity_on_hand || 0),
                     0
                 ) || 0
             }))

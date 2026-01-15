@@ -103,3 +103,131 @@ export interface FleetMaintenance {
     // Joined fields
     vehicle?: FleetVehicle
 }
+
+// ============================================================================
+// FLEET BUSINESS WORKFLOW TYPES
+// ============================================================================
+
+export type CashDepositStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'POSTED'
+export type FuelAllowanceStatus = 'ACTIVE' | 'COMPLETED' | 'EXCEEDED' | 'CANCELLED'
+export type VarianceType = 'FUEL' | 'CASH' | 'MAINTENANCE' | 'OTHER'
+export type VarianceCategory = 'OVER_BUDGET' | 'UNDER_BUDGET' | 'MISSING_DEPOSIT' | 'EXCESS_CONSUMPTION'
+export type VarianceStatus = 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'ESCALATED'
+
+export interface FleetCashDeposit {
+    id: string
+    trip_id: string
+    driver_id: string
+    vehicle_id: string
+
+    // Financial Details
+    expected_cash: number
+    actual_cash: number
+    variance: number
+
+    // Deposit Information
+    deposit_date: string
+    deposit_time: string
+    bank_account_id: string | null
+    deposit_slip_number: string | null
+
+    // Approval Workflow
+    status: CashDepositStatus
+    submitted_by: string | null
+    approved_by: string | null
+    approved_at: string | null
+
+    // Accounting Integration
+    journal_entry_id: string | null
+
+    // Metadata
+    notes: string | null
+    created_at: string
+    updated_at: string
+
+    // Joined fields
+    trip?: FleetTrip
+    driver?: FleetDriver
+    vehicle?: FleetVehicle
+    bank_account?: {
+        account_name: string
+        account_number: string
+    }
+}
+
+export interface FleetFuelAllowance {
+    id: string
+    trip_id: string
+    driver_id: string
+    vehicle_id: string
+
+    // Allowance Details
+    allowance_date: string
+    budgeted_fuel_liters: number
+    budgeted_fuel_cost: number
+
+    // Actual Consumption
+    actual_fuel_liters: number
+    actual_fuel_cost: number
+
+    // Variance Tracking
+    fuel_variance_liters: number
+    cost_variance: number
+    variance_percentage: number
+
+    // Approval Status
+    status: FuelAllowanceStatus
+    approved_by: string | null
+
+    // Metadata
+    notes: string | null
+    created_at: string
+    updated_at: string
+
+    // Joined fields
+    trip?: FleetTrip
+    driver?: FleetDriver
+    vehicle?: FleetVehicle
+}
+
+export interface FleetExpenseVariance {
+    id: string
+    trip_id: string
+
+    // Variance Type
+    variance_type: VarianceType
+    variance_category: VarianceCategory
+
+    // Financial Impact
+    budgeted_amount: number
+    actual_amount: number
+    variance_amount: number
+    variance_percentage: number
+
+    // Alert Configuration
+    alert_threshold_percentage: number
+    is_alert_triggered: boolean
+
+    // Resolution
+    status: VarianceStatus
+    resolved_by: string | null
+    resolved_at: string | null
+    resolution_notes: string | null
+
+    // Metadata
+    variance_date: string
+    created_at: string
+
+    // Joined fields
+    trip?: FleetTrip
+}
+
+export interface FleetVarianceDashboard {
+    total_variances: number
+    total_variance_amount: number
+    cash_variances: number
+    fuel_variances: number
+    open_alerts: number
+    avg_variance_percentage: number
+}
+

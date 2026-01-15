@@ -20,7 +20,10 @@ import {
     Clock,
     Calculator,
     BarChart3,
-    Lock
+    Lock,
+    Wrench,
+    AlertTriangle,
+    CheckCircle2
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -161,6 +164,37 @@ function DashboardContent() {
             .select('*', { count: 'exact', head: true })
             .eq('status', 'PENDING')
 
+        // === FLEET METRICS ===
+        const { count: vehicleCount } = await supabase
+            .from('fleet_vehicles')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'ACTIVE')
+
+        const { count: activeDriverCount } = await supabase
+            .from('fleet_drivers')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'ACTIVE')
+
+        const { count: activeTripCount } = await supabase
+            .from('fleet_trips')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'IN_PROGRESS')
+
+        const weekFromNow = new Date()
+        weekFromNow.setDate(weekFromNow.getDate() + 7)
+        const { count: maintenanceCount } = await supabase
+            .from('fleet_maintenance')
+            .select('*', { count: 'exact', head: true })
+            .lte('next_service_due_date', weekFromNow.toISOString().split('T')[0])
+
+        const { data: fuelLogs } = await supabase.from('fleet_fuel_logs').select('total_cost')
+        const { data: maintenanceLogs } = await supabase.from('fleet_maintenance').select('cost')
+        const { count: totalTripCount } = await supabase.from('fleet_trips').select('*', { count: 'exact', head: true })
+
+        const fuelTotal = fuelLogs?.reduce((sum, log) => sum + (Number(log.total_cost) || 0), 0) || 0
+        const maintenanceTotal = maintenanceLogs?.reduce((sum, log) => sum + (Number(log.cost) || 0), 0) || 0
+        const fleetExpenses = fuelTotal + maintenanceTotal
+
         const displayProducts = (topProducts || [])
             .sort((a: any, b: any) => b.total_sales - a.total_sales)
             .slice(0, 5)
@@ -193,7 +227,13 @@ function DashboardContent() {
             locationsCount: userLocations?.length || 0,
             activeEmployeeCount: activeEmployeeCount || 0,
             todayAttendanceCount: todayAttendanceCount || 0,
-            pendingLeavesCount: pendingLeavesCount || 0
+            pendingLeavesCount: pendingLeavesCount || 0,
+            vehicleCount: vehicleCount || 0,
+            activeDriverCount: activeDriverCount || 0,
+            activeTripCount: activeTripCount || 0,
+            maintenanceCount: maintenanceCount || 0,
+            totalTripCount: totalTripCount || 0,
+            fleetExpenses: fleetExpenses || 0
         })
 
         setLoading(false)
@@ -341,6 +381,130 @@ function DashboardContent() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Fleet Operations Section */}
+            {hasPermission('fleet:overview:view') && (
+                <div className="space-y-6">
+                    <div>
+                        <div className="flex items-center gap-2 mb-4">
+                            <Truck className="h-5 w-5 text-slate-500" />
+                            <h3 className="text-lg font-semibold text-slate-900">Fleet & Mobile Stores</h3>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <Link href="/dashboard/fleet/vehicles">
+                                <Card className="hover:bg-slate-50 transition-colors cursor-pointer border-l-4 border-l-slate-400">
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">Active Vehicles</CardTitle>
+                                        <Truck className="h-4 w-4 text-slate-500" />
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="text-2xl font-bold">{metrics.vehicleCount}</div>
+                                        <p className="text-xs text-slate-500 mt-1">Mobile units on road</p>
+                                    </CardContent>
+                                </Card>
+                            </Link>
+
+                            <Link href="/dashboard/fleet/drivers">
+                                <Card className="hover:bg-slate-50 transition-colors cursor-pointer border-l-4 border-l-green-400">
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">Available Drivers</CardTitle>
+                                        <Users className="h-4 w-4 text-green-500" />
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="text-2xl font-bold">{metrics.activeDriverCount}</div>
+                                        <p className="text-xs text-slate-500 mt-1">Fully qualified staff</p>
+                                    </CardContent>
+                                </Card>
+                            </Link>
+
+                            <Link href="/dashboard/fleet/trips">
+                                <Card className="hover:bg-slate-50 transition-colors cursor-pointer border-l-4 border-l-blue-400">
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">Active Trips</CardTitle>
+                                        <div className="relative">
+                                            <MapPin className="h-4 w-4 text-blue-500" />
+                                            {metrics.activeTripCount > 0 && <span className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-red-500 animate-pulse" />}
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="text-2xl font-bold">{metrics.activeTripCount}</div>
+                                        <p className="text-xs text-slate-500 mt-1">Real-time tracking</p>
+                                    </CardContent>
+                                </Card>
+                            </Link>
+
+                            <Link href="/dashboard/fleet/maintenance">
+                                <Card className="hover:bg-slate-50 transition-colors cursor-pointer border-l-4 border-l-orange-400 flex flex-col justify-between">
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                        <CardTitle className="text-sm font-medium">Fleet Health</CardTitle>
+                                        <CheckCircle className={`h-4 w-4 ${metrics.maintenanceCount > 0 ? 'text-orange-500' : 'text-green-500'}`} />
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="text-2xl font-bold">{metrics.maintenanceCount}</div>
+                                        <p className={`text-xs mt-1 ${metrics.maintenanceCount > 0 ? 'text-orange-600 font-medium' : 'text-slate-500'}`}>
+                                            {metrics.maintenanceCount > 0 ? 'Service(s) upcoming' : 'All clear'}
+                                        </p>
+                                    </CardContent>
+                                </Card>
+                            </Link>
+                        </div>
+                    </div>
+
+                    {/* Fleet Analytics Extension */}
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <Card className="bg-slate-50/50">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                    <TrendingUp className="h-4 w-4 text-slate-500" />
+                                    Fleet Operational Stats
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Total Expenses</p>
+                                    <div className="flex items-baseline gap-1">
+                                        <span className="text-sm font-medium text-slate-500">PKR</span>
+                                        <span className="text-xl font-bold text-slate-900">{metrics.fleetExpenses?.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Historical Trips</p>
+                                    <div className="flex items-baseline gap-1">
+                                        <span className="text-xl font-bold text-slate-900">{metrics.totalTripCount}</span>
+                                        <span className="text-sm font-medium text-slate-500">delivered</span>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="bg-slate-50/50">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                    <AlertTriangle className="h-4 w-4 text-slate-500" />
+                                    Fleet Health & Utility
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                                {metrics.maintenanceCount > 0 ? (
+                                    <div className="flex items-center gap-2 text-xs text-orange-700 bg-orange-100/50 p-2 rounded border border-orange-200">
+                                        <AlertTriangle className="h-3 w-3" />
+                                        {metrics.maintenanceCount} vehicle(s) require service attention.
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 text-xs text-green-700 bg-green-100/50 p-2 rounded border border-green-200">
+                                        <CheckCircle2 className="h-3 w-3" />
+                                        All vehicles are healthy and serviced.
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-100/50 p-2 rounded border border-blue-200">
+                                    <TrendingUp className="h-3 w-3" />
+                                    Current utilization: {Math.round((metrics.activeTripCount / (metrics.vehicleCount || 1)) * 100)}% of mobile stores.
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </div>
+            )}
 
             {/* Analytics Grid */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

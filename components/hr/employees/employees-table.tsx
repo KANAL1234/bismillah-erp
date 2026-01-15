@@ -1,6 +1,6 @@
 'use client'
 
-import { Edit, Trash2, Award, MoreVertical } from 'lucide-react'
+import { Pencil, Trash2, Award } from 'lucide-react'
 import {
     Table,
     TableBody,
@@ -12,12 +12,15 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useEmployees, useUpdateEmployee } from '@/lib/queries/hr'
 import { PermissionGuard } from '@/components/permission-guard'
 import { toast } from 'sonner'
@@ -34,6 +37,7 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
     const { data: employees, isLoading } = useEmployees()
     const updateEmployee = useUpdateEmployee()
     const [editingEmployee, setEditingEmployee] = useState<any>(null)
+    const [deactivatingEmployee, setDeactivatingEmployee] = useState<any>(null)
 
     const filteredEmployees = employees?.filter((employee) => {
         const matchesSearch =
@@ -58,18 +62,20 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
         }
     }
 
-    const handleDeactivate = async (id: string) => {
-        if (!confirm('Are you sure you want to deactivate this employee?')) return
+    const handleDeactivate = async () => {
+        if (!deactivatingEmployee) return
 
         try {
             await updateEmployee.mutateAsync({
-                id,
+                id: deactivatingEmployee.id,
                 employment_status: 'INACTIVE',
                 leaving_date: new Date().toISOString().split('T')[0],
             })
             toast.success('Employee deactivated')
         } catch (error) {
             toast.error('Failed to deactivate employee')
+        } finally {
+            setDeactivatingEmployee(null)
         }
     }
 
@@ -103,8 +109,8 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
                             <TableRow key={employee.id}>
                                 <TableCell>
                                     <div>
-                                        <div className="font-medium">{employee.full_name}</div>
-                                        <div className="text-xs text-muted-foreground">
+                                        <div className="font-medium text-slate-900">{employee.full_name}</div>
+                                        <div className="text-xs text-muted-foreground font-mono">
                                             {employee.employee_code}
                                         </div>
                                     </div>
@@ -118,7 +124,7 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
                                 </TableCell>
                                 <TableCell className="text-center">
                                     {employee.commission_rate ? (
-                                        <Badge variant="outline" className="gap-1">
+                                        <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700">
                                             <Award className="h-3 w-3" />
                                             {employee.commission_rate}%
                                         </Badge>
@@ -132,29 +138,32 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
                                     </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" className="h-8 w-8 p-0">
-                                                <MoreVertical className="h-4 w-4" />
+                                    <div className="flex justify-end gap-2">
+                                        <PermissionGuard permission="hr:employees:update">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                                onClick={() => setEditingEmployee(employee)}
+                                                title="Edit Employee"
+                                            >
+                                                <Pencil className="h-4 w-4" />
+                                                <span className="sr-only">Edit</span>
                                             </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                            <PermissionGuard permission="hr.employees.update">
-                                                <DropdownMenuItem onClick={() => setEditingEmployee(employee)}>
-                                                    <Edit className="mr-2 h-4 w-4" /> Edit Details
-                                                </DropdownMenuItem>
-                                            </PermissionGuard>
-                                            <PermissionGuard permission="hr.employees.delete">
-                                                <DropdownMenuItem
-                                                    className="text-destructive"
-                                                    onClick={() => handleDeactivate(employee.id)}
-                                                >
-                                                    <Trash2 className="mr-2 h-4 w-4" /> Deactivate
-                                                </DropdownMenuItem>
-                                            </PermissionGuard>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                                        </PermissionGuard>
+                                        <PermissionGuard permission="hr:employees:delete">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                onClick={() => setDeactivatingEmployee(employee)}
+                                                title="Deactivate Employee"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                                <span className="sr-only">Deactivate</span>
+                                            </Button>
+                                        </PermissionGuard>
+                                    </div>
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -174,6 +183,28 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
                 onOpenChange={(open: boolean) => !open && setEditingEmployee(null)}
                 employee={editingEmployee}
             />
+
+            <AlertDialog open={!!deactivatingEmployee} onOpenChange={(open) => !open && setDeactivatingEmployee(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Deactivate Employee?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to deactivate <strong>{deactivatingEmployee?.full_name}</strong>?
+                            This will mark them as inactive and they will no longer be able to perform actions in the system.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-700"
+                            onClick={handleDeactivate}
+                            disabled={updateEmployee.isPending}
+                        >
+                            {updateEmployee.isPending ? 'Deactivating...' : 'Deactivate'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     )
 }

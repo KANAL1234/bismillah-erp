@@ -8,7 +8,7 @@ import { useVendorBills, useApproveVendorBill } from '@/lib/queries/vendor-bills
 import { PermissionGuard } from '@/components/permission-guard'
 import { FileText, Plus, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 
 export default function VendorBillsPage() {
     return (
@@ -133,8 +133,8 @@ function VendorBillsContent() {
                                     <TableRow key={bill.id}>
                                         <TableCell className="font-mono font-medium">{bill.bill_number}</TableCell>
                                         <TableCell>{(bill as any).vendors?.name}</TableCell>
-                                        <TableCell>{format(new Date(bill.bill_date), 'MMM dd, yyyy')}</TableCell>
-                                        <TableCell>{format(new Date(bill.due_date), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(bill.bill_date)}</TableCell>
+                                        <TableCell>{formatDate(bill.due_date)}</TableCell>
                                         <TableCell className="text-right font-mono">
                                             PKR {bill.total_amount.toLocaleString()}
                                         </TableCell>

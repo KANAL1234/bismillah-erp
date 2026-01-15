@@ -32,6 +32,7 @@ import { Receipt as ReceiptComponent } from '@/components/pos/receipt'
 import { ArrowLeft, Receipt, Search, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
 
@@ -231,7 +232,7 @@ function SalesHistoryContent() {
                                                 {sale.sale_number}
                                             </TableCell>
                                             <TableCell>
-                                                {format(new Date(sale.sale_date), 'MMM dd, yyyy')}
+                                                {formatDate(sale.sale_date)}
                                                 <div className="text-xs text-gray-500">
                                                     {format(new Date(sale.sale_date), 'hh:mm a')}
                                                 </div>

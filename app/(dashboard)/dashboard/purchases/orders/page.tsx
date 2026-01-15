@@ -16,9 +16,19 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
-import { Plus, Check, X, Trash2, Send } from 'lucide-react'
+import { Plus, Check, X, Trash2, Send, Eye, Package } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 export default function PurchaseOrdersPage() {
     return (
@@ -32,6 +42,7 @@ function PurchaseOrdersContent() {
     const { data: allOrders, isLoading } = usePurchaseOrders()
     const updateStatus = useUpdatePOStatus()
     const deletePO = useDeletePurchaseOrder()
+    const [orderToDelete, setOrderToDelete] = useState<{ id: string, number: string } | null>(null)
 
     const getStatusColor = (status: string) => {
         const colors = {
@@ -59,14 +70,15 @@ function PurchaseOrdersContent() {
         }
     }
 
-    const handleDelete = async (id: string, poNumber: string) => {
-        if (!confirm(`Delete purchase order ${poNumber}?`)) return
+    const handleDelete = async () => {
+        if (!orderToDelete) return
 
         try {
-            await deletePO.mutateAsync(id)
+            await deletePO.mutateAsync(orderToDelete.id)
             toast.success('Success', {
                 description: 'Purchase order deleted',
             })
+            setOrderToDelete(null)
         } catch (error: any) {
             toast.error('Error', {
                 description: error.message,
@@ -84,13 +96,16 @@ function PurchaseOrdersContent() {
     const receivedOrders = allOrders?.filter(o => ['PARTIALLY_RECEIVED', 'RECEIVED'].includes(o.status))
 
     return (
-        <div className="px-4 sm:px-0">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-3xl font-bold text-gray-900">Purchase Orders</h2>
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Purchase Orders</h1>
+                    <p className="text-muted-foreground">Manage relationships and orders with your vendors.</p>
+                </div>
                 <Link href="/dashboard/purchases/orders/new">
                     <Button>
                         <Plus className="mr-2 h-4 w-4" />
-                        New Purchase Order
+                        New Order
                     </Button>
                 </Link>
             </div>
@@ -115,7 +130,7 @@ function PurchaseOrdersContent() {
                     return (
                         <TabsContent key={tab} value={tab}>
                             <Card>
-                                <CardContent className="pt-6">
+                                <CardContent className="p-0">
                                     <Table>
                                         <TableHeader>
                                             <TableRow>
@@ -162,8 +177,13 @@ function PurchaseOrdersContent() {
                                                         <TableCell className="text-right">
                                                             <div className="flex justify-end gap-2">
                                                                 <Link href={`/dashboard/purchases/orders/${order.id}`}>
-                                                                    <Button variant="ghost" size="sm">
-                                                                        View
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                                                        title="View Details"
+                                                                    >
+                                                                        <Eye className="h-4 w-4" />
                                                                     </Button>
                                                                 </Link>
 
@@ -171,17 +191,21 @@ function PurchaseOrdersContent() {
                                                                     <>
                                                                         <Button
                                                                             variant="ghost"
-                                                                            size="sm"
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                                             onClick={() => handleStatusChange(order.id, 'PENDING_APPROVAL')}
+                                                                            title="Submit for Approval"
                                                                         >
-                                                                            Submit
+                                                                            <Send className="h-4 w-4" />
                                                                         </Button>
                                                                         <Button
                                                                             variant="ghost"
-                                                                            size="sm"
-                                                                            onClick={() => handleDelete(order.id, order.po_number)}
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                            onClick={() => setOrderToDelete({ id: order.id, number: order.po_number })}
+                                                                            title="Delete Order"
                                                                         >
-                                                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                                                            <Trash2 className="h-4 w-4" />
                                                                         </Button>
                                                                     </>
                                                                 )}
@@ -190,44 +214,49 @@ function PurchaseOrdersContent() {
                                                                     <>
                                                                         <Button
                                                                             variant="ghost"
-                                                                            size="sm"
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
                                                                             onClick={() => handleStatusChange(order.id, 'APPROVED')}
+                                                                            title="Approve Order"
                                                                         >
-                                                                            <Check className="h-4 w-4 text-green-500" />
+                                                                            <Check className="h-4 w-4" />
                                                                         </Button>
                                                                         <Button
                                                                             variant="ghost"
-                                                                            size="sm"
+                                                                            size="icon"
+                                                                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
                                                                             onClick={() => handleStatusChange(order.id, 'CANCELLED')}
+                                                                            title="Cancel Order"
                                                                         >
-                                                                            <X className="h-4 w-4 text-red-500" />
+                                                                            <X className="h-4 w-4" />
                                                                         </Button>
                                                                     </>
                                                                 )}
 
-                                                                {order.status === 'APPROVED' && (
+                                                                {(order.status === 'APPROVED' || order.status === 'SENT_TO_VENDOR') && (
                                                                     <>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            onClick={() => handleStatusChange(order.id, 'SENT_TO_VENDOR')}
-                                                                        >
-                                                                            <Send className="h-4 w-4" />
-                                                                        </Button>
+                                                                        {order.status === 'APPROVED' && (
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                                                onClick={() => handleStatusChange(order.id, 'SENT_TO_VENDOR')}
+                                                                                title="Mark as Sent to Vendor"
+                                                                            >
+                                                                                <Send className="h-4 w-4" />
+                                                                            </Button>
+                                                                        )}
                                                                         <Link href={`/dashboard/purchases/grn/new?po=${order.id}`}>
-                                                                            <Button variant="ghost" size="sm">
-                                                                                Receive
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="icon"
+                                                                                className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                                                                title="Receive Goods (GRN)"
+                                                                            >
+                                                                                <Package className="h-4 w-4" />
                                                                             </Button>
                                                                         </Link>
                                                                     </>
-                                                                )}
-
-                                                                {order.status === 'SENT_TO_VENDOR' && (
-                                                                    <Link href={`/dashboard/purchases/grn/new?po=${order.id}`}>
-                                                                        <Button variant="ghost" size="sm">
-                                                                            Receive
-                                                                        </Button>
-                                                                    </Link>
                                                                 )}
                                                             </div>
                                                         </TableCell>
@@ -242,6 +271,28 @@ function PurchaseOrdersContent() {
                     )
                 })}
             </Tabs>
+
+            <AlertDialog open={!!orderToDelete} onOpenChange={(open) => !open && setOrderToDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Purchase Order?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete purchase order <span className="font-medium text-slate-900">{orderToDelete?.number}</span>?
+                            This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                            disabled={deletePO.isPending}
+                        >
+                            {deletePO.isPending ? 'Deleting...' : 'Delete Order'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
 }

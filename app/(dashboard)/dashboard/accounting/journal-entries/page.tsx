@@ -6,9 +6,9 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useJournalEntries, usePostJournalEntry } from '@/lib/queries/journal-entries'
 import { PermissionGuard } from '@/components/permission-guard'
-import { FileText, Plus, CheckCircle } from 'lucide-react'
+import { FileText, Plus, CheckCircle, Eye, Send } from 'lucide-react'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 
 export default function JournalEntriesPage() {
     return (
@@ -43,10 +43,10 @@ function JournalEntriesContent() {
     }
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold">Journal Entries</h1>
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Journal Entries</h1>
                     <p className="text-muted-foreground">View and manage general ledger postings</p>
                 </div>
                 <Button asChild>
@@ -119,7 +119,7 @@ function JournalEntriesContent() {
                                 {entries?.map((entry) => (
                                     <TableRow key={entry.id}>
                                         <TableCell className="font-mono font-medium">{entry.journal_number}</TableCell>
-                                        <TableCell>{format(new Date(entry.journal_date), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(entry.journal_date)}</TableCell>
                                         <TableCell>
                                             <Badge variant="outline">{getTypeLabel(entry.journal_type)}</Badge>
                                         </TableCell>
@@ -136,16 +136,30 @@ function JournalEntriesContent() {
                                             </Badge>
                                         </TableCell>
                                         <TableCell>
-                                            {entry.status === 'draft' && (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => postEntry.mutate(entry.id)}
-                                                    disabled={postEntry.isPending}
-                                                >
-                                                    Post
-                                                </Button>
-                                            )}
+                                            <div className="flex justify-end gap-2">
+                                                <Link href={`/dashboard/accounting/journal-entries/${entry.id}`}>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                                        title="View Details"
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Button>
+                                                </Link>
+                                                {entry.status === 'draft' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                        onClick={() => postEntry.mutate(entry.id)}
+                                                        disabled={postEntry.isPending}
+                                                        title="Post Entry"
+                                                    >
+                                                        <Send className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}

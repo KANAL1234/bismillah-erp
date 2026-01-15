@@ -13,10 +13,12 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { LogOut, User, ChevronDown } from "lucide-react"
+import { LogOut, User, ChevronDown, PanelLeft } from "lucide-react"
+import { useSidebar } from "@/components/providers/sidebar-provider"
 
 export function DashboardHeader({ userEmail }: { userEmail: string }) {
     const router = useRouter()
+    const { toggle, isOpen } = useSidebar()
 
     const handleLogout = async () => {
         const supabase = createClient()
@@ -26,7 +28,12 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
 
     return (
         <header className="flex h-16 items-center justify-between border-b bg-white px-6">
-            <h2 className="text-lg font-semibold text-slate-900">Bismillah Oil Agency</h2>
+            <div className="flex items-center gap-4">
+                <Button variant="ghost" size="icon" onClick={toggle} className="md:hidden lg:flex">
+                    <PanelLeft className="h-5 w-5" />
+                </Button>
+                <h2 className="text-lg font-semibold text-slate-900">Bismillah Oil Agency</h2>
+            </div>
             <div className="flex items-center gap-4">
                 <LocationSelector />
 

@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, RotateCcw, MoreHorizontal } from 'lucide-react'
+import { Plus, Search, RotateCcw, MoreHorizontal, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import {
     Table,
@@ -24,7 +25,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PermissionGuard } from '@/components/permission-guard'
 import { useSalesReturns } from '@/lib/queries/sales-returns'
-import { format } from 'date-fns'
+import { useLocation } from '@/components/providers/location-provider'
+import { formatDate } from '@/lib/utils'
 import { SalesReturn } from '@/lib/types/database'
 
 export default function SalesReturnsPage() {
@@ -36,14 +38,28 @@ export default function SalesReturnsPage() {
 }
 
 function SalesReturnsContent() {
+    const { currentLocationId } = useLocation()
     const { data: returns, isLoading } = useSalesReturns()
     const [searchTerm, setSearchTerm] = useState('')
 
-    const filteredReturns = returns?.filter(ret =>
-        ret.return_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ret.customers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ret.sales_invoices?.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    const filteredReturns = returns?.filter(ret => {
+        // Location filter
+        if (currentLocationId) {
+            const locationId = (ret as any).warehouse_location_id || (ret as any).location_id
+            if (locationId && locationId !== currentLocationId) {
+                return false
+            }
+        }
+
+        // Search filter
+        if (searchTerm) {
+            return ret.return_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                ret.customers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                ret.sales_invoices?.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase())
+        }
+
+        return true
+    })
 
     const getStatusBadge = (status: SalesReturn['status']) => {
         switch (status) {
@@ -64,7 +80,11 @@ function SalesReturnsContent() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Sales Returns</h1>
-                    <p className="text-muted-foreground">Manage product returns and refunds.</p>
+                    <p className="text-muted-foreground">
+                        {currentLocationId
+                            ? 'Showing returns for selected location'
+                            : 'Manage product returns and refunds (all locations)'}
+                    </p>
                 </div>
                 <Link href="/dashboard/sales/returns/new">
                     <Button variant="destructive">
@@ -113,7 +133,7 @@ function SalesReturnsContent() {
                                 filteredReturns?.map((ret) => (
                                     <TableRow key={ret.id}>
                                         <TableCell className="font-medium">{ret.return_number}</TableCell>
-                                        <TableCell>{format(new Date(ret.return_date), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(ret.return_date)}</TableCell>
                                         <TableCell>
                                             <div className="font-medium">{ret.customers?.name}</div>
                                             <div className="text-xs text-muted-foreground">{ret.customers?.customer_code}</div>
@@ -136,6 +156,10 @@ function SalesReturnsContent() {
                                                             <RotateCcw className="mr-2 h-4 w-4" />
                                                             View Details
                                                         </Link>
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => toast.info("Downloading PDF...")}>
+                                                        <Download className="mr-2 h-4 w-4" />
+                                                        Download PDF
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>

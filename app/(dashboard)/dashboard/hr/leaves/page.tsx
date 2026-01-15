@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useLeaveRequests, useProcessLeave } from '@/lib/queries/hr'
 import { PermissionGuard } from '@/components/permission-guard'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 import { LeaveRequestDialog } from '@/components/hr/leaves/leave-request-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -108,7 +108,7 @@ export default function LeavesPage() {
                                                 <TableCell>{req.leave_type.leave_type_name}</TableCell>
                                                 <TableCell>
                                                     <div className="text-sm">
-                                                        {format(new Date(req.from_date), 'MMM d')} - {format(new Date(req.to_date), 'MMM d, yyyy')}
+                                                        {formatDate(req.from_date)} - {formatDate(req.to_date)}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>{req.total_days}</TableCell>

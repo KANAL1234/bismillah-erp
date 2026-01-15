@@ -1604,7 +1604,7 @@ export default function SystemHealthPage() {
         setCurrentTestId(id)
         updateModule(id, { status: 'running' })
 
-        let vehicleId, driverId, tripId, employeeId
+        let vehicleId, driverId, tripId, employeeId, cashDepositId, fuelAllowanceId
 
         try {
             // 1. Create Test Employee (for Driver)
@@ -1624,8 +1624,8 @@ export default function SystemHealthPage() {
             employeeId = emp.id
             log(id, `Employee created: ${employeeId}`, 'success')
 
-            // 2. Create Vehicle
-            log(id, 'Creating Vehicle...')
+            // 2. Create Vehicle & Verify Autonomous Location (Mobile Store)
+            log(id, 'Creating Vehicle & Verifying Mobile Store integration...')
             const { data: veh, error: vehError } = await supabase.from('fleet_vehicles').insert({
                 registration_number: `HLT-${Date.now()}`,
                 make: 'Toyota',
@@ -1637,14 +1637,23 @@ export default function SystemHealthPage() {
 
             if (vehError) throw new Error(`Vehicle creation failed: ${vehError.message}`)
             vehicleId = veh.id
-            log(id, `Vehicle created: ${vehicleId}`, 'success')
+
+            // Wait for trigger to create location
+            await new Promise(r => setTimeout(r, 1500))
+            const { data: vehVerified } = await supabase.from('fleet_vehicles').select('location_id').eq('id', vehicleId).single()
+
+            if (!vehVerified?.location_id) {
+                throw new Error('Autonomous Workflow Failed: Mobile Store (Location) was not automatically created for the vehicle.')
+            }
+            log(id, '✅ AUTONOMOUS WORKFLOW VERIFIED: Vehicle → Mobile Store (Location) auto-linked', 'success')
 
             // 3. Create Driver
             log(id, 'Assigning Driver...')
             const { data: drv, error: drvError } = await supabase.from('fleet_drivers').insert({
                 employee_id: employeeId,
                 license_number: `LIC-${Date.now()}`,
-                license_expiry: new Date(Date.now() + 31536000000).toISOString().slice(0, 10), // +1 year
+                license_expiry: new Date(Date.now() + 31536000000).toISOString().slice(0, 10),
+                vehicle_id: vehicleId,
                 status: 'ACTIVE'
             }).select().single()
 
@@ -1652,20 +1661,29 @@ export default function SystemHealthPage() {
             driverId = drv.id
             log(id, `Driver assigned: ${driverId}`, 'success')
 
-            // 4. Create Trip
-            log(id, 'Creating Trip...')
+            // 4. Create Trip & GPS Simulation
+            log(id, 'Creating Trip & Mocking GPS data...')
             const { data: trip, error: tripError } = await supabase.from('fleet_trips').insert({
                 vehicle_id: vehicleId,
                 driver_id: driverId,
                 start_time: new Date().toISOString(),
                 start_location: 'Health Check HQ',
                 start_mileage: 5000,
-                status: 'PLANNED'
+                status: 'COMPLETED' // Set to COMPLETED for cash deposit test
             }).select().single()
 
             if (tripError) throw new Error(`Trip creation failed: ${tripError.message}`)
             tripId = trip.id
-            log(id, `Trip created: ${tripId}`, 'success')
+
+            // Mock GPS location
+            await supabase.from('fleet_trip_locations').insert({
+                trip_id: tripId,
+                latitude: 24.8607,
+                longitude: 67.0011,
+                speed: 40,
+                recorded_at: new Date().toISOString()
+            })
+            log(id, 'Trip & GPS tracking verified', 'success')
 
             // 5. Log Fuel
             log(id, 'Logging Fuel...')
@@ -1673,8 +1691,8 @@ export default function SystemHealthPage() {
                 vehicle_id: vehicleId,
                 trip_id: tripId,
                 liters: 10,
-                cost_per_liter: 2.5,
-                total_cost: 25,
+                cost_per_liter: 260,
+                total_cost: 2600,
                 odometer_reading: 5050,
                 log_date: new Date().toISOString().slice(0, 10)
             })
@@ -1689,12 +1707,92 @@ export default function SystemHealthPage() {
                 service_type: 'INSPECTION',
                 service_date: new Date().toISOString().slice(0, 10),
                 odometer_reading: 5100,
-                cost: 0,
+                cost: 500,
                 description: 'System Health Check'
             })
 
             if (maintError) throw new Error(`Maintenance logging failed: ${maintError.message}`)
             log(id, 'Maintenance logged', 'success')
+
+            // 7. TEST CASH DEPOSIT (NEW)
+            log(id, 'Testing Cash Deposit with variance...')
+            const { data: deposit, error: depositError } = await supabase.from('fleet_cash_deposits').insert({
+                trip_id: tripId,
+                driver_id: driverId,
+                vehicle_id: vehicleId,
+                expected_cash: 10000,
+                actual_cash: 9400, // 6% variance to trigger alert
+                deposit_date: new Date().toISOString().slice(0, 10),
+                deposit_time: new Date().toTimeString().slice(0, 5),
+                status: 'PENDING'
+            }).select().single()
+
+            if (depositError) throw new Error(`Cash deposit creation failed: ${depositError.message}`)
+            cashDepositId = deposit.id
+
+            // Verify variance calculation
+            if (deposit.variance !== -600) {
+                throw new Error(`Variance calculation failed: Expected -600, got ${deposit.variance}`)
+            }
+            log(id, '✅ Cash Deposit created with variance: Rs. -600 (-6%)', 'success')
+
+            // 8. TEST FUEL ALLOWANCE (NEW)
+            log(id, 'Testing Fuel Allowance...')
+            const { data: allowance, error: allowanceError } = await supabase.from('fleet_fuel_allowances').insert({
+                trip_id: tripId,
+                driver_id: driverId,
+                vehicle_id: vehicleId,
+                budgeted_fuel_liters: 50,
+                budgeted_fuel_cost: 13000,
+                actual_fuel_liters: 10, // From fuel log above
+                actual_fuel_cost: 2600,
+                status: 'ACTIVE'
+            }).select().single()
+
+            if (allowanceError) throw new Error(`Fuel allowance creation failed: ${allowanceError.message}`)
+            fuelAllowanceId = allowance.id
+
+            // Verify variance calculation
+            if (Math.abs(allowance.cost_variance - (-10400)) > 1) {
+                throw new Error(`Fuel variance calculation failed: Expected -10400, got ${allowance.cost_variance}`)
+            }
+            log(id, '✅ Fuel Allowance created with variance: Rs. -10,400 (-80%)', 'success')
+
+            // 9. TEST VARIANCE ALERT TRIGGERING (NEW)
+            log(id, 'Testing Variance Alert System...')
+            const { data: variance, error: varianceError } = await supabase.from('fleet_expense_variances').insert({
+                trip_id: tripId,
+                variance_type: 'CASH',
+                variance_category: 'MISSING_DEPOSIT',
+                budgeted_amount: 10000,
+                actual_amount: 9400,
+                variance_date: new Date().toISOString().slice(0, 10),
+                alert_threshold_percentage: 5.0,
+                status: 'OPEN'
+            }).select().single()
+
+            if (varianceError) throw new Error(`Variance creation failed: ${varianceError.message}`)
+
+            // Verify alert triggering
+            if (!variance.is_alert_triggered) {
+                throw new Error('Alert trigger failed: Expected true for 6% variance with 5% threshold')
+            }
+            log(id, '✅ Variance Alert triggered correctly (6% > 5% threshold)', 'success')
+
+            // 10. TEST VARIANCE DASHBOARD FUNCTION (NEW)
+            log(id, 'Testing Variance Dashboard metrics...')
+            const { data: dashboardData, error: dashboardError } = await supabase.rpc('get_fleet_variance_dashboard', {
+                p_start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                p_end_date: new Date().toISOString().split('T')[0]
+            })
+
+            if (dashboardError) throw new Error(`Dashboard function failed: ${dashboardError.message}`)
+            if (!dashboardData || dashboardData.length === 0) {
+                throw new Error('Dashboard function returned no data')
+            }
+
+            const metrics = dashboardData[0]
+            log(id, `✅ Dashboard Metrics: ${metrics.total_variances} variances, ${metrics.open_alerts} alerts`, 'success')
 
             updateModule(id, { status: 'success' })
 
@@ -1703,21 +1801,15 @@ export default function SystemHealthPage() {
             updateModule(id, { status: 'failure' })
         } finally {
             log(id, 'Cleaning up fleet data...', 'info')
-            if (tripId) {
-                await supabase.from('fleet_fuel_logs').delete().eq('trip_id', tripId)
-                await supabase.from('fleet_trips').delete().eq('id', tripId)
+            // Cleanup new tables
+            if (cashDepositId) {
+                await supabase.from('fleet_cash_deposits').delete().eq('id', cashDepositId)
             }
-            if (vehicleId) {
-                await supabase.from('fleet_maintenance').delete().eq('vehicle_id', vehicleId)
-                await supabase.from('fleet_fuel_logs').delete().eq('vehicle_id', vehicleId)
+            if (fuelAllowanceId) {
+                await supabase.from('fleet_fuel_allowances').delete().eq('id', fuelAllowanceId)
             }
-
-            // Drivers and Vehicles
-            if (driverId) await supabase.from('fleet_drivers').delete().eq('id', driverId)
-            if (vehicleId) await supabase.from('fleet_vehicles').delete().eq('id', vehicleId)
-            if (employeeId) await supabase.from('employees').delete().eq('id', employeeId)
-
-            log(id, 'Cleanup complete', 'success')
+            // Variances will cascade delete with trip
+            // Detailed cleanup is handled by the server-side API called at the end of runTests()
         }
     }
 

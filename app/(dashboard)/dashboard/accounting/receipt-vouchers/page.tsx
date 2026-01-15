@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { useReceiptVouchers } from '@/lib/queries/receipt-vouchers'
 import { PermissionGuard } from '@/components/permission-guard'
 import { DollarSign, Calendar, Users } from 'lucide-react'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 
 export default function ReceiptVouchersPage() {
     return (
@@ -94,7 +94,7 @@ function ReceiptVouchersContent() {
                                             <span>{voucher.customers?.name}</span>
                                             <span>•</span>
                                             <Calendar className="h-4 w-4" />
-                                            <span>{format(new Date(voucher.receipt_date), 'MMM dd, yyyy')}</span>
+                                            <span>{formatDate(voucher.receipt_date)}</span>
                                         </div>
                                         {voucher.reference_number && (
                                             <p className="text-sm text-muted-foreground">Ref: {voucher.reference_number}</p>

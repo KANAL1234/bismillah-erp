@@ -5,7 +5,7 @@ import { PermissionGuard } from "@/components/permission-guard"
 import { createClient } from "@/lib/supabase/client"
 import { FleetTrip, FleetFuelLog } from "@/types/fleet"
 import { Button } from "@/components/ui/button"
-import { Plus, MoreHorizontal, Pencil, Trash } from "lucide-react"
+import { Plus, MoreHorizontal, Pencil, Trash, DollarSign, Fuel } from "lucide-react"
 import {
     Table,
     TableBody,
@@ -14,10 +14,13 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { TripDialog } from "@/components/fleet/trip-dialog"
 import { FuelDialog } from "@/components/fleet/fuel-dialog"
+import { CashDepositDialog } from "@/components/fleet/cash-deposit-dialog"
+import { FuelAllowanceDialog } from "@/components/fleet/fuel-allowance-dialog"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import {
@@ -48,16 +51,19 @@ export default function TripsPage() {
 
 function TripsContent() {
     const [trips, setTrips] = useState<FleetTrip[]>([])
+    const [dateFilter, setDateFilter] = useState<string>("")
     const [fuelLogs, setFuelLogs] = useState<FleetFuelLog[]>([])
     const [loading, setLoading] = useState(true)
     const [isTripAddOpen, setIsTripAddOpen] = useState(false)
     const [isFuelAddOpen, setIsFuelAddOpen] = useState(false)
     const [editingTrip, setEditingTrip] = useState<FleetTrip | undefined>()
     const [deletingTrip, setDeletingTrip] = useState<FleetTrip | null>(null)
+    const [cashDepositTrip, setCashDepositTrip] = useState<FleetTrip | null>(null)
+    const [fuelAllowanceTrip, setFuelAllowanceTrip] = useState<FleetTrip | null>(null)
     const supabase = createClient()
 
     const fetchTrips = async () => {
-        const { data, error } = await supabase
+        let query = supabase
             .from("fleet_trips")
             .select(`
                 *, 
@@ -65,6 +71,14 @@ function TripsContent() {
                 driver:fleet_drivers(*, employee:employees(full_name, employee_code))
             `)
             .order("start_time", { ascending: false })
+
+        if (dateFilter) {
+            query = query
+                .gte('start_time', `${dateFilter}T00:00:00`)
+                .lte('start_time', `${dateFilter}T23:59:59`)
+        }
+
+        const { data, error } = await query
 
         if (error) {
             toast.error("Error fetching trips")
@@ -110,7 +124,7 @@ function TripsContent() {
             setLoading(false)
         }
         load()
-    }, [])
+    }, [dateFilter])
 
     return (
         <div className="space-y-6">
@@ -122,7 +136,21 @@ function TripsContent() {
                     <TabsTrigger value="fuel">Fuel Logs</TabsTrigger>
                 </TabsList>
                 <TabsContent value="trips" className="space-y-4">
-                    <div className="flex justify-end">
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">Filter Date:</span>
+                            <Input
+                                type="date"
+                                className="w-[180px]"
+                                value={dateFilter}
+                                onChange={(e) => setDateFilter(e.target.value)}
+                            />
+                            {dateFilter && (
+                                <Button variant="ghost" size="sm" onClick={() => setDateFilter("")}>
+                                    Clear
+                                </Button>
+                            )}
+                        </div>
                         <Button onClick={() => setIsTripAddOpen(true)}>
                             <Plus className="mr-2 h-4 w-4" /> New Trip
                         </Button>
@@ -154,23 +182,50 @@ function TripsContent() {
                                             <Badge variant="outline">{trip.status}</Badge>
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <span className="sr-only">Open menu</span>
-                                                        <MoreHorizontal className="h-4 w-4" />
+                                            <div className="flex justify-end gap-2">
+                                                {trip.status === 'COMPLETED' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                        onClick={() => setCashDepositTrip(trip)}
+                                                        title="Record Cash Deposit"
+                                                    >
+                                                        <DollarSign className="h-4 w-4" />
+                                                        <span className="sr-only">Cash Deposit</span>
                                                     </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem onClick={() => setEditingTrip(trip)}>
-                                                        <Pencil className="mr-2 h-4 w-4" /> Edit
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem className="text-red-600" onClick={() => setDeletingTrip(trip)}>
-                                                        <Trash className="mr-2 h-4 w-4" /> Delete
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                                )}
+                                                {trip.status === 'IN_PROGRESS' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                        onClick={() => setFuelAllowanceTrip(trip)}
+                                                        title="Set Fuel Allowance"
+                                                    >
+                                                        <Fuel className="h-4 w-4" />
+                                                        <span className="sr-only">Fuel Allowance</span>
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                                    onClick={() => setEditingTrip(trip)}
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                    <span className="sr-only">Edit</span>
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                    onClick={() => setDeletingTrip(trip)}
+                                                >
+                                                    <Trash className="h-4 w-4" />
+                                                    <span className="sr-only">Delete</span>
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -238,6 +293,22 @@ function TripsContent() {
                 open={isFuelAddOpen}
                 onOpenChange={setIsFuelAddOpen}
                 onSuccess={fetchFuelLogs}
+            />
+
+            <CashDepositDialog
+                open={!!cashDepositTrip}
+                onOpenChange={(open) => !open && setCashDepositTrip(null)}
+                tripId={cashDepositTrip?.id}
+                driverId={cashDepositTrip?.driver_id}
+                vehicleId={cashDepositTrip?.vehicle_id}
+            />
+
+            <FuelAllowanceDialog
+                open={!!fuelAllowanceTrip}
+                onOpenChange={(open) => !open && setFuelAllowanceTrip(null)}
+                tripId={fuelAllowanceTrip?.id}
+                driverId={fuelAllowanceTrip?.driver_id}
+                vehicleId={fuelAllowanceTrip?.vehicle_id}
             />
 
             <AlertDialog open={!!deletingTrip} onOpenChange={(open) => !open && setDeletingTrip(null)}>

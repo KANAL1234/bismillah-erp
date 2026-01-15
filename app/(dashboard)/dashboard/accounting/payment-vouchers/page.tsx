@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { usePaymentVouchers } from '@/lib/queries/payment-vouchers'
 import { PermissionGuard } from '@/components/permission-guard'
 import { DollarSign, Calendar, Building2 } from 'lucide-react'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 
 export default function PaymentVouchersPage() {
     return (
@@ -94,7 +94,7 @@ function PaymentVouchersContent() {
                                             <span>{voucher.vendors?.name}</span>
                                             <span>•</span>
                                             <Calendar className="h-4 w-4" />
-                                            <span>{format(new Date(voucher.payment_date), 'MMM dd, yyyy')}</span>
+                                            <span>{formatDate(voucher.payment_date)}</span>
                                         </div>
                                         {voucher.reference_number && (
                                             <p className="text-sm text-muted-foreground">Ref: {voucher.reference_number}</p>

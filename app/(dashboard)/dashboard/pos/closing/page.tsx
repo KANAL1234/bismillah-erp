@@ -2,20 +2,13 @@
 
 import { useState } from 'react'
 import { useTodaySales, useSalesSummary } from '@/lib/queries/pos-sales'
-import { useLocations } from '@/lib/queries/locations'
+import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select'
 import {
     Table,
     TableBody,
@@ -39,13 +32,13 @@ export default function DailyClosingPage() {
 
 function DailyClosingContent() {
     const today = new Date().toISOString().split('T')[0]
+    const { currentLocationId } = useLocation()
 
-    const [locationId, setLocationId] = useState('')
     const [actualCash, setActualCash] = useState('')
     const [notes, setNotes] = useState('')
     const [isClosed, setIsClosed] = useState(false)
 
-    const { data: locations } = useLocations()
+    const locationId = currentLocationId || ''
     const { data: todaySales } = useTodaySales(locationId)
     const { data: summary } = useSalesSummary(locationId, today, today)
 
@@ -58,7 +51,7 @@ function DailyClosingContent() {
     const handleClose = () => {
         if (!locationId) {
             toast.error('Error', {
-                description: 'Please select a location',
+                description: 'Please select a location from the top menu',
             })
             return
         }
@@ -106,28 +99,14 @@ function DailyClosingContent() {
                 </Alert>
             )}
 
-            {/* Location Selection */}
-            <Card className="mb-6">
-                <CardHeader>
-                    <CardTitle>Select Location</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Select value={locationId} onValueChange={setLocationId}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {locations
-                                ?.filter(loc => ['store', 'warehouse'].includes(loc.location_types.name))
-                                ?.map((location) => (
-                                    <SelectItem key={location.id} value={location.id}>
-                                        {location.name}
-                                    </SelectItem>
-                                ))}
-                        </SelectContent>
-                    </Select>
-                </CardContent>
-            </Card>
+            {!locationId && (
+                <Alert className="mb-6">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                        Please select a location from the top menu to view daily closing.
+                    </AlertDescription>
+                </Alert>
+            )}
 
             {locationId && summary && (
                 <>

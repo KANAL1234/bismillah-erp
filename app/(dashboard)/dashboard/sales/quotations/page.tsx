@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSalesQuotations, useDeleteSalesQuotation } from '@/lib/queries/sales-quotations'
 import { PermissionGuard } from '@/components/permission-guard'
-import { format } from 'date-fns'
+import { formatDate } from '@/lib/utils'
 import { SalesQuotation } from '@/lib/types/database'
 
 export default function SalesQuotationsPage() {
@@ -126,12 +126,12 @@ function SalesQuotationsContent() {
                                                 </div>
                                             )}
                                         </TableCell>
-                                        <TableCell>{format(new Date(quotation.quotation_date), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(quotation.quotation_date)}</TableCell>
                                         <TableCell>
                                             <div className="font-medium">{quotation.customers?.name}</div>
                                             <div className="text-xs text-muted-foreground">{quotation.customers?.customer_code}</div>
                                         </TableCell>
-                                        <TableCell>{format(new Date(quotation.valid_until), 'MMM dd, yyyy')}</TableCell>
+                                        <TableCell>{formatDate(quotation.valid_until)}</TableCell>
                                         <TableCell className="font-medium">
                                             ${quotation.total_amount.toLocaleString()}
                                         </TableCell>
