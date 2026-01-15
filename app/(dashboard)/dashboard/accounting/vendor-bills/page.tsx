@@ -1,8 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
     AlertDialog,
@@ -16,6 +19,21 @@ import {
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select'
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -23,6 +41,8 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useVendorBills, useApproveVendorBill, useDeleteVendorBill, useCancelVendorBill } from '@/lib/queries/vendor-bills'
+import { useCreatePaymentVoucher } from '@/lib/queries/payment-vouchers'
+import { useBankAccounts } from '@/lib/queries/bank-accounts'
 import { PermissionGuard } from '@/components/permission-guard'
 import {
     FileText,
@@ -36,13 +56,14 @@ import {
     XCircle,
     Eye,
     History,
-    Receipt,
     Package,
     ClipboardList,
-    AlertTriangle
+    AlertTriangle,
+    Banknote
 } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
+import { VendorBill } from '@/lib/types/database'
 
 export default function VendorBillsPage() {
     return (
@@ -54,9 +75,54 @@ export default function VendorBillsPage() {
 
 function VendorBillsContent() {
     const { data: bills, isLoading } = useVendorBills()
+    const { data: bankAccounts } = useBankAccounts()
     const approveBill = useApproveVendorBill()
     const deleteBill = useDeleteVendorBill()
     const cancelBill = useCancelVendorBill()
+    const createPayment = useCreatePaymentVoucher()
+
+    // Payment dialog state
+    const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+    const [selectedBill, setSelectedBill] = useState<(VendorBill & { vendors?: { name: string } }) | null>(null)
+    const [paymentForm, setPaymentForm] = useState({
+        paymentMethod: 'BANK_TRANSFER' as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE',
+        bankAccountId: '',
+        amount: 0,
+        referenceNumber: '',
+        paymentDate: new Date().toISOString().split('T')[0]
+    })
+
+    const openPaymentDialog = (bill: any) => {
+        setSelectedBill(bill)
+        setPaymentForm({
+            paymentMethod: 'BANK_TRANSFER',
+            bankAccountId: bankAccounts?.[0]?.id || '',
+            amount: bill.amount_due,
+            referenceNumber: '',
+            paymentDate: new Date().toISOString().split('T')[0]
+        })
+        setPaymentDialogOpen(true)
+    }
+
+    const handleCreatePayment = async () => {
+        if (!selectedBill) return
+
+        await createPayment.mutateAsync({
+            vendorId: selectedBill.vendor_id,
+            bankAccountId: paymentForm.paymentMethod !== 'CASH' ? paymentForm.bankAccountId : undefined,
+            paymentDate: paymentForm.paymentDate,
+            paymentMethod: paymentForm.paymentMethod,
+            amount: paymentForm.amount,
+            referenceNumber: paymentForm.referenceNumber || undefined,
+            billAllocations: [{
+                bill_id: selectedBill.id,
+                amount_allocated: paymentForm.amount
+            }]
+        })
+
+        setPaymentDialogOpen(false)
+        setSelectedBill(null)
+    }
 
     const getStatusBadge = (status: string) => {
         const colors: Record<string, string> = {
@@ -203,17 +269,15 @@ function VendorBillsContent() {
                                             <div className="flex items-center gap-1">
                                                 {/* Status-based primary actions */}
                                                 {bill.status === 'draft' && (
-                                                    <>
-                                                        <Button
-                                                            size="sm"
-                                                            className="bg-green-600 hover:bg-green-700"
-                                                            onClick={() => approveBill.mutate(bill.id)}
-                                                            disabled={approveBill.isPending}
-                                                        >
-                                                            <CheckCircle className="mr-1 h-3 w-3" />
-                                                            Approve & Post
-                                                        </Button>
-                                                    </>
+                                                    <Button
+                                                        size="sm"
+                                                        className="bg-green-600 hover:bg-green-700"
+                                                        onClick={() => approveBill.mutate(bill.id)}
+                                                        disabled={approveBill.isPending}
+                                                    >
+                                                        <CheckCircle className="mr-1 h-3 w-3" />
+                                                        Approve & Post
+                                                    </Button>
                                                 )}
 
                                                 {(bill.status === 'approved' || bill.status === 'posted' || bill.status === 'goods_received') && (
@@ -222,12 +286,10 @@ function VendorBillsContent() {
                                                             <Button
                                                                 size="sm"
                                                                 variant={bill.payment_status === 'overdue' ? 'destructive' : 'default'}
-                                                                asChild
+                                                                onClick={() => openPaymentDialog(bill)}
                                                             >
-                                                                <Link href={`/dashboard/accounting/payment-vouchers?vendor_bill_id=${bill.id}`}>
-                                                                    <CreditCard className="mr-1 h-3 w-3" />
-                                                                    Make Payment
-                                                                </Link>
+                                                                <CreditCard className="mr-1 h-3 w-3" />
+                                                                Make Payment
                                                             </Button>
                                                         )}
                                                         {bill.payment_status === 'paid' && (
@@ -243,12 +305,10 @@ function VendorBillsContent() {
                                                     <Button
                                                         size="sm"
                                                         variant="destructive"
-                                                        asChild
+                                                        onClick={() => openPaymentDialog(bill)}
                                                     >
-                                                        <Link href={`/dashboard/accounting/payment-vouchers?vendor_bill_id=${bill.id}`}>
-                                                            <AlertTriangle className="mr-1 h-3 w-3" />
-                                                            Pay Now
-                                                        </Link>
+                                                        <AlertTriangle className="mr-1 h-3 w-3" />
+                                                        Pay Now
                                                     </Button>
                                                 )}
 
@@ -311,11 +371,9 @@ function VendorBillsContent() {
                                                         {(bill.status === 'approved' || bill.status === 'posted' || bill.status === 'goods_received') && (
                                                             <>
                                                                 <DropdownMenuSeparator />
-                                                                <DropdownMenuItem asChild>
-                                                                    <Link href={`/dashboard/accounting/payment-vouchers?vendor_bill_id=${bill.id}`}>
-                                                                        <CreditCard className="mr-2 h-4 w-4" />
-                                                                        Record Payment
-                                                                    </Link>
+                                                                <DropdownMenuItem onClick={() => openPaymentDialog(bill)}>
+                                                                    <CreditCard className="mr-2 h-4 w-4" />
+                                                                    Record Payment
                                                                 </DropdownMenuItem>
                                                                 {(bill as any).journal_entry_id && (
                                                                     <DropdownMenuItem asChild>
@@ -408,6 +466,132 @@ function VendorBillsContent() {
                     )}
                 </CardContent>
             </Card>
+
+            {/* Make Payment Dialog */}
+            <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+                <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Banknote className="h-5 w-5" />
+                            Make Payment
+                        </DialogTitle>
+                        <DialogDescription>
+                            Create a payment voucher for {selectedBill?.bill_number}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {selectedBill && (
+                        <div className="space-y-4">
+                            {/* Bill Info */}
+                            <div className="p-4 bg-slate-50 rounded-lg space-y-2">
+                                <div className="flex justify-between">
+                                    <span className="text-sm text-slate-600">Vendor</span>
+                                    <span className="font-medium">{(selectedBill as any).vendors?.name}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-sm text-slate-600">Bill Total</span>
+                                    <span className="font-mono">PKR {selectedBill.total_amount.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-sm text-slate-600">Amount Due</span>
+                                    <span className="font-mono font-bold text-red-600">PKR {selectedBill.amount_due.toLocaleString()}</span>
+                                </div>
+                            </div>
+
+                            {/* Payment Form */}
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="paymentDate">Payment Date</Label>
+                                        <Input
+                                            id="paymentDate"
+                                            type="date"
+                                            value={paymentForm.paymentDate}
+                                            onChange={(e) => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="paymentMethod">Payment Method</Label>
+                                        <Select
+                                            value={paymentForm.paymentMethod}
+                                            onValueChange={(value: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE') =>
+                                                setPaymentForm({ ...paymentForm, paymentMethod: value })
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="CASH">Cash</SelectItem>
+                                                <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                                                <SelectItem value="CHEQUE">Cheque</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                {paymentForm.paymentMethod !== 'CASH' && (
+                                    <div className="space-y-2">
+                                        <Label htmlFor="bankAccount">Bank Account</Label>
+                                        <Select
+                                            value={paymentForm.bankAccountId}
+                                            onValueChange={(value) => setPaymentForm({ ...paymentForm, bankAccountId: value })}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select bank account" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {bankAccounts?.map((account: any) => (
+                                                    <SelectItem key={account.id} value={account.id}>
+                                                        {account.account_name} - {account.account_number}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="amount">Amount (PKR)</Label>
+                                    <Input
+                                        id="amount"
+                                        type="number"
+                                        value={paymentForm.amount}
+                                        onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
+                                        max={selectedBill.amount_due}
+                                    />
+                                    <p className="text-xs text-slate-500">
+                                        Max: PKR {selectedBill.amount_due.toLocaleString()}
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="referenceNumber">Reference Number (Optional)</Label>
+                                    <Input
+                                        id="referenceNumber"
+                                        placeholder="Cheque #, Transaction ID, etc."
+                                        value={paymentForm.referenceNumber}
+                                        onChange={(e) => setPaymentForm({ ...paymentForm, referenceNumber: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleCreatePayment}
+                            disabled={createPayment.isPending || !paymentForm.amount}
+                            className="bg-green-600 hover:bg-green-700"
+                        >
+                            {createPayment.isPending ? 'Processing...' : 'Create Payment Voucher'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
