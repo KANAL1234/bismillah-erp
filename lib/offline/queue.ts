@@ -74,24 +74,43 @@ async function updateRetryCount(itemId: string, error: string): Promise<void> {
 async function processQueueItem(item: QueueItem): Promise<boolean> {
   const supabase = createClient()
 
-  // Helper to resolve driver_id from auth ID to fleet_drivers ID
-  const resolveDriverId = async (authId: string) => {
-    // 1. Check if authId is already a fleet_driver ID
-    const { data: d1 } = await supabase.from('fleet_drivers').select('id').eq('id', authId).maybeSingle()
-    if (d1) return d1.id
+  // Helper to resolve all IDs needed for fleet/pos operations
+  const resolveIds = async (supabaseClient: ReturnType<typeof createClient>, authId: string, vehicleOrLocationId: string) => {
+    // 1. Resolve Employee and Driver
+    const { data: employee } = await supabaseClient.from('employees').select('id, user_profile_id').eq('user_profile_id', authId).maybeSingle()
+    const { data: driver } = await supabaseClient.from('fleet_drivers').select('id, employee_id').eq('employee_id', employee?.id || authId).maybeSingle()
 
-    // 2. Check if authId is the employee_id
-    const { data: d2 } = await supabase.from('fleet_drivers').select('id').eq('employee_id', authId).maybeSingle()
-    if (d2) return d2.id
+    // 2. Resolve Fleet Vehicle
+    const { data: fv } = await supabaseClient
+      .from('fleet_vehicles')
+      .select('id')
+      .or(`id.eq.${vehicleOrLocationId},location_id.eq.${vehicleOrLocationId}`)
+      .maybeSingle()
 
-    // Driver not found - throw clear error
-    throw new Error('DRIVER_NOT_REGISTERED: Please contact admin to register you as a driver')
+    // 3. Resolve Legacy Vehicle
+    const { data: v } = await supabaseClient
+      .from('vehicles')
+      .select('id')
+      .or(`id.eq.${vehicleOrLocationId},location_id.eq.${vehicleOrLocationId}`)
+      .maybeSingle()
+
+    return {
+      employeeId: employee?.id || authId,
+      driverId: driver?.id || authId,
+      fleetVehicleId: fv?.id || vehicleOrLocationId,
+      legacyVehicleId: v?.id || vehicleOrLocationId
+    }
   }
 
   try {
     switch (item.action) {
       case 'CREATE_POS_SALE': {
         const { items, ...saleData } = item.data
+
+        // Resolve driver if it's on a trip
+        if (saleData.trip_id) {
+          // We might want to ensure trip exists or resolve other fields but keep it simple for now
+        }
 
         // 1. Check if sale already exists (Idempotency check)
         const { data: existingSale } = await supabase
@@ -167,22 +186,30 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
       }
 
       case 'CREATE_FUEL_LOG': {
+        const { driverId, fleetVehicleId, legacyVehicleId, employeeId } = await resolveIds(supabase, item.data.p_driver_id, item.data.p_vehicle_id)
+
+        // Update item data with resolved IDs for RPC
+        const resolvedData = {
+          ...item.data,
+          p_driver_id: driverId,
+          p_vehicle_id: fleetVehicleId
+        }
+
         // Try RPC first
-        const { error: rpcError } = await supabase.rpc('record_fuel_entry', item.data)
+        const { error: rpcError } = await supabase.rpc('record_fuel_entry', resolvedData)
 
         if (!rpcError) return true
 
-        // If RPC fails (e.g. function missing), try manual insert as fallback
-        if (rpcError.code === 'P0001' || rpcError.message.includes('function') || rpcError.message.includes('not found')) {
+        // Fallback for missing RPC
+        if (rpcError.code === 'P0001' || rpcError.message.includes('function') || rpcError.message.includes('not found') || rpcError.code === '42883') {
           console.log('Falling back to manual fuel log insert...')
 
-          const driverId = await resolveDriverId(item.data.p_driver_id)
-
-          // Try inserting into fleet_fuel_logs first
+          // Try inserting into fleet_fuel_logs
           const { error: fleetError } = await supabase
             .from('fleet_fuel_logs')
             .insert({
-              vehicle_id: item.data.p_vehicle_id,
+              vehicle_id: fleetVehicleId,
+              trip_id: item.data.p_trip_id,
               liters: item.data.p_quantity_liters,
               cost_per_liter: item.data.p_price_per_liter,
               total_cost: item.data.p_quantity_liters * item.data.p_price_per_liter,
@@ -191,24 +218,23 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
             })
 
           if (!fleetError) {
-            // Also update vehicle odometer
             await supabase
               .from('fleet_vehicles')
               .update({ current_mileage: item.data.p_odometer_reading })
-              .eq('id', item.data.p_vehicle_id)
+              .eq('id', fleetVehicleId)
             return true
           }
 
-          // Last resort: try public.fuel_logs
+          // Legacy table fallback
           const { error: fuelError } = await supabase
             .from('fuel_logs')
             .insert({
-              vehicle_id: item.data.p_vehicle_id,
+              vehicle_id: legacyVehicleId,
               log_date: item.data.p_fuel_date || new Date().toISOString(),
               odometer_reading: item.data.p_odometer_reading,
               fuel_quantity: item.data.p_quantity_liters,
               fuel_rate: item.data.p_price_per_liter,
-              filled_by: item.data.p_driver_id, // Usually matches employee_id/auth_id
+              filled_by: employeeId,
               station_name: item.data.p_fuel_station
             })
 
@@ -220,10 +246,11 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
       }
 
       case 'UPDATE_ODOMETER': {
+        const { fleetVehicleId } = await resolveIds(supabase, '', item.data.vehicle_id)
         const { error } = await supabase
           .from('fleet_vehicles')
           .update({ current_mileage: item.data.odometer })
-          .eq('id', item.data.vehicle_id)
+          .eq('id', fleetVehicleId)
 
         if (error) throw error
         return true
@@ -239,11 +266,12 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
 
         if (existing) return true
 
-        const driverId = await resolveDriverId(item.data.driver_id)
+        const { driverId, fleetVehicleId } = await resolveIds(supabase, item.data.driver_id, item.data.vehicle_id)
         const { error } = await supabase
           .from('fleet_trips')
           .insert({
             ...item.data,
+            vehicle_id: fleetVehicleId,
             driver_id: driverId
           })
 
