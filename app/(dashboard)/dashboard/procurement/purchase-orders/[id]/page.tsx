@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -47,8 +47,8 @@ import {
 import { toast } from 'sonner'
 import { PurchaseOrder } from '@/lib/types/database'
 
-export default function PurchaseOrderDetailPage({ params }: { params: { id: string } }) {
-    const { id } = params
+export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = use(params)
     const router = useRouter()
     const { data: po, isLoading } = usePurchaseOrder(id)
     const updateStatus = useUpdatePOStatus()
