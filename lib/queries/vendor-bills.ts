@@ -85,7 +85,15 @@ export function useVendorBill(id: string) {
                     *,
                     vendors (id, name, vendor_code),
                     goods_receipt_notes (id, grn_number),
-                    purchase_orders (id, order_number)
+                    purchase_orders (id, order_number),
+                    vendor_bill_items (
+                        id,
+                        description,
+                        quantity,
+                        unit_price,
+                        line_total,
+                        products (id, sku, name)
+                    )
                 `)
                 .eq('id', id)
                 .single()

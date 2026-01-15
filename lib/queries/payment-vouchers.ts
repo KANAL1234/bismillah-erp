@@ -98,18 +98,34 @@ export function useCreatePaymentVoucher() {
                 for (const alloc of billAllocations) {
                     const { data: bill } = await supabase
                         .from('vendor_bills')
-                        .select('total_amount, amount_due')
+                        .select('total_amount, amount_due, amount_paid, due_date')
                         .eq('id', alloc.bill_id)
                         .single()
 
                     if (bill) {
-                        const newAmountDue = bill.amount_due - alloc.amount_allocated
-                        const paymentStatus = newAmountDue <= 0 ? 'paid' : newAmountDue < bill.total_amount ? 'partial' : 'unpaid'
+                        const totalAmount = Number(bill.total_amount || 0)
+                        const currentPaid = Number(bill.amount_paid || (totalAmount - Number(bill.amount_due || 0)) || 0)
+                        const updatedPaid = currentPaid + Number(alloc.amount_allocated || 0)
+                        const newAmountDue = Math.max(totalAmount - updatedPaid, 0)
+                        let paymentStatus: 'unpaid' | 'partial' | 'paid' | 'overdue' = 'unpaid'
+
+                        if (newAmountDue <= 0) {
+                            paymentStatus = 'paid'
+                        } else if (updatedPaid > 0) {
+                            paymentStatus = 'partial'
+                        }
+
+                        if (paymentStatus !== 'paid' && bill.due_date) {
+                            const due = new Date(bill.due_date)
+                            const paidOn = new Date(paymentDate)
+                            if (paidOn > due) paymentStatus = 'overdue'
+                        }
 
                         await supabase
                             .from('vendor_bills')
                             .update({
                                 amount_due: newAmountDue,
+                                amount_paid: updatedPaid,
                                 payment_status: paymentStatus
                             })
                             .eq('id', alloc.bill_id)
