@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+'use client'
+
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 const supabase = createClient();
 import { UserProfile, Role, PermissionCheck } from '@/lib/types/rbac';
@@ -7,6 +9,7 @@ import { toast } from 'sonner';
 interface AuthContextType {
   user: UserProfile | null;
   roles: Role[];
+  permissions: PermissionCheck[];
   allowedLocations: { location_id: string; location_name: string; location_code: string }[];
   loading: boolean;
   hasPermission: (permissionCode: string) => boolean;
@@ -27,18 +30,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<PermissionCheck[]>([]);
   const [allowedLocations, setAllowedLocations] = useState<{ location_id: string; location_name: string; location_code: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     loadUserData();
 
-    // Subscribe to auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
         loadUserData();
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setRoles([]);
         setPermissions([]);
+        setAllowedLocations([]);
       }
     });
 
@@ -47,31 +51,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Function to load/refresh permissions
   const loadPermissions = async (userId: string) => {
-    const supabase = createClient();
-    const { data: userPermissions } = await supabase.rpc('get_user_permissions', {
-      p_user_id: userId
-    });
+    try {
+      const { data: userPermissions } = await supabase.rpc('get_user_permissions', {
+        p_user_id: userId
+      });
 
-    if (userPermissions) {
-      setPermissions(userPermissions);
-    }
-  };
-
-  // Manual refresh function
-  const refreshPermissions = async () => {
-    if (user?.id) {
-      await loadPermissions(user.id);
+      if (userPermissions) {
+        setPermissions(userPermissions);
+      }
+    } catch (err) {
+      console.error('Error fetching permissions:', err);
     }
   };
 
   const loadUserData = async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
 
       if (!authUser) {
         setLoading(false);
+        loadingRef.current = false;
         return;
       }
 
@@ -84,15 +87,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profile) {
         setUser(profile);
-
-        // Update last login
         await supabase
           .from('user_profiles')
           .update({ last_login: new Date().toISOString() })
           .eq('id', authUser.id);
       }
 
-      // Load user roles
       const { data: userRoles } = await supabase.rpc('get_user_roles', {
         p_user_id: authUser.id
       });
@@ -101,10 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRoles(userRoles);
       }
 
-      // Load user permissions
       await loadPermissions(authUser.id);
 
-      // Load allowed locations
       const { data: locations, error: locError } = await supabase
         .from('user_allowed_locations')
         .select(`
@@ -116,9 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         `)
         .eq('user_id', authUser.id);
 
-      if (locError) {
-        console.error('Error loading locations:', locError);
-      } else if (locations) {
+      if (!locError && locations) {
         setAllowedLocations(locations.map((l: any) => ({
           location_id: l.location_id,
           location_name: l?.locations?.name || '',
@@ -127,12 +123,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
     } catch (error: any) {
-      console.error('Error loading user data:', error);
-      toast.error('Failed to load user permissions: ' + (error.message || 'Unknown error'));
+      // Ignore abort errors as they are typical during navigation or quick refreshes
+      if (error.name !== 'AbortError' && error.message !== 'The operation was aborted.') {
+        console.error('Error loading user data:', error);
+        toast.error('Failed to load user permissions');
+      }
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   };
+
 
   const hasPermission = (permissionCode: string): boolean => {
     if (isAdmin()) return true;
@@ -158,6 +159,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAdmin = (): boolean => {
     return hasRole('SUPER_ADMIN');
+  };
+
+  // Manual refresh function
+  const refreshPermissions = async () => {
+    if (user?.id) {
+      await loadPermissions(user.id);
+    }
   };
 
   const logAction = async (
