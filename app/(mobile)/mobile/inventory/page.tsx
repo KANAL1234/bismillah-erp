@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
@@ -10,10 +10,17 @@ import { Search, Package, MapPin } from 'lucide-react'
 export default function MobileInventoryPage() {
     const supabase = createClient()
     const [search, setSearch] = useState('')
+    const [locationId, setLocationId] = useState<string | null>(null)
+
+    useEffect(() => {
+        const match = document.cookie.match(/driver_vehicle_id=([^;]+)/)
+        if (match) setLocationId(match[1])
+    }, [])
 
     const { data: stockItems, isLoading } = useQuery({
-        queryKey: ['mobile-inventory', search],
+        queryKey: ['mobile-inventory', search, locationId],
         queryFn: async () => {
+            if (!locationId) return []
             // 1. First find products matching search if any
             let productIds: string[] | null = null
 
@@ -41,10 +48,15 @@ export default function MobileInventoryPage() {
                 .limit(50)
 
             if (productIds !== null) {
-                if (productIds.length === 0) return [] // No products match
+                if (productIds.length === 0) return []
                 query = query.in('product_id', productIds)
             } else {
                 query = query.gt('quantity_available', 0)
+            }
+
+            // Filter by vehicle
+            if (locationId) {
+                query = query.eq('location_id', locationId)
             }
 
             const { data, error } = await query
