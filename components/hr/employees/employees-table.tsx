@@ -1,6 +1,6 @@
 'use client'
 
-import { Pencil, Trash2, Award } from 'lucide-react'
+import { Pencil, Trash2, Award, Truck } from 'lucide-react'
 import {
     Table,
     TableBody,
@@ -118,7 +118,14 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
                                 <TableCell>
                                     {employee.department?.name || '-'}
                                 </TableCell>
-                                <TableCell>{employee.designation}</TableCell>
+                                <TableCell>
+                                    <div className="flex items-center gap-1">
+                                        {employee.designation === 'Fleet Driver' && (
+                                            <Truck className="h-4 w-4 text-blue-600" />
+                                        )}
+                                        {employee.designation}
+                                    </div>
+                                </TableCell>
                                 <TableCell className="text-right font-medium">
                                     {formatCurrency(Number(employee.basic_salary))}
                                 </TableCell>

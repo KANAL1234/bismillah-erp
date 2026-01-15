@@ -137,6 +137,32 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
             if (itemsError) throw itemsError
           }
         }
+        // 3. Create a Visit record if linked to a trip (Automation)
+        if (saleData.trip_id && saleData.customer_id) {
+          try {
+            // Check if visit already recorded for this sale/trip/customer combo to avoid duplicates
+            const { data: existingVisit } = await supabase
+              .from('fleet_trip_visits')
+              .select('id')
+              .eq('trip_id', saleData.trip_id)
+              .eq('customer_id', saleData.customer_id)
+              // If a visit exists in the last hour for this customer on this trip, we skip.
+              .gt('visit_time', new Date(Date.now() - 3600000).toISOString())
+              .maybeSingle()
+
+            if (!existingVisit) {
+              await supabase.from('fleet_trip_visits').insert({
+                trip_id: saleData.trip_id,
+                customer_id: saleData.customer_id,
+                visit_time: new Date().toISOString(),
+                notes: `Auto-recorded via Sale #${saleData.sale_number}`
+              })
+            }
+          } catch (vErr) {
+            console.error('Non-critical: Failed to record auto-visit:', vErr)
+          }
+        }
+
         return true
       }
 
@@ -226,12 +252,30 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
       }
 
       case 'UPDATE_TRIP': {
+        const { id, ...updateData } = item.data // Exclude id from update payload
         const { error } = await supabase
           .from('fleet_trips')
-          .update(item.data)
-          .eq('id', item.data.id)
+          .update(updateData)
+          .eq('id', id)
 
         if (error) throw error
+
+        // Also update vehicle odometer if end_mileage provided
+        if (updateData.end_mileage) {
+          const { data: trip } = await supabase
+            .from('fleet_trips')
+            .select('vehicle_id')
+            .eq('id', id)
+            .single()
+
+          if (trip?.vehicle_id) {
+            await supabase
+              .from('fleet_vehicles')
+              .update({ current_mileage: updateData.end_mileage })
+              .eq('id', trip.vehicle_id)
+          }
+        }
+
         return true
       }
 

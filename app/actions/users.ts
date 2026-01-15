@@ -3,6 +3,95 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// Create login credentials for an existing employee
+export async function createEmployeeLogin(employeeId: string, email: string, password: string) {
+    const supabaseAdmin = await createAdminClient()
+    const supabase = await createClient()
+
+    // Check permissions
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { success: false, message: 'Unauthorized' }
+    }
+
+    if (!email || !password || !employeeId) {
+        return { success: false, message: 'Missing required fields' }
+    }
+
+    try {
+        // Get employee details
+        const { data: employee, error: empError } = await supabaseAdmin
+            .from('employees')
+            .select('id, full_name, employee_code')
+            .eq('id', employeeId)
+            .single()
+
+        if (empError || !employee) {
+            return { success: false, message: 'Employee not found' }
+        }
+
+        // 1. Create Auth User with employee's ID
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+            user_metadata: {
+                full_name: employee.full_name
+            }
+        })
+
+        if (authError) throw authError
+        if (!authData.user) throw new Error('Failed to create user')
+
+        const newUserId = authData.user.id
+
+        // 2. Create User Profile linked to employee
+        const { error: profileError } = await supabaseAdmin.rpc('create_user_profile', {
+            p_user_id: newUserId,
+            p_full_name: employee.full_name,
+            p_email: email,
+            p_employee_code: employee.employee_code || null
+        })
+
+        if (profileError) {
+            console.error('Profile RPC error:', profileError)
+            await supabaseAdmin.auth.admin.deleteUser(newUserId)
+            throw profileError
+        }
+
+        // 3. Update employee record with the auth user ID
+        await supabaseAdmin
+            .from('employees')
+            .update({
+                email: email,
+                user_profile_id: newUserId
+            })
+            .eq('id', employeeId)
+
+        // 4. Get driver role and assign it if employee is a Fleet Driver
+        const { data: driverRole } = await supabaseAdmin
+            .from('roles')
+            .select('id')
+            .eq('role_name', 'Driver')
+            .single()
+
+        if (driverRole) {
+            await supabaseAdmin.rpc('assign_role_to_user', {
+                p_user_id: newUserId,
+                p_role_id: driverRole.id,
+                p_assigned_by: user.id
+            })
+        }
+
+        revalidatePath('/dashboard/hr/employees')
+        return { success: true, message: `Login created for ${employee.full_name}. They can now login with ${email}` }
+
+    } catch (error: any) {
+        console.error('Create Employee Login Error:', error)
+        return { success: false, message: error.message || 'Failed to create login' }
+    }
+}
+
 export async function createUser(prevState: any, formData: FormData) {
     const supabaseAdmin = await createAdminClient()
     const supabase = await createClient()

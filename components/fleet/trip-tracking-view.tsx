@@ -2,14 +2,19 @@
 
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { FleetTrip, FleetTripVisit, TripGPSPoint } from "@/types/fleet"
+import { FleetTrip, FleetTripVisit } from "@/types/fleet"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { MapPin, ShoppingBag, Users, Navigation, PlayCircle } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
+import { ShoppingBag, Users, Navigation } from "lucide-react"
+import dynamic from 'next/dynamic'
+
+// Dynamically import the map to prevent SSR issues with Leaflet
+const TripRouteMap = dynamic(() => import("./trip-route-map"), {
+    ssr: false,
+    loading: () => <div className="h-full w-full bg-slate-100 animate-pulse flex items-center justify-center text-slate-400 text-xs">Loading map...</div>
+})
 
 interface TripTrackingViewProps {
     tripId: string
@@ -63,45 +68,8 @@ export function TripTrackingView({ tripId }: TripTrackingViewProps) {
         fetchData()
     }, [tripId, supabase])
 
-    const simulateTracking = async () => {
-        try {
-            // 1. Add GPS Points
-            const mockGps = [
-                { lat: 31.5204, lng: 74.3587, time: new Date().toISOString() },
-                { lat: 31.5210, lng: 74.3595, time: new Date(Date.now() + 60000).toISOString() }
-            ]
-
-            await supabase.from("fleet_trips").update({
-                gps_path: mockGps,
-                status: "IN_PROGRESS"
-            }).eq("id", tripId)
-
-            // 2. Add a Visit
-            const { data: customer } = await supabase.from("customers").select("id").limit(1).single()
-            if (customer) {
-                await supabase.from("fleet_trip_visits").insert({
-                    trip_id: tripId,
-                    customer_id: customer.id,
-                    notes: "Mock delivery visit",
-                    visit_time: new Date().toISOString()
-                })
-            }
-
-            // 3. Add a Mock Invoice link
-            const { data: invoice } = await supabase.from("sales_invoices").select("id").limit(1).single()
-            if (invoice) {
-                await supabase.from("sales_invoices").update({ trip_id: tripId }).eq("id", invoice.id)
-            }
-
-            toast.success("Simulation complete! Refreshing...")
-            window.location.reload()
-        } catch (error) {
-            toast.error("Simulation failed")
-        }
-    }
-
-    if (loading) return <div>Loading tracking details...</div>
-    if (!trip) return <div>Trip not found</div>
+    if (loading) return <div className="p-8 text-center text-slate-500">Loading tracking details...</div>
+    if (!trip) return <div className="p-8 text-center text-red-500">Trip not found</div>
 
     return (
         <div className="space-y-6 max-w-5xl mx-auto p-4">
@@ -110,58 +78,76 @@ export function TripTrackingView({ tripId }: TripTrackingViewProps) {
                     <h1 className="text-xl font-bold">Trip Live Monitoring</h1>
                     <p className="text-xs text-slate-500">Real-time data from {trip.vehicle?.registration_number}</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={simulateTracking} className="gap-2">
-                    <PlayCircle className="h-4 w-4" />
-                    Simulate Live Tracking
-                </Button>
+                <Badge variant={trip.status === 'IN_PROGRESS' ? 'default' : 'secondary'}>
+                    {trip.status}
+                </Badge>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                    <CardHeader className="pb-2">
+                <Card className="md:col-span-2 overflow-hidden border-slate-200">
+                    <CardHeader className="pb-2 bg-slate-50/50 border-b">
                         <CardTitle className="text-sm font-medium flex items-center gap-2">
                             <Navigation className="h-4 w-4 text-blue-500" />
-                            GPS Tracking
+                            Live GPS Route
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <div className="aspect-video bg-slate-100 rounded-md flex items-center justify-center border-2 border-dashed border-slate-200">
-                            <div className="text-center text-slate-500">
-                                <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                                <p className="text-xs">Interactive Map Visualization</p>
-                                <p className="text-[10px]">{trip.gps_path?.length || 0} track points recorded</p>
+                    <CardContent className="p-0">
+                        <div className="h-[400px] w-full bg-slate-100">
+                            <TripRouteMap gpsPath={trip.gps_path || []} />
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <div className="space-y-4">
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                <Users className="h-4 w-4 text-green-500" />
+                                Customer Visits
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{visits.length}</div>
+                            <p className="text-xs text-slate-500 mt-1">Unique stops completed</p>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                <ShoppingBag className="h-4 w-4 text-purple-500" />
+                                Sales Performance
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">
+                                Rs. {invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0).toLocaleString()}
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                            <p className="text-xs text-slate-500 mt-1">{invoices.length} invoices generated</p>
+                        </CardContent>
+                    </Card>
 
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                            <Users className="h-4 w-4 text-green-500" />
-                            Customer Visits
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{visits.length}</div>
-                        <p className="text-xs text-slate-500 mt-1">Unique stops completed</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                            <ShoppingBag className="h-4 w-4 text-purple-500" />
-                            Sales Performance
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">
-                            ${invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0).toLocaleString()}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">{invoices.length} invoices generated</p>
-                    </CardContent>
-                </Card>
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="text-xs text-slate-500 space-y-2">
+                                <div className="flex justify-between">
+                                    <span>Start Mileage:</span>
+                                    <span className="font-medium text-slate-900">{trip.start_mileage} km</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Started at:</span>
+                                    <span className="font-medium text-slate-900">{format(new Date(trip.start_time), "MMM d, HH:mm")}</span>
+                                </div>
+                                {trip.end_time && (
+                                    <div className="flex justify-between">
+                                        <span>Ended at:</span>
+                                        <span className="font-medium text-slate-900">{format(new Date(trip.end_time), "MMM d, HH:mm")}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -219,7 +205,7 @@ export function TripTrackingView({ tripId }: TripTrackingViewProps) {
                                     <TableRow key={inv.id}>
                                         <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
                                         <TableCell className="text-right font-medium">
-                                            ${inv.total_amount?.toLocaleString()}
+                                            Rs. {inv.total_amount?.toLocaleString()}
                                         </TableCell>
                                         <TableCell>
                                             <Badge variant="secondary" className="text-[10px]">{inv.status}</Badge>

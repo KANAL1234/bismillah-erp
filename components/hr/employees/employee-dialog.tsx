@@ -21,6 +21,19 @@ import {
 import { useCreateEmployee, useUpdateEmployee, useDepartments } from '@/lib/queries/hr'
 import { toast } from 'sonner'
 import type { Employee } from '@/lib/types/hr'
+import { Truck } from 'lucide-react'
+
+// Predefined designations
+const DESIGNATIONS = [
+    'Manager',
+    'Accountant',
+    'Sales Executive',
+    'Warehouse Staff',
+    'Fleet Driver',
+    'Delivery Person',
+    'Admin',
+    'Other'
+]
 
 interface EmployeeDialogProps {
     open: boolean
@@ -34,6 +47,12 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
     const updateEmployee = useUpdateEmployee()
     const { data: departments } = useDepartments()
     const [loading, setLoading] = useState(false)
+    const [designation, setDesignation] = useState(employee?.designation || '')
+
+    // Reset designation when dialog opens with different employee
+    useEffect(() => {
+        setDesignation(employee?.designation || '')
+    }, [employee])
 
     async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
@@ -44,7 +63,7 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
             employee_code: formData.get('employee_code') as string,
             full_name: formData.get('full_name') as string,
             cnic: formData.get('cnic') as string,
-            designation: formData.get('designation') as string,
+            designation: designation, // Use state value
             department_id: (formData.get('department_id') === 'none' || !formData.get('department_id')) ? null : formData.get('department_id') as string,
             basic_salary: parseFloat(formData.get('basic_salary') as string) || 0,
             joining_date: formData.get('joining_date') as string,
@@ -53,6 +72,12 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
             phone: formData.get('phone') as string,
             email: formData.get('email') as string,
             employment_status: formData.get('employment_status') as string || 'ACTIVE',
+        }
+
+        // Add license fields if Fleet Driver
+        if (designation === 'Fleet Driver') {
+            data.license_number = formData.get('license_number') as string || null
+            data.license_expiry = formData.get('license_expiry') as string || null
         }
 
         try {
@@ -146,15 +171,52 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="designation">Designation *</Label>
-                                <Input
-                                    id="designation"
-                                    name="designation"
-                                    defaultValue={employee?.designation}
-                                    placeholder="Manager"
-                                    required
-                                />
+                                <Select value={designation} onValueChange={setDesignation}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select designation" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {DESIGNATIONS.map((d) => (
+                                            <SelectItem key={d} value={d}>
+                                                {d === 'Fleet Driver' && <Truck className="w-4 h-4 mr-2 inline" />}
+                                                {d}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
+
+                        {/* Fleet Driver License Fields */}
+                        {designation === 'Fleet Driver' && (
+                            <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                <div className="col-span-2 flex items-center gap-2 text-blue-700 font-medium">
+                                    <Truck className="w-4 h-4" />
+                                    Driver Information
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="license_number">License Number</Label>
+                                    <Input
+                                        id="license_number"
+                                        name="license_number"
+                                        defaultValue={(employee as any)?.license_number || ''}
+                                        placeholder="DL-12345678"
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="license_expiry">License Expiry</Label>
+                                    <Input
+                                        id="license_expiry"
+                                        name="license_expiry"
+                                        type="date"
+                                        defaultValue={(employee as any)?.license_expiry?.split('T')[0] || ''}
+                                    />
+                                </div>
+                                <p className="col-span-2 text-xs text-blue-600">
+                                    This employee will be automatically registered as a Fleet Driver and can use the mobile app.
+                                </p>
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-2 gap-4">
                             <div className="grid gap-2">

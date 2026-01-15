@@ -6,21 +6,62 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { Plus, Minus, Search, ShoppingBag, Truck, Package, X } from 'lucide-react'
+import { Plus, Minus, Search, ShoppingBag, Truck, Package, X, Navigation, AlertTriangle } from 'lucide-react'
 import { addToQueue } from '@/lib/offline/queue'
 import { useOnlineStatus } from '@/lib/offline/sync'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { useAuth } from '@/components/providers/auth-provider'
+import Link from 'next/link'
 
 export default function MobilePOSPage() {
     const supabase = createClient()
     const isOnline = useOnlineStatus()
+    const { user } = useAuth()
     const [search, setSearch] = useState('')
     const [cart, setCart] = useState<any[]>([])
     const [locationId, setLocationId] = useState<string | null>(null)
     const [vehicleInfo, setVehicleInfo] = useState<string>('')
+
+    // Check for active trip
+    const { data: activeTrip, isLoading: tripLoading } = useQuery({
+        queryKey: ['active-trip', user?.id],
+        queryFn: async () => {
+            if (!user?.id) return null
+
+            // First get the driver ID from employee
+            const { data: driver } = await supabase
+                .from('fleet_drivers')
+                .select('id')
+                .eq('employee_id', user.id)
+                .maybeSingle()
+
+            if (!driver) return null
+
+            // Check for active trip
+            const { data: trip } = await supabase
+                .from('fleet_trips')
+                .select('id, status, start_time')
+                .eq('driver_id', driver.id)
+                .eq('status', 'IN_PROGRESS')
+                .maybeSingle()
+
+            return trip
+        },
+        enabled: !!user?.id,
+        refetchInterval: 10000 // Check every 10 seconds
+    })
+
+    // Also check localStorage for trip in progress (for offline support)
+    const [localTripActive, setLocalTripActive] = useState(false)
+    useEffect(() => {
+        const savedTripId = localStorage.getItem('current_trip_id')
+        setLocalTripActive(!!savedTripId)
+    }, [])
+
+    const hasActiveTrip = activeTrip || localTripActive
 
     useEffect(() => {
         const match = document.cookie.match(/driver_vehicle_id=([^;]+)/)
@@ -173,6 +214,44 @@ export default function MobilePOSPage() {
         }
 
         setCart([])
+    }
+
+    // Show loading state while checking trip
+    if (tripLoading) {
+        return (
+            <div className="flex flex-col h-screen bg-slate-50 items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <p className="text-slate-500 text-sm mt-3">Checking trip status...</p>
+            </div>
+        )
+    }
+
+    // Block sales if no active trip
+    if (!hasActiveTrip) {
+        return (
+            <div className="flex flex-col h-screen bg-slate-50">
+                <div className="flex-1 flex flex-col items-center justify-center p-6">
+                    <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mb-6">
+                        <AlertTriangle className="w-12 h-12 text-amber-600" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-slate-800 text-center mb-2">
+                        Start a Trip First
+                    </h1>
+                    <p className="text-slate-500 text-center mb-8 max-w-xs">
+                        You need to start a trip before you can make sales. This helps track your deliveries and inventory.
+                    </p>
+                    <Link href="/mobile/trip">
+                        <Button size="lg" className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200">
+                            <Navigation className="w-5 h-5 mr-2" />
+                            Start Trip Now
+                        </Button>
+                    </Link>
+                    <p className="text-xs text-slate-400 mt-6 text-center">
+                        Once your trip is active, you can return here to make sales
+                    </p>
+                </div>
+            </div>
+        )
     }
 
     return (
