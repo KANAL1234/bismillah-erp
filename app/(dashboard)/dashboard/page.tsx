@@ -63,133 +63,116 @@ function DashboardContent() {
         // Get current date for filtering
         const today = new Date().toISOString().split('T')[0]
         const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
+        const weekFromNow = new Date()
+        weekFromNow.setDate(weekFromNow.getDate() + 7)
 
-        // === INVENTORY METRICS (LBAC Filtered) ===
-        const { count: productCount } = await supabase
-            .from('products')
-            .select('*', { count: 'exact', head: true })
+        // Run ALL queries in parallel using Promise.all for much faster loading
+        const [
+            // Inventory metrics
+            productCountResult,
+            stockDataResult,
+            // Sales metrics
+            customerCountResult,
+            todaySalesResult,
+            monthSalesResult,
+            pendingOrdersResult,
+            // Purchase metrics
+            vendorCountResult,
+            pendingPOResult,
+            approvedPOResult,
+            // Accounting metrics
+            bankAccountsResult,
+            unpaidInvoicesResult,
+            // Analytics
+            creditRiskResult,
+            topProductsResult,
+            // HR metrics
+            activeEmployeeResult,
+            todayAttendanceResult,
+            pendingLeavesResult,
+            // Fleet metrics
+            vehicleCountResult,
+            activeDriverResult,
+            activeTripResult,
+            maintenanceCountResult,
+            fuelLogsResult,
+            maintenanceLogsResult,
+            totalTripResult,
+            // Location info
+            userLocationsResult
+        ] = await Promise.all([
+            // Inventory
+            supabase.from('products').select('*', { count: 'exact', head: true }),
+            supabase.from('inventory_stock').select('quantity_on_hand, location_id, products(cost_price)').in('location_id', locationsToQuery),
+            // Sales
+            supabase.from('customers').select('*', { count: 'exact', head: true }),
+            supabase.from('pos_sales').select('total_amount, location_id').gte('sale_date', today).in('location_id', locationsToQuery),
+            supabase.from('pos_sales').select('total_amount, location_id').gte('sale_date', firstDayOfMonth).in('location_id', locationsToQuery),
+            supabase.from('sales_orders').select('*', { count: 'exact', head: true }).in('status', ['confirmed', 'processing']),
+            // Purchase
+            supabase.from('vendors').select('*', { count: 'exact', head: true }),
+            supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).in('status', ['DRAFT', 'PENDING_APPROVAL']),
+            supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).eq('status', 'APPROVED'),
+            // Accounting
+            supabase.from('bank_accounts').select('current_balance'),
+            supabase.from('customer_invoices_accounting').select('*', { count: 'exact', head: true }).in('status', ['draft', 'posted']),
+            // Analytics
+            supabase.rpc('get_customers_near_credit_limit', { p_threshold_pct: 0.7 }),
+            supabase.rpc('get_sales_by_product', { p_start_date: firstDayOfMonth, p_end_date: today }),
+            // HR
+            supabase.from('employees').select('*', { count: 'exact', head: true }).eq('employment_status', 'ACTIVE'),
+            supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('attendance_date', today).eq('status', 'PRESENT').in('location_id', locationsToQuery),
+            supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
+            // Fleet
+            supabase.from('fleet_vehicles').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
+            supabase.from('fleet_drivers').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
+            supabase.from('fleet_trips').select('*', { count: 'exact', head: true }).eq('status', 'IN_PROGRESS'),
+            supabase.from('fleet_maintenance').select('*', { count: 'exact', head: true }).lte('next_service_due_date', weekFromNow.toISOString().split('T')[0]),
+            supabase.from('fleet_fuel_logs').select('total_cost'),
+            supabase.from('fleet_maintenance').select('cost'),
+            supabase.from('fleet_trips').select('*', { count: 'exact', head: true }),
+            // Locations
+            supabase.from('locations').select('id, name, code').in('id', allowedLocationIds)
+        ])
 
-        const { data: stockData } = await supabase
-            .from('inventory_stock')
-            .select('quantity_on_hand, location_id, products(cost_price)')
-            .in('location_id', locationsToQuery)
-
+        // Extract results
+        const { count: productCount } = productCountResult
+        const { data: stockData } = stockDataResult
         const lowStockCount = stockData?.filter(s => s.quantity_on_hand < 10).length || 0
-
         const inventoryValue = stockData?.reduce((sum, item: any) => {
             return sum + (item.quantity_on_hand * (item.products?.cost_price || 0))
         }, 0) || 0
 
-        // === SALES METRICS (LBAC Filtered) ===
-        const { count: customerCount } = await supabase
-            .from('customers')
-            .select('*', { count: 'exact', head: true })
-
-        // Today's POS Sales (filtered by location)
-        const { data: todaySales } = await supabase
-            .from('pos_sales')
-            .select('total_amount, location_id')
-            .gte('sale_date', today)
-            .in('location_id', locationsToQuery)
-
+        const { count: customerCount } = customerCountResult
+        const { data: todaySales } = todaySalesResult
         const todaySalesTotal = todaySales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
-
-        // This Month's POS Sales (filtered by location)
-        const { data: monthSales } = await supabase
-            .from('pos_sales')
-            .select('total_amount, location_id')
-            .gte('sale_date', firstDayOfMonth)
-            .in('location_id', locationsToQuery)
-
+        const { data: monthSales } = monthSalesResult
         const monthSalesTotal = monthSales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
+        const { count: pendingOrdersCount } = pendingOrdersResult
 
-        // Pending Sales Orders
-        const { count: pendingOrdersCount } = await supabase
-            .from('sales_orders')
-            .select('*', { count: 'exact', head: true })
-            .in('status', ['confirmed', 'processing'])
+        const { count: vendorCount } = vendorCountResult
+        const { count: pendingPOCount } = pendingPOResult
+        const { count: approvedPOCount } = approvedPOResult
 
-        // === PURCHASE METRICS ===
-        const { count: vendorCount } = await supabase
-            .from('vendors')
-            .select('*', { count: 'exact', head: true })
-
-        const { count: pendingPOCount } = await supabase
-            .from('purchase_orders')
-            .select('*', { count: 'exact', head: true })
-            .in('status', ['DRAFT', 'PENDING_APPROVAL'])
-
-        const { count: approvedPOCount } = await supabase
-            .from('purchase_orders')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'APPROVED')
-
-        // === ACCOUNTING METRICS ===
-        const { data: bankAccounts } = await supabase
-            .from('bank_accounts')
-            .select('current_balance')
-
+        const { data: bankAccounts } = bankAccountsResult
         const totalBankBalance = bankAccounts?.reduce((sum, acc) => sum + acc.current_balance, 0) || 0
+        const { count: unpaidInvoicesCount } = unpaidInvoicesResult
 
-        const { count: unpaidInvoicesCount } = await supabase
-            .from('customer_invoices_accounting')
-            .select('*', { count: 'exact', head: true })
-            .in('status', ['draft', 'posted'])
+        const { data: creditRiskData } = creditRiskResult
+        const { data: topProducts } = topProductsResult
 
-        // === ANALYTICS ===
-        const { data: creditRiskData } = await supabase.rpc('get_customers_near_credit_limit', {
-            p_threshold_pct: 0.7
-        })
+        const { count: activeEmployeeCount } = activeEmployeeResult
+        const { count: todayAttendanceCount } = todayAttendanceResult
+        const { count: pendingLeavesCount } = pendingLeavesResult
 
-        const { data: topProducts } = await supabase.rpc('get_sales_by_product', {
-            p_start_date: firstDayOfMonth,
-            p_end_date: today
-        })
+        const { count: vehicleCount } = vehicleCountResult
+        const { count: activeDriverCount } = activeDriverResult
+        const { count: activeTripCount } = activeTripResult
+        const { count: maintenanceCount } = maintenanceCountResult
 
-        // === HR METRICS ===
-        const { count: activeEmployeeCount } = await supabase
-            .from('employees')
-            .select('*', { count: 'exact', head: true })
-            .eq('employment_status', 'ACTIVE')
-
-        const { count: todayAttendanceCount } = await supabase
-            .from('attendance')
-            .select('*', { count: 'exact', head: true })
-            .eq('attendance_date', today)
-            .eq('status', 'PRESENT')
-            .in('location_id', locationsToQuery)
-
-        const { count: pendingLeavesCount } = await supabase
-            .from('leave_requests')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'PENDING')
-
-        // === FLEET METRICS ===
-        const { count: vehicleCount } = await supabase
-            .from('fleet_vehicles')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'ACTIVE')
-
-        const { count: activeDriverCount } = await supabase
-            .from('fleet_drivers')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'ACTIVE')
-
-        const { count: activeTripCount } = await supabase
-            .from('fleet_trips')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'IN_PROGRESS')
-
-        const weekFromNow = new Date()
-        weekFromNow.setDate(weekFromNow.getDate() + 7)
-        const { count: maintenanceCount } = await supabase
-            .from('fleet_maintenance')
-            .select('*', { count: 'exact', head: true })
-            .lte('next_service_due_date', weekFromNow.toISOString().split('T')[0])
-
-        const { data: fuelLogs } = await supabase.from('fleet_fuel_logs').select('total_cost')
-        const { data: maintenanceLogs } = await supabase.from('fleet_maintenance').select('cost')
-        const { count: totalTripCount } = await supabase.from('fleet_trips').select('*', { count: 'exact', head: true })
+        const { data: fuelLogs } = fuelLogsResult
+        const { data: maintenanceLogs } = maintenanceLogsResult
+        const { count: totalTripCount } = totalTripResult
 
         const fuelTotal = fuelLogs?.reduce((sum, log) => sum + (Number(log.total_cost) || 0), 0) || 0
         const maintenanceTotal = maintenanceLogs?.reduce((sum, log) => sum + (Number(log.cost) || 0), 0) || 0
@@ -199,11 +182,7 @@ function DashboardContent() {
             .sort((a: any, b: any) => b.total_sales - a.total_sales)
             .slice(0, 5)
 
-        // === LOCATION INFO ===
-        const { data: userLocations } = await supabase
-            .from('locations')
-            .select('id, name, code')
-            .in('id', allowedLocationIds)
+        const { data: userLocations } = userLocationsResult
 
         setMetrics({
             productCount,

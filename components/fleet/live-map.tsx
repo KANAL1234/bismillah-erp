@@ -21,34 +21,43 @@ export default function LiveFleetMap() {
         queryKey: ['active-fleet-trips'],
         queryFn: async () => {
             // Get active trips
-            // Note: driver linkage assumes user_profiles!driver_id matches. If schema differs, this might need adjustment.
             const { data: trips } = await supabase
                 .from('fleet_trips')
                 .select(`
-            id,
-            vehicle:vehicles(license_plate),
-            driver:user_profiles!driver_id(full_name)
-         `)
+                    id,
+                    vehicle:vehicles(license_plate),
+                    driver:user_profiles!driver_id(full_name)
+                `)
                 .eq('status', 'IN_PROGRESS')
 
             if (!trips?.length) return []
 
-            // Get latest location for each
-            const tripsWithLoc = await Promise.all(trips.map(async (t: any) => {
-                const { data: loc } = await supabase
-                    .from('fleet_trip_locations')
-                    .select('*')
-                    .eq('trip_id', t.id)
-                    .order('recorded_at', { ascending: false })
-                    .limit(1)
-                    .single()
+            // Get all trip IDs
+            const tripIds = trips.map(t => t.id)
 
-                return { ...t, location: loc }
-            }))
+            // Fetch latest locations for ALL trips in a single query using distinct on
+            const { data: allLocations } = await supabase
+                .from('fleet_trip_locations')
+                .select('*')
+                .in('trip_id', tripIds)
+                .order('trip_id')
+                .order('recorded_at', { ascending: false })
 
-            return tripsWithLoc.filter(t => t.location)
+            // Group locations by trip_id and get the latest one for each
+            const latestLocationByTrip = new Map<string, any>()
+            allLocations?.forEach(loc => {
+                if (!latestLocationByTrip.has(loc.trip_id)) {
+                    latestLocationByTrip.set(loc.trip_id, loc)
+                }
+            })
+
+            // Combine trips with their locations
+            return trips
+                .map(t => ({ ...t, location: latestLocationByTrip.get(t.id) }))
+                .filter(t => t.location)
         },
-        refetchInterval: 30000 // Poll every 30s
+        refetchInterval: 30000, // Poll every 30s
+        staleTime: 25000 // Consider data fresh for 25s
     })
 
     // Center map (Islamabad default or first trip)

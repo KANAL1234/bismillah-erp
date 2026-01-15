@@ -60,13 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (currentId !== loadIdRef.current) return;
 
-      if (error) {
-        console.error('Permissions RPC error:', error);
-      } else if (userPermissions) {
+      if (!error && userPermissions) {
         setPermissions(userPermissions);
       }
-    } catch (err) {
-      console.error('Error fetching permissions:', err);
+    } catch {
+      // Silently handle permission fetch errors
     }
   };
 
@@ -75,7 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const timeoutId = setTimeout(() => {
       if (currentId === loadIdRef.current) {
-        console.warn('Auth loading timed out after 10s. Forcing unlock.');
         setLoading(false);
       }
     }, 10000);
@@ -89,13 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (authError || !authUser) {
-        console.log('No authenticated user found');
         clearTimeout(timeoutId);
         setLoading(false);
         return;
       }
-
-      console.log('Logged in as:', authUser.email);
 
       // 1. Profile
       const { data: profile, error: profileErr } = await supabase
@@ -114,9 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.from('user_profiles')
           .update({ last_login: new Date().toISOString() })
           .eq('id', authUser.id)
-          .then(({ error }) => error && console.error('Last login update failed:', error));
-      } else if (profileErr && profileErr.code !== 'PGRST116') {
-        console.error('Profile load error:', profileErr);
+          .then(() => {});
       }
 
       // 2. Roles
@@ -129,10 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (rolesErr) {
-        console.error('Roles RPC error:', rolesErr);
-      } else if (userRoles) {
-        console.log(`Loaded ${userRoles.length} roles:`, userRoles.map((r: any) => r.role_code));
+      if (!rolesErr && userRoles) {
         setRoles(userRoles);
       }
 
@@ -160,10 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (locError && locError.code !== 'PGRST116') {
-        console.error('Error loading locations:', locError);
-      } else if (locations) {
-        console.log(`Loaded ${locations.length} allowed locations`);
+      if (locations) {
         setAllowedLocations(locations.map((l: any) => ({
           location_id: l.location_id,
           location_name: l?.locations?.name || '',
@@ -171,18 +157,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })));
       }
 
-      console.log('--- AUTH DATA LOADED ---');
-      console.log('UID:', authUser.id);
-      console.log('Email:', authUser.email);
-      console.log('Roles:', userRoles?.map((r: any) => r.role_code) || []);
-      console.log('Locs Count:', locations?.length || 0);
-      console.log('------------------------');
-
     } catch (error: any) {
       if (currentId === loadIdRef.current &&
         error.name !== 'AbortError' &&
         !error.message?.includes('aborted')) {
-        console.error('Auth Data Load Error:', error);
         toast.error('Session error. Please refresh.');
       }
     } finally {
@@ -249,8 +227,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         p_new_values: newValues ? JSON.stringify(newValues) : null,
         p_status: 'success'
       });
-    } catch (error) {
-      console.error('Error logging action:', error);
+    } catch {
+      // Silently handle logging errors
     }
   };
 

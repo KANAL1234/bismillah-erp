@@ -658,7 +658,7 @@ export type BankAccount = {
 export type JournalEntry = {
     id: string
     journal_number: string
-    journal_type: 'OPENING' | 'MANUAL' | 'AUTO' | 'ADJUSTMENT' | 'CLOSING'
+    journal_type: 'OPENING' | 'MANUAL' | 'AUTO' | 'ADJUSTMENT' | 'CLOSING' | 'REVERSAL'
     journal_date: string
     fiscal_year_id: string | null
     reference_type: string | null
