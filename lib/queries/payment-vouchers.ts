@@ -89,7 +89,7 @@ export function useCreatePaymentVoucher() {
                 const allocations = billAllocations.map(alloc => ({
                     payment_voucher_id: voucher.id,
                     vendor_bill_id: alloc.bill_id,
-                    amount_allocated: alloc.amount_allocated
+                    allocated_amount: alloc.amount_allocated
                 }))
 
                 const { error: allocationsError } = await supabase
