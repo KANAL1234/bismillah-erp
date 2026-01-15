@@ -30,45 +30,47 @@ export default function MobilePOSPage() {
         }
     }, [])
 
-    // Load products from Vehicle Inventory
-    const { data: inventoryItems } = useQuery({
-        queryKey: ['pos-inventory', locationId, search],
+    // Load ONLY vehicle inventory (products with stock > 0)
+    const { data: productsWithStock } = useQuery({
+        queryKey: ['pos-vehicle-stock', locationId, search],
         queryFn: async () => {
             if (!locationId) return []
 
-            // Fetch inventory for this vehicle
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('inventory_stock')
-                .select('*, products!inner(*)')
+                .select('quantity_on_hand, products!inner(*)')
                 .eq('location_id', locationId)
+                .gt('quantity_on_hand', 0)
                 .ilike('products.name', `%${search}%`)
                 .order('quantity_on_hand', { ascending: false })
 
-            return data || []
+            if (error) {
+                console.error(error)
+                return []
+            }
+
+            // Flatten structure to match UI expectation
+            return data?.map((item: any) => ({
+                ...item.products,
+                quantity_on_hand: item.quantity_on_hand
+            })) || []
         },
         enabled: !!locationId
     })
 
-    const addToCart = (item: any) => {
-        const product = item.products
-        const quantityAvailable = item.quantity_on_hand
+    const addToCart = (product: any) => {
+        const quantityAvailable = product.quantity_on_hand
 
         const existing = cart.find(c => c.id === product.id)
         if (existing) {
-            if (existing.quantity >= quantityAvailable) {
-                toast.error(`Only ${quantityAvailable} available`)
-                return
-            }
+            // Optional: Strict stock enforcement
+            // if (existing.quantity >= quantityAvailable) { ... }
             setCart(cart.map(c =>
                 c.id === product.id
                     ? { ...c, quantity: c.quantity + 1 }
                     : c
             ))
         } else {
-            if (quantityAvailable <= 0) {
-                toast.error('Out of stock')
-                return
-            }
             setCart([...cart, { ...product, quantity: 1, maxQuantity: quantityAvailable }])
         }
     }
@@ -168,22 +170,24 @@ export default function MobilePOSPage() {
 
             {/* Products Grid */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {inventoryItems?.map((item: any) => (
+                {!locationId ? (
+                    <div className="text-center py-10 text-gray-500">No Vehicle Selected</div>
+                ) : productsWithStock?.map((product: any) => (
                     <Card
-                        key={item.id}
+                        key={product.id}
                         className="p-3 flex items-center justify-between cursor-pointer hover:bg-gray-50"
-                        onClick={() => addToCart(item)}
+                        onClick={() => addToCart(product)}
                     >
                         <div>
-                            <p className="font-medium">{item.products.name}</p>
+                            <p className="font-medium">{product.name}</p>
                             <div className="flex gap-2 text-sm text-gray-600">
-                                <span>PKR {item.products.selling_price}</span>
-                                <span className={item.quantity_on_hand < 10 ? "text-red-500 font-bold" : "text-green-600"}>
-                                    Stock: {item.quantity_on_hand}
+                                <span>PKR {product.selling_price}</span>
+                                <span className={product.quantity_on_hand < 10 ? "text-red-500 font-bold" : "text-green-600"}>
+                                    Stock: {product.quantity_on_hand}
                                 </span>
                             </div>
                         </div>
-                        <Button size="sm" variant={item.quantity_on_hand === 0 ? "outline" : "default"} disabled={item.quantity_on_hand === 0}>
+                        <Button size="sm" variant={product.quantity_on_hand === 0 ? "outline" : "default"}>
                             <Plus className="w-4 h-4" />
                         </Button>
                     </Card>
@@ -196,7 +200,7 @@ export default function MobilePOSPage() {
                     {cart.map((item) => (
                         <div key={item.id} className="flex items-center justify-between">
                             <div className="flex-1">
-                                <p className="font-medium text-sm">{item.product_name}</p>
+                                <p className="font-medium text-sm">{item.name}</p>
                                 <p className="text-xs text-gray-600">PKR {item.selling_price}</p>
                             </div>
                             <div className="flex items-center gap-2">
