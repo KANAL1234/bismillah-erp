@@ -31,7 +31,23 @@ export default function LoginPage() {
             })
         } else {
             toast.success('Logged in successfully!')
-            router.push('/dashboard')
+
+            // Check user role for redirection
+            const { data: userRoles } = await supabase
+                .from('user_roles')
+                .select('roles(role_name, role_code)')
+                .eq('user_id', data.user.id)
+
+            const roles = userRoles?.map((ur: any) => ur.roles.role_name.toLowerCase()) || []
+            const roleCodes = userRoles?.map((ur: any) => ur.roles.role_code) || []
+
+            // Redirect Drivers/Sales Staff to Mobile App
+            if (roles.includes('driver') || roleCodes.includes('SALES_STAFF')) {
+                router.push('/mobile/select-vehicle')
+            } else {
+                router.push('/dashboard')
+            }
+
             router.refresh()
         }
 

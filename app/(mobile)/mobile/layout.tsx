@@ -1,7 +1,7 @@
-// app/(mobile)/mobile/layout.tsx
 import { MobileNav } from '@/components/mobile/mobile-nav'
 import { OfflineIndicator } from '@/components/mobile/offline-indicator'
-import { InstallPrompt, IOSInstallInstructions } from '@/components/mobile/install-prompt'
+import { InstallPrompt } from '@/components/mobile/install-prompt'
+import { MobileAuthGuard } from '@/components/mobile/auth-guard'
 import '@/app/globals.css'
 
 export const metadata = {
@@ -23,20 +23,22 @@ export default function MobileLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Offline/Online Status */}
-      <OfflineIndicator />
+    <MobileAuthGuard>
+      <div className="min-h-screen bg-gray-50">
+        {/* Offline/Online Status */}
+        <OfflineIndicator />
 
-      {/* Main Content with bottom padding for nav */}
-      <main className="pb-16 pt-safe">
-        {children}
-      </main>
+        {/* Main Content with bottom padding for nav */}
+        <main className="pb-16 pt-safe">
+          {children}
+        </main>
 
-      {/* Bottom Navigation */}
-      <MobileNav />
+        {/* Bottom Navigation */}
+        <MobileNav />
 
-      {/* Install Prompt */}
-      <InstallPrompt />
-    </div>
+        {/* Install Prompt */}
+        <InstallPrompt />
+      </div>
+    </MobileAuthGuard>
   )
 }
