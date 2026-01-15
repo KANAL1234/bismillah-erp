@@ -115,20 +115,43 @@ export default function MobilePOSPage() {
         }
 
         if (isOnline) {
-            const { error } = await supabase.from('pos_sales').insert({
+            const saleNumber = `POS-${Date.now()}`
+            const { data: sale, error } = await supabase.from('pos_sales').insert({
                 ...saleData,
-                sale_number: `POS-${Date.now()}`,
+                sale_number: saleNumber,
                 subtotal: saleData.total_amount,
                 tax_amount: 0,
                 discount_amount: 0,
                 amount_paid: saleData.total_amount,
                 amount_due: 0,
                 is_synced: true
-            })
+            }).select('id').single()
+
             if (error) {
                 toast.error('Failed to save sale')
                 return
             }
+
+            // Insert sale items
+            if (sale && cart.length > 0) {
+                const saleItems = cart.map(item => ({
+                    sale_id: sale.id,
+                    product_id: item.id,
+                    quantity: item.quantity,
+                    unit_price: item.selling_price || 0,
+                    discount_percentage: 0
+                }))
+
+                const { error: itemsError } = await supabase
+                    .from('pos_sale_items')
+                    .insert(saleItems)
+
+                if (itemsError) {
+                    console.error('Failed to save sale items:', itemsError)
+                    // Sale was created but items failed - still show success
+                }
+            }
+
             toast.success('Sale completed successfully!')
         } else {
             await addToQueue('CREATE_POS_SALE', {

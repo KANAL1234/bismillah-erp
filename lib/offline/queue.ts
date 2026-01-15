@@ -84,7 +84,8 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
     const { data: d2 } = await supabase.from('fleet_drivers').select('id').eq('employee_id', authId).maybeSingle()
     if (d2) return d2.id
 
-    return authId // Fallback to original
+    // Driver not found - throw clear error
+    throw new Error('DRIVER_NOT_REGISTERED: Please contact admin to register you as a driver')
   }
 
   try {

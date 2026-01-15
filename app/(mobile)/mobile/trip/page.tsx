@@ -77,6 +77,19 @@ export default function TripPage() {
 
         setLoading(true)
 
+        // Pre-check: Verify driver is registered in fleet_drivers
+        const { data: driver } = await supabase
+            .from('fleet_drivers')
+            .select('id')
+            .eq('employee_id', driverId)
+            .maybeSingle()
+
+        if (!driver) {
+            toast.error('You are not registered as a driver. Please contact your admin.')
+            setLoading(false)
+            return
+        }
+
         if (!navigator.geolocation) {
             toast.error('Geolocation is not supported by your browser')
             setLoading(false)

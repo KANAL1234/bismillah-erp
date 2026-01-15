@@ -1,20 +1,31 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { LogOut, User, RefreshCw, Shield } from 'lucide-react'
+import { LogOut, User, RefreshCw, ChevronDown, ChevronUp, AlertCircle, Clock, XCircle } from 'lucide-react'
 import { useAutoSync } from '@/lib/offline/sync'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { getQueue, QueueItem } from '@/lib/offline/queue'
 
 export default function MobileProfilePage() {
     const { user, roles } = useAuth()
     const { isOnline, isSyncing, stats, syncNow, resetQueueRetries, clearFailedItems } = useAutoSync()
     const router = useRouter()
     const supabase = createClient()
+    const [showQueue, setShowQueue] = useState(false)
+    const [queueItems, setQueueItems] = useState<QueueItem[]>([])
+
+    // Load queue items when expanded
+    useEffect(() => {
+        if (showQueue) {
+            getQueue().then(setQueueItems)
+        }
+    }, [showQueue, stats])
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -113,6 +124,55 @@ export default function MobileProfilePage() {
                             </Button>
                         )}
                     </div>
+
+                    {/* Queue Viewer */}
+                    {stats.total > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                            <button
+                                onClick={() => setShowQueue(!showQueue)}
+                                className="flex items-center justify-between w-full text-sm text-gray-600 hover:text-gray-800"
+                            >
+                                <span>View Queue ({stats.total} items)</span>
+                                {showQueue ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+
+                            {showQueue && (
+                                <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
+                                    {queueItems.map(item => (
+                                        <div
+                                            key={item.id}
+                                            className={`p-3 rounded-lg text-xs ${
+                                                item.retryCount >= 3
+                                                    ? 'bg-rose-50 border border-rose-100'
+                                                    : item.retryCount > 0
+                                                    ? 'bg-amber-50 border border-amber-100'
+                                                    : 'bg-gray-50 border border-gray-100'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-medium">{item.action.replace(/_/g, ' ')}</span>
+                                                {item.retryCount >= 3 ? (
+                                                    <XCircle className="w-3 h-3 text-rose-500" />
+                                                ) : item.retryCount > 0 ? (
+                                                    <AlertCircle className="w-3 h-3 text-amber-500" />
+                                                ) : (
+                                                    <Clock className="w-3 h-3 text-gray-400" />
+                                                )}
+                                            </div>
+                                            <div className="text-gray-500">
+                                                {new Date(item.timestamp).toLocaleString()}
+                                            </div>
+                                            {item.lastError && (
+                                                <div className="mt-1 text-rose-600 truncate">
+                                                    Error: {item.lastError}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </Card>
 
