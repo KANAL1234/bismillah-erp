@@ -63,7 +63,7 @@ export function InstallPrompt() {
   if (isInstalled || !showPrompt) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4 shadow-2xl z-50 animate-in slide-in-from-bottom duration-300">
+    <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-4 shadow-2xl z-[60] animate-in slide-in-from-top duration-300">
       <div className="max-w-md mx-auto">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
@@ -123,7 +123,7 @@ export function IOSInstallInstructions() {
   if (!show) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-blue-600 text-white px-4 py-2 z-50 pb-safe shadow-lg">
+    <div className="fixed top-0 left-0 right-0 bg-blue-600 text-white px-4 py-2 z-[60] pt-safe shadow-lg">
       <div className="max-w-md mx-auto flex items-center justify-between gap-4">
         <div className="text-xs sm:text-sm">
           <span className="font-bold block sm:inline">Install on iOS:</span>

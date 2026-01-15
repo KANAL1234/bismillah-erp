@@ -40,6 +40,22 @@ export function TripTrackingView({ tripId }: TripTrackingViewProps) {
 
                 if (tripData) setTrip(tripData)
 
+                // Fetch GPS Points from locations table
+                const { data: routeData } = await supabase
+                    .from("fleet_trip_locations")
+                    .select("latitude, longitude, recorded_at")
+                    .eq("trip_id", tripId)
+                    .order("recorded_at", { ascending: true })
+
+                if (routeData && routeData.length > 0) {
+                    const formattedPath = routeData.map(pt => ({
+                        lat: pt.latitude,
+                        lng: pt.longitude,
+                        time: pt.recorded_at
+                    }))
+                    setTrip(prev => prev ? { ...prev, gps_path: formattedPath } : null)
+                }
+
                 // Fetch Visits
                 const { data: visitData } = await supabase
                     .from("fleet_trip_visits")
