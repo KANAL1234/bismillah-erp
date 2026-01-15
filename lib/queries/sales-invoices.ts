@@ -186,18 +186,34 @@ export function useUpdateInvoiceStatus() {
     return useMutation({
         mutationFn: async ({ id, status }: { id: string, status: SalesInvoice['status'] }) => {
             const supabase = createClient()
+
+            // Get full invoice details for GL posting
             const { data: invoice, error } = await supabase
                 .from('sales_invoices')
                 .update({ status })
                 .eq('id', id)
-                .select('id, customer_id, total_amount, amount_paid')
+                .select(`
+                    id,
+                    invoice_number,
+                    invoice_date,
+                    customer_id,
+                    total_amount,
+                    amount_paid,
+                    subtotal,
+                    tax_amount,
+                    discount_amount,
+                    shipping_charges,
+                    created_by,
+                    customers (name)
+                `)
                 .single()
 
             if (error) throw error
 
             // Post to General Ledger if status is posted (Accounting Integration)
-            if (status === 'posted') {
-                if (invoice?.customer_id) {
+            if (status === 'posted' && invoice) {
+                // Update customer balance
+                if (invoice.customer_id) {
                     const balanceDelta = Number(invoice.total_amount || 0) - Number(invoice.amount_paid || 0)
                     if (balanceDelta !== 0) {
                         try {
@@ -206,24 +222,133 @@ export function useUpdateInvoiceStatus() {
                                 p_amount_change: balanceDelta
                             })
                         } catch (balanceError) {
-                            console.warn('Customer balance update failed (non-critical):', balanceError)
+                            // Non-critical, continue
                         }
                     }
                 }
+
+                // Create Journal Entry for B2B Sales Invoice
                 try {
-                    const { data: glResult, error: glError } = await supabase.rpc('post_sales_invoice', {
-                        p_invoice_id: id
-                    })
-                    if (glError) {
-                        console.warn('GL posting RPC error:', glError)
-                    } else if (glResult && !glResult.success) {
-                        console.warn('GL posting failed:', glResult.error)
+                    // Get required GL accounts
+                    const { data: accounts } = await supabase
+                        .from('chart_of_accounts')
+                        .select('id, account_code')
+                        .in('account_code', ['1100', '4010', '2100'])
+                        .eq('is_active', true)
+
+                    const arAccount = accounts?.find(a => a.account_code === '1100')
+                    const salesAccount = accounts?.find(a => a.account_code === '4010')
+                    const taxAccount = accounts?.find(a => a.account_code === '2100')
+
+                    if (!arAccount || !salesAccount) {
+                        console.warn('Required GL accounts not found (1100 or 4010)')
+                        return invoice
                     }
+
+                    // Get fiscal year
+                    const { data: fiscalYear } = await supabase
+                        .from('fiscal_years')
+                        .select('id')
+                        .eq('is_closed', false)
+                        .limit(1)
+                        .single()
+
+                    // Generate journal number
+                    const journalNumber = `JE-SINV-${invoice.invoice_number}`
+
+                    // Check if journal entry already exists
+                    const { data: existingJE } = await supabase
+                        .from('journal_entries')
+                        .select('id')
+                        .eq('journal_number', journalNumber)
+                        .single()
+
+                    if (existingJE) {
+                        // Already posted
+                        return invoice
+                    }
+
+                    // Calculate amounts
+                    const totalAmount = Number(invoice.total_amount) || 0
+                    const netSales = (Number(invoice.subtotal) || 0) -
+                                    (Number(invoice.discount_amount) || 0) +
+                                    (Number(invoice.shipping_charges) || 0)
+                    const taxAmount = Number(invoice.tax_amount) || 0
+                    const customerName = (invoice as any).customers?.name || 'Customer'
+
+                    // Create journal entry
+                    const { data: journalEntry, error: jeError } = await supabase
+                        .from('journal_entries')
+                        .insert({
+                            journal_number: journalNumber,
+                            journal_type: 'AUTO',
+                            journal_date: invoice.invoice_date,
+                            fiscal_year_id: fiscalYear?.id,
+                            reference_type: 'SALES_INVOICE',
+                            reference_id: invoice.id,
+                            reference_number: invoice.invoice_number,
+                            narration: `B2B Sales Invoice - ${invoice.invoice_number} - ${customerName}`,
+                            total_debit: totalAmount,
+                            total_credit: totalAmount,
+                            status: 'posted',
+                            posted_at: new Date().toISOString(),
+                            posted_by: invoice.created_by
+                        })
+                        .select()
+                        .single()
+
+                    if (jeError) {
+                        console.warn('Failed to create journal entry:', jeError)
+                        return invoice
+                    }
+
+                    // Create journal entry lines
+                    const lines = [
+                        // Debit: Accounts Receivable
+                        {
+                            journal_entry_id: journalEntry.id,
+                            account_id: arAccount.id,
+                            debit_amount: totalAmount,
+                            credit_amount: 0,
+                            description: `Accounts Receivable - ${customerName}`
+                        },
+                        // Credit: Sales Revenue
+                        {
+                            journal_entry_id: journalEntry.id,
+                            account_id: salesAccount.id,
+                            debit_amount: 0,
+                            credit_amount: netSales,
+                            description: `Sales Revenue - ${invoice.invoice_number}`
+                        }
+                    ]
+
+                    // Add tax line if applicable
+                    if (taxAmount > 0 && taxAccount) {
+                        lines.push({
+                            journal_entry_id: journalEntry.id,
+                            account_id: taxAccount.id,
+                            debit_amount: 0,
+                            credit_amount: taxAmount,
+                            description: `Output Sales Tax - ${invoice.invoice_number}`
+                        })
+                    }
+
+                    await supabase.from('journal_entry_lines').insert(lines)
+
+                    // Update account balances if the function exists
+                    try {
+                        await supabase.rpc('update_account_balances')
+                    } catch {
+                        // Non-critical
+                    }
+
                 } catch (glError) {
-                    console.warn('GL posting failed (non-critical):', glError)
+                    console.warn('GL posting failed:', glError)
                     // Don't fail the status update if GL posting fails
                 }
             }
+
+            return invoice
         },
         onSuccess: (_, { id }) => {
             queryClient.invalidateQueries({ queryKey: ['sales-invoices'] })
@@ -231,7 +356,7 @@ export function useUpdateInvoiceStatus() {
             queryClient.invalidateQueries({ queryKey: ['journal-entries'] })
             queryClient.invalidateQueries({ queryKey: ['chart-of-accounts'] })
             queryClient.invalidateQueries({ queryKey: ['customers'] })
-            toast.success('Invoice status updated')
+            toast.success('Invoice posted and journal entry created')
         },
         onError: (error) => {
             toast.error('Failed to update status')
