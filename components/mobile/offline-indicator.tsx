@@ -52,6 +52,8 @@ export function OfflineIndicator() {
       )}
 
       {/* Back Online Success */}
+      {/* Back Online Success - Removed to reduce clutter */}
+      {/* 
       {isOnline && !isSyncing && stats.total === 0 && (
         <div className="bg-green-500 text-white px-4 py-2 text-center text-sm font-medium animate-in slide-in-from-top">
           <div className="flex items-center justify-center gap-2">
@@ -60,6 +62,7 @@ export function OfflineIndicator() {
           </div>
         </div>
       )}
+      */}
     </div>
   )
 }
