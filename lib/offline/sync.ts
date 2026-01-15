@@ -2,7 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { processQueue, getQueueStats } from './queue'
+import { processQueue, getQueueStats, resetQueueRetries } from './queue'
 import { toast } from 'sonner'
 
 // Check if online
@@ -105,7 +105,7 @@ export function useAutoSync(intervalMs: number = 30000) {
     return () => clearInterval(interval)
   }, [isOnline, intervalMs, isSyncing])
 
-  return { isOnline, isSyncing, stats, syncNow }
+  return { isOnline, isSyncing, stats, syncNow, resetQueueRetries }
 }
 
 // Background sync (using Service Worker)

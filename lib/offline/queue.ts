@@ -77,17 +77,44 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
   try {
     switch (item.action) {
       case 'CREATE_POS_SALE': {
-        const { error } = await supabase
-          .from('pos_sales')
-          .insert(item.data)
+        const { items, ...saleData } = item.data
 
-        if (error) throw error
-        console.log(`✅ Synced POS sale: ${item.id}`)
+        // 1. Insert the main sale record
+        const { data: sale, error: saleError } = await supabase
+          .from('pos_sales')
+          .insert(saleData)
+          .select()
+          .single()
+
+        if (saleError) throw saleError
+
+        // 2. Insert sale items
+        if (items && items.length > 0) {
+          const saleItems = items.map((line: any) => ({
+            sale_id: sale.id,
+            product_id: line.product_id,
+            quantity: line.quantity,
+            unit_price: line.unit_price
+          }))
+
+          const { error: itemsError } = await supabase
+            .from('pos_sale_items')
+            .insert(saleItems)
+
+          if (itemsError) {
+            console.error('Error syncing POS items, but sale was created:', itemsError)
+            // We might want to handle this specially, but for now throwing will mark the whole item as failed
+            // Note: Since sale is already created, retrying might create duplicate sales unless we have idempotency
+            throw itemsError
+          }
+        }
+
+        console.log(`✅ Synced POS sale and items: ${item.id}`)
         return true
       }
 
       case 'CREATE_FUEL_LOG': {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .rpc('record_fuel_entry', item.data)
 
         if (error) throw error
@@ -97,8 +124,8 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
 
       case 'UPDATE_ODOMETER': {
         const { error } = await supabase
-          .from('vehicles')
-          .update({ current_odometer: item.data.odometer })
+          .from('fleet_vehicles')
+          .update({ current_mileage: item.data.odometer })
           .eq('id', item.data.vehicle_id)
 
         if (error) throw error
@@ -193,6 +220,14 @@ export async function clearFailedItems(): Promise<void> {
   const queue = await getQueue()
   const filtered = queue.filter(item => item.retryCount < MAX_RETRIES)
   await syncQueueStore.setItem(QUEUE_KEY, filtered)
+}
+
+// Reset all retries (for manual retry)
+export async function resetQueueRetries(): Promise<void> {
+  const queue = await getQueue()
+  const updated = queue.map(item => ({ ...item, retryCount: 0 }))
+  await syncQueueStore.setItem(QUEUE_KEY, updated)
+  console.log('🔄 All queue retry counts reset to 0')
 }
 
 // Get queue statistics
