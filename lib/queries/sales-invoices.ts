@@ -211,9 +211,14 @@ export function useUpdateInvoiceStatus() {
                     }
                 }
                 try {
-                    await supabase.rpc('post_customer_invoice', {
+                    const { data: glResult, error: glError } = await supabase.rpc('post_sales_invoice', {
                         p_invoice_id: id
                     })
+                    if (glError) {
+                        console.warn('GL posting RPC error:', glError)
+                    } else if (glResult && !glResult.success) {
+                        console.warn('GL posting failed:', glResult.error)
+                    }
                 } catch (glError) {
                     console.warn('GL posting failed (non-critical):', glError)
                     // Don't fail the status update if GL posting fails

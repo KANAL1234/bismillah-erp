@@ -1,15 +1,22 @@
+import type { Viewport } from 'next'
 import { MobileNav } from '@/components/mobile/mobile-nav'
 import { OfflineIndicator } from '@/components/mobile/offline-indicator'
 import { InstallPrompt } from '@/components/mobile/install-prompt'
 import { MobileAuthGuard } from '@/components/mobile/auth-guard'
 import '@/app/globals.css'
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#0ea5e9',
+}
+
 export const metadata = {
   title: 'Bismillah Driver App',
   description: 'Mobile app for Bismillah Oil Agency drivers',
   manifest: '/manifest.json',
-  themeColor: '#0ea5e9',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

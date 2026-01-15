@@ -519,6 +519,7 @@ export type SalesInvoice = {
     total_amount: number
     amount_paid: number
     notes: string | null
+    journal_entry_id: string | null
     created_by: string | null
     created_at: string
     updated_at: string
