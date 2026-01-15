@@ -153,10 +153,24 @@ export function useCreateSalesInvoice() {
 
             if (itemsError) throw itemsError
 
+            // Update customer balance for receivable (non-blocking)
+            const balanceDelta = input.total_amount - input.amount_paid
+            if (balanceDelta !== 0) {
+                try {
+                    await supabase.rpc('update_customer_balance', {
+                        p_customer_id: input.customer_id,
+                        p_amount_change: balanceDelta
+                    })
+                } catch (balanceError) {
+                    console.warn('Customer balance update failed (non-critical):', balanceError)
+                }
+            }
+
             return invoice
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['sales-invoices'] })
+            queryClient.invalidateQueries({ queryKey: ['customers'] })
             toast.success('Invoice created successfully')
         },
         onError: (error) => {
@@ -233,12 +247,13 @@ export function useGenerateInvoiceFromOrder() {
                     quantity: item.quantity,
                     unit_price: item.unit_price,
                     discount_percentage: item.discount_percentage,
-                    tax_percentage: item.tax_percentage,
+                    tax_percentage: item.tax_percentage ?? 0,
                     line_total: item.line_total
                 }))
             })
         },
         onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['customers'] })
             toast.success('Invoice generated from Order')
         },
         onError: (error) => {

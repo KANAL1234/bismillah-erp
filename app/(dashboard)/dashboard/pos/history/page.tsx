@@ -2,19 +2,10 @@
 
 import { useState } from 'react'
 import { usePOSSales } from '@/lib/queries/pos-sales'
-import { useLocations } from '@/lib/queries/locations'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select'
 import {
     Table,
     TableBody,
@@ -30,13 +21,12 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Receipt as ReceiptComponent } from '@/components/pos/receipt'
-import { ArrowLeft, Receipt, Search, Calendar, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Receipt, Search, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { formatDate } from '@/lib/utils'
 import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
-import { toast } from 'sonner'
 
 export default function SalesHistoryPage() {
     return (
@@ -56,11 +46,7 @@ function SalesHistoryContent() {
     const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null)
     const { allowedLocationIds, currentLocationId } = useLocation()
 
-    const { data: locations } = useLocations()
     const { data: sales, isLoading } = usePOSSales(currentLocationId || undefined, startDate, endDate)
-
-    // Filter locations by LBAC
-    const allowedLocations = locations?.filter(loc => allowedLocationIds.includes(loc.id))
 
     // Filter sales by LBAC - only show sales from allowed locations
     const accessibleSales = sales?.filter(sale =>
@@ -72,8 +58,8 @@ function SalesHistoryContent() {
         const query = searchQuery.toLowerCase()
         return (
             sale.sale_number.toLowerCase().includes(query) ||
-            sale.customers?.name.toLowerCase().includes(query) ||
-            sale.cashier?.full_name.toLowerCase().includes(query)
+            (sale.customers?.name || '').toLowerCase().includes(query) ||
+            (sale.cashier?.full_name || '').toLowerCase().includes(query)
         )
     })
 
@@ -96,44 +82,6 @@ function SalesHistoryContent() {
                 </Link>
                 <h2 className="text-3xl font-bold text-gray-900 ml-4">Sales History</h2>
             </div>
-
-            {/* Location Context Alert */}
-            {currentLocationId && (
-                <Alert className="mb-6 bg-blue-50 border-blue-200">
-                    <AlertCircle className="h-4 w-4 text-blue-600" />
-                    <AlertDescription className="flex items-center justify-between">
-                        <span>
-                            Showing sales for: <strong>{locations?.find(l => l.id === currentLocationId)?.name || 'Selected Location'}</strong>
-                        </span>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                                // This will be handled by changing the location selector in the header
-                                toast.info('To view all locations, change the location selector in the header to "All Locations"')
-                            }}
-                        >
-                            View All Locations
-                        </Button>
-                    </AlertDescription>
-                </Alert>
-            )}
-
-            {/* Debug Info */}
-            <Card className="mb-6 bg-blue-50 border-blue-200">
-                <CardContent className="pt-6">
-                    <div className="text-sm space-y-2">
-                        <p><strong>Debug Info:</strong></p>
-                        <p>• Total sales fetched: {sales?.length || 0}</p>
-                        <p>• After LBAC filter: {accessibleSales?.length || 0}</p>
-                        <p>• After search filter: {filteredSales?.length || 0}</p>
-                        <p>• Current Location ID: {currentLocationId || 'All Locations'}</p>
-                        <p>• Allowed Location IDs: {allowedLocationIds.join(', ')}</p>
-                        <p>• Date Range: {startDate} to {endDate}</p>
-                        <p>• Loading: {isLoading ? 'Yes' : 'No'}</p>
-                    </div>
-                </CardContent>
-            </Card>
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

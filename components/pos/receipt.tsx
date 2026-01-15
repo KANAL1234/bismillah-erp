@@ -31,6 +31,11 @@ export function Receipt({ saleId, onClose }: Props) {
         return <div>Loading receipt...</div>
     }
 
+    const items = Array.isArray((sale as any).pos_sale_items) ? (sale as any).pos_sale_items : []
+    const locationName = (sale as any).locations?.name || 'N/A'
+    const cashierName = (sale as any).cashier?.full_name || 'N/A'
+    const customerName = (sale as any).customers?.name || 'Walk-in'
+
     return (
         <div className="max-w-md mx-auto">
             {/* Print Actions (hidden when printing) */}
@@ -70,18 +75,18 @@ export function Receipt({ saleId, onClose }: Props) {
                         </div>
                         <div className="flex justify-between">
                             <span className="font-semibold">Location:</span>
-                            <span>{sale.locations.name}</span>
+                            <span>{locationName}</span>
                         </div>
-                        {sale.cashier && (
+                        {(sale as any).cashier && (
                             <div className="flex justify-between">
                                 <span className="font-semibold">Cashier:</span>
-                                <span>{sale.cashier.full_name}</span>
+                                <span>{cashierName}</span>
                             </div>
                         )}
-                        {sale.customers && (
+                        {(sale as any).customers && (
                             <div className="flex justify-between">
                                 <span className="font-semibold">Customer:</span>
-                                <span>{sale.customers.name}</span>
+                                <span>{customerName}</span>
                             </div>
                         )}
                     </div>
@@ -100,19 +105,27 @@ export function Receipt({ saleId, onClose }: Props) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {sale.pos_sale_items.map((item: any) => (
-                                    <tr key={item.id} className="border-b">
-                                        <td className="py-2">
-                                            <div className="font-medium">{item.products.name}</div>
-                                            <div className="text-xs text-gray-500">{item.products.sku}</div>
-                                        </td>
-                                        <td className="text-center">{item.quantity}</td>
-                                        <td className="text-right">{item.unit_price.toLocaleString()}</td>
-                                        <td className="text-right font-medium">
-                                            {item.line_total.toLocaleString()}
+                                {items.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4} className="py-3 text-center text-gray-500">
+                                            Items unavailable for this receipt
                                         </td>
                                     </tr>
-                                ))}
+                                ) : (
+                                    items.map((item: any) => (
+                                        <tr key={item.id} className="border-b">
+                                            <td className="py-2">
+                                                <div className="font-medium">{item.products?.name || 'Item'}</div>
+                                                <div className="text-xs text-gray-500">{item.products?.sku || ''}</div>
+                                            </td>
+                                            <td className="text-center">{item.quantity}</td>
+                                            <td className="text-right">{Number(item.unit_price || 0).toLocaleString()}</td>
+                                            <td className="text-right font-medium">
+                                                {Number(item.line_total || 0).toLocaleString()}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -170,7 +183,7 @@ export function Receipt({ saleId, onClose }: Props) {
                             <div className="flex justify-between">
                                 <span>Amount Due:</span>
                                 <span className="text-red-600 font-semibold">
-                                    Rs. {sale.amount_due.toLocaleString()}
+                                    Rs. {Number((sale as any).amount_due || 0).toLocaleString()}
                                 </span>
                             </div>
                         )}
@@ -182,7 +195,7 @@ export function Receipt({ saleId, onClose }: Props) {
                         <p className="mt-2">Please keep this receipt for your records</p>
                         {sale.payment_method === 'CREDIT' && (
                             <p className="mt-2 text-red-600 font-semibold">
-                                Payment due within {sale.customers?.credit_days || 30} days
+                                Payment due within {(sale as any).customers?.credit_days || 30} days
                             </p>
                         )}
                     </div>

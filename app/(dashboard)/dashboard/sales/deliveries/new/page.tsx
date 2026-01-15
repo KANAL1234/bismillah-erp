@@ -28,6 +28,7 @@ import { format } from 'date-fns'
 import { useCreateDeliveryNote } from '@/lib/queries/delivery-notes'
 import { useSalesOrders, useSalesOrder } from '@/lib/queries/sales-orders'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 
 export default function NewDeliveryNotePage() {
     const router = useRouter()
@@ -38,6 +39,7 @@ export default function NewDeliveryNotePage() {
 
     const createDeliveryNote = useCreateDeliveryNote()
     const { data: orders } = useSalesOrders()
+    const supabase = createClient()
 
     const [selectedOrderId, setSelectedOrderId] = useState(preSelectedOrderId || '')
     const [deliveryDate, setDeliveryDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -60,18 +62,44 @@ export default function NewDeliveryNotePage() {
 
     // Populate items when order selection changes
     useEffect(() => {
-        if (selectedOrder) {
-            const items = selectedOrder.sales_order_items.map(item => ({
-                sales_order_item_id: item.id,
-                product_id: item.product_id,
-                product_name: item.products?.name || 'Unknown Product',
-                quantity_ordered: item.quantity,
-                quantity_already_delivered: item.quantity_delivered || 0,
-                quantity_to_deliver: item.quantity - (item.quantity_delivered || 0) // Default to remaining
-            }))
+        if (!selectedOrder) return
+
+        const loadDeliveredQuantities = async () => {
+            const { data, error } = await supabase
+                .from('delivery_note_items')
+                .select('sales_order_item_id, quantity_delivered, delivery_notes!inner(sales_order_id)')
+                .eq('delivery_notes.sales_order_id', selectedOrder.id)
+
+            if (error) {
+                console.warn('Failed to load delivered quantities:', error)
+            }
+
+            const deliveredByItem = (data || []).reduce((acc: Record<string, number>, row: any) => {
+                const current = acc[row.sales_order_item_id] || 0
+                acc[row.sales_order_item_id] = current + Number(row.quantity_delivered || 0)
+                return acc
+            }, {})
+
+            const items = selectedOrder.sales_order_items.map(item => {
+                const ordered = Number(item.quantity || 0)
+                const delivered = Number(deliveredByItem[item.id] || 0)
+                const remaining = Math.max(ordered - delivered, 0)
+
+                return {
+                    sales_order_item_id: item.id,
+                    product_id: item.product_id,
+                    product_name: item.products?.name || 'Unknown Product',
+                    quantity_ordered: ordered,
+                    quantity_already_delivered: delivered,
+                    quantity_to_deliver: remaining
+                }
+            })
+
             setItemsToDeliver(items)
         }
-    }, [selectedOrder])
+
+        loadDeliveredQuantities()
+    }, [selectedOrder, supabase])
 
     const updateQuantity = (itemId: string, qty: number) => {
         setItemsToDeliver(prev => prev.map(item =>

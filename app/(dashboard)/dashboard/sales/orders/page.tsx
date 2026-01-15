@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, FileText, MoreHorizontal, Download } from 'lucide-react'
+import { Plus, Search, FileText, Download, Truck, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
@@ -14,14 +14,6 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSalesOrders } from '@/lib/queries/sales-orders'
@@ -29,6 +21,11 @@ import { formatDate } from '@/lib/utils'
 import { SalesOrder } from '@/lib/types/database'
 import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
+import { createClient } from '@/lib/supabase/client'
+import { createSalesOrderPDF } from '@/lib/utils/export'
+import { useGenerateInvoiceFromOrder } from '@/lib/queries/sales-invoices'
+import { useDeliveryNotes } from '@/lib/queries/delivery-notes'
+import { useSalesInvoices } from '@/lib/queries/sales-invoices'
 
 export default function SalesOrdersPage() {
     return (
@@ -41,7 +38,99 @@ export default function SalesOrdersPage() {
 function SalesOrdersContent() {
     const { currentLocationId } = useLocation()
     const { data: orders, isLoading } = useSalesOrders()
+    const { data: deliveryNotes } = useDeliveryNotes()
+    const { data: invoices } = useSalesInvoices()
     const [searchQuery, setSearchQuery] = useState('')
+    const supabase = createClient()
+    const generateInvoice = useGenerateInvoiceFromOrder()
+    const deliveredOrderIds = new Set((deliveryNotes || []).map(note => note.sales_order_id).filter(Boolean))
+    const invoicedOrderIds = new Set((invoices || []).map(invoice => (invoice as any).sales_order_id).filter(Boolean))
+
+    const handleDownload = async (orderId: string) => {
+        const { data: order, error } = await supabase
+            .from('sales_orders')
+            .select(`
+                *,
+                customers (
+                    id,
+                    name,
+                    customer_code
+                ),
+                sales_order_items (
+                    *,
+                    products (
+                        id,
+                        name,
+                        sku,
+                        uom_id
+                    )
+                )
+            `)
+            .eq('id', orderId)
+            .single()
+
+        if (error || !order) {
+            toast.error('Failed to download order PDF')
+            return
+        }
+
+        const doc = createSalesOrderPDF({
+            order_number: order.order_number,
+            order_date: formatDate(order.order_date),
+            expected_delivery_date: order.expected_delivery_date ? formatDate(order.expected_delivery_date) : null,
+            status: order.status,
+            payment_status: order.payment_status,
+            customer_name: order.customers?.name || 'Customer',
+            customer_code: order.customers?.customer_code || '',
+            items: (order.sales_order_items || []).map((item: any) => ({
+                description: item.products?.name || item.description || 'Item',
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                line_total: item.line_total,
+            })),
+            subtotal: order.subtotal,
+            tax_amount: order.tax_amount,
+            discount_amount: order.discount_amount,
+            shipping_charges: order.shipping_charges,
+            total_amount: order.total_amount,
+            notes: order.notes,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+
+        doc.save(`SalesOrder_${order.order_number}.pdf`)
+    }
+
+    const handleGenerateInvoice = async (orderId: string) => {
+        const { data: order, error } = await supabase
+            .from('sales_orders')
+            .select(`
+                *,
+                sales_order_items (
+                    *,
+                    products (
+                        id,
+                        name,
+                        sku,
+                        uom_id
+                    )
+                )
+            `)
+            .eq('id', orderId)
+            .single()
+
+        if (error || !order) {
+            toast.error('Failed to generate invoice')
+            return
+        }
+
+        generateInvoice.mutate({
+            ...order,
+            items: order.sales_order_items || [],
+        })
+    }
 
     // Filter orders by selected location and search term
     const filteredOrders = orders?.filter(order => {
@@ -158,27 +247,68 @@ function SalesOrdersContent() {
                                             ${order.total_amount.toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <span className="sr-only">Open menu</span>
-                                                        <MoreHorizontal className="h-4 w-4" />
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={`/dashboard/sales/orders/${order.id}`}>
+                                                        <FileText className="mr-2 h-4 w-4" />
+                                                        View
+                                                    </Link>
+                                                </Button>
+                                                {(deliveredOrderIds.has(order.id) || invoicedOrderIds.has(order.id)) ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled
+                                                        title="Editing disabled after delivery or invoice"
+                                                    >
+                                                        <Pencil className="mr-2 h-4 w-4" />
+                                                        Edit
                                                     </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem asChild>
-                                                        <Link href={`/dashboard/sales/orders/${order.id}`}>
-                                                            <FileText className="mr-2 h-4 w-4" />
-                                                            View Details
+                                                ) : (
+                                                    <Button asChild variant="outline" size="sm">
+                                                        <Link href={`/dashboard/sales/orders/${order.id}/edit`}>
+                                                            <Pencil className="mr-2 h-4 w-4" />
+                                                            Edit
                                                         </Link>
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => toast.info("Downloading PDF...")}>
-                                                        <Download className="mr-2 h-4 w-4" />
-                                                        Download PDF
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                                    </Button>
+                                                )}
+                                                {deliveredOrderIds.has(order.id) ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled
+                                                        title="Delivery note already created for this order"
+                                                    >
+                                                        <Truck className="mr-2 h-4 w-4" />
+                                                        Delivery
+                                                    </Button>
+                                                ) : (
+                                                    <Button asChild variant="outline" size="sm">
+                                                        <Link href={`/dashboard/sales/deliveries/new?order_id=${order.id}`}>
+                                                            <Truck className="mr-2 h-4 w-4" />
+                                                            Delivery
+                                                        </Link>
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleGenerateInvoice(order.id)}
+                                                    disabled={generateInvoice.isPending || invoicedOrderIds.has(order.id)}
+                                                    title={invoicedOrderIds.has(order.id) ? 'Invoice already created for this order' : 'Generate invoice'}
+                                                >
+                                                    <FileText className="mr-2 h-4 w-4" />
+                                                    Invoice
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleDownload(order.id)}
+                                                >
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    PDF
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))

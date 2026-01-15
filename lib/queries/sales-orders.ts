@@ -4,6 +4,16 @@ import { SalesOrder, SalesOrderWithDetails } from '@/lib/types/database'
 import { toast } from 'sonner'
 import { SalesQuotation } from '@/lib/types/database'
 
+const formatPostgrestError = (error: any) => {
+    if (!error) return null
+    return {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+    }
+}
+
 export type CreateSalesOrderInput = {
     customer_id: string
     quotation_id?: string
@@ -23,13 +33,14 @@ export type CreateSalesOrderInput = {
     warehouse_id?: string
     items: {
         product_id: string
-        description?: string
         quantity: number
         unit_price: number
         discount_percentage: number
-        tax_percentage: number
-        line_total: number
     }[]
+}
+
+export type UpdateSalesOrderInput = CreateSalesOrderInput & {
+    id: string
 }
 
 export function useSalesOrders() {
@@ -60,27 +71,72 @@ export function useSalesOrder(id: string) {
         queryKey: ['sales-order', id],
         queryFn: async () => {
             const supabase = createClient()
-            const { data, error } = await supabase
+            const { data: order, error: orderError } = await supabase
                 .from('sales_orders')
-                .select(`
-                    *,
-                    customers (*),
-                    warehouse:inventory_locations!warehouse_id (id, name),
-                    sales_order_items (
-                        *,
-                        products (
-                            id,
-                            name,
-                            sku,
-                            uom_id
-                        )
-                    )
-                `)
+                .select('*')
                 .eq('id', id)
                 .single()
 
-            if (error) throw error
-            return data as SalesOrderWithDetails
+            if (orderError) {
+                console.error('Sales order fetch failed:', formatPostgrestError(orderError))
+                throw orderError
+            }
+
+            const [customerRes, warehouseRes, itemsRes] = await Promise.all([
+                order.customer_id
+                    ? supabase.from('customers').select('*').eq('id', order.customer_id).single()
+                    : Promise.resolve({ data: null, error: null }),
+                order.warehouse_id
+                    ? supabase.from('inventory_locations').select('id, name').eq('id', order.warehouse_id).single()
+                    : Promise.resolve({ data: null, error: null }),
+                supabase
+                    .from('sales_order_items')
+                    .select('id, order_id, product_id, quantity, unit_price, discount_percentage, line_total')
+                    .eq('order_id', order.id),
+            ])
+
+            if (customerRes.error) {
+                console.warn('Sales order customer fetch failed:', formatPostgrestError(customerRes.error))
+            }
+            if (warehouseRes.error) {
+                console.warn('Sales order warehouse fetch failed:', formatPostgrestError(warehouseRes.error))
+            }
+            if (itemsRes.error) {
+                console.warn('Sales order items fetch failed:', formatPostgrestError(itemsRes.error))
+            }
+
+            const items = itemsRes.data || []
+            const productIds = Array.from(new Set(items.map(item => item.product_id).filter(Boolean)))
+            let productsById: Record<string, { id: string; name: string | null; sku: string | null; uom_id?: string | null }> = {}
+
+            if (productIds.length > 0) {
+                const { data: products, error: productsError } = await supabase
+                    .from('products')
+                    .select('id, name, sku, uom_id')
+                    .in('id', productIds)
+
+                if (productsError) {
+                    console.warn('Sales order products fetch failed:', formatPostgrestError(productsError))
+                } else if (products) {
+                    productsById = products.reduce((acc, product) => {
+                        acc[product.id] = product
+                        return acc
+                    }, {} as Record<string, { id: string; name: string | null; sku: string | null; uom_id?: string | null }>)
+                }
+            }
+
+            const salesOrderItems = items.map(item => ({
+                ...item,
+                quantity_delivered: 0,
+                products: productsById[item.product_id] || null,
+            }))
+
+            return {
+                ...order,
+                customers: customerRes.data || undefined,
+                warehouse: warehouseRes.data || undefined,
+                sales_order_items: salesOrderItems,
+            } as SalesOrderWithDetails
         },
         enabled: !!id
     })
@@ -107,9 +163,6 @@ export function useCreateSalesOrder() {
                 nextNumber = `SO-${String(lastNum + 1).padStart(4, '0')}`
             }
 
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) throw new Error('User not authenticated')
-
             // 2. Insert Order
             const { data: order, error: orderError } = await supabase
                 .from('sales_orders')
@@ -131,22 +184,22 @@ export function useCreateSalesOrder() {
                     notes: input.notes,
                     term_and_conditions: input.term_and_conditions,
                     warehouse_id: input.warehouse_id,
-                    created_by: user.id
                 })
                 .select()
                 .single()
 
-            if (orderError) throw orderError
+            if (orderError) {
+                console.error('Sales order insert failed:', formatPostgrestError(orderError))
+                throw orderError
+            }
 
             // 3. Insert Items
             const items = input.items.map(item => ({
                 order_id: order.id,
                 product_id: item.product_id,
-                description: item.description,
                 quantity: item.quantity,
                 unit_price: item.unit_price,
-                discount_percentage: item.discount_percentage,
-                tax_percentage: item.tax_percentage
+                discount_percentage: item.discount_percentage
                 // line_total is generated
             }))
 
@@ -154,7 +207,10 @@ export function useCreateSalesOrder() {
                 .from('sales_order_items')
                 .insert(items)
 
-            if (itemsError) throw itemsError
+            if (itemsError) {
+                console.error('Sales order items insert failed:', formatPostgrestError(itemsError))
+                throw itemsError
+            }
 
             return order
         },
@@ -163,8 +219,9 @@ export function useCreateSalesOrder() {
             toast.success('Sales Order created successfully')
         },
         onError: (error) => {
-            console.error('Error creating sales order:', error)
-            toast.error('Failed to create sales order')
+            console.error('Error creating sales order:', formatPostgrestError(error))
+            const message = (error as any)?.message ? `Failed to create sales order: ${(error as any).message}` : 'Failed to create sales order'
+            toast.error(message)
         }
     })
 }
@@ -189,6 +246,80 @@ export function useUpdateSalesOrderStatus() {
         },
         onError: (error) => {
             toast.error('Failed to update status')
+        }
+    })
+}
+
+export function useUpdateSalesOrder() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, ...input }: UpdateSalesOrderInput) => {
+            const supabase = createClient()
+
+            const { error: orderError } = await supabase
+                .from('sales_orders')
+                .update({
+                    customer_id: input.customer_id,
+                    quotation_id: input.quotation_id,
+                    order_date: input.order_date,
+                    expected_delivery_date: input.expected_delivery_date,
+                    status: input.status,
+                    payment_status: input.payment_status,
+                    subtotal: input.subtotal,
+                    tax_amount: input.tax_amount,
+                    discount_amount: input.discount_amount,
+                    shipping_charges: input.shipping_charges,
+                    total_amount: input.total_amount,
+                    amount_paid: input.amount_paid,
+                    delivery_address: input.delivery_address,
+                    notes: input.notes,
+                    term_and_conditions: input.term_and_conditions,
+                    warehouse_id: input.warehouse_id,
+                })
+                .eq('id', id)
+
+            if (orderError) {
+                console.error('Sales order update failed:', formatPostgrestError(orderError))
+                throw orderError
+            }
+
+            const { error: deleteError } = await supabase
+                .from('sales_order_items')
+                .delete()
+                .eq('order_id', id)
+
+            if (deleteError) {
+                console.error('Sales order items delete failed:', formatPostgrestError(deleteError))
+                throw deleteError
+            }
+
+            const items = input.items.map(item => ({
+                order_id: id,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                discount_percentage: item.discount_percentage
+            }))
+
+            const { error: itemsError } = await supabase
+                .from('sales_order_items')
+                .insert(items)
+
+            if (itemsError) {
+                console.error('Sales order items insert failed:', formatPostgrestError(itemsError))
+                throw itemsError
+            }
+        },
+        onSuccess: (_, { id }) => {
+            queryClient.invalidateQueries({ queryKey: ['sales-orders'] })
+            queryClient.invalidateQueries({ queryKey: ['sales-order', id] })
+            toast.success('Sales Order updated successfully')
+        },
+        onError: (error) => {
+            console.error('Error updating sales order:', formatPostgrestError(error))
+            const message = (error as any)?.message ? `Failed to update sales order: ${(error as any).message}` : 'Failed to update sales order'
+            toast.error(message)
         }
     })
 }
@@ -222,7 +353,6 @@ export function useConvertQuotationToOrder() {
                     quantity: item.quantity,
                     unit_price: item.unit_price,
                     discount_percentage: item.discount_percentage,
-                    tax_percentage: item.tax_percentage,
                     line_total: item.line_total
                 }))
             })
@@ -233,7 +363,10 @@ export function useConvertQuotationToOrder() {
                 .update({ status: 'converted' })
                 .eq('id', quotation.id)
 
-            if (error) throw error
+            if (error) {
+                console.error('Quotation status update failed:', formatPostgrestError(error))
+                throw error
+            }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['sales-quotations'] })

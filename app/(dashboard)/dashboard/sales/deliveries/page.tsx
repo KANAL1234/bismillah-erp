@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Truck, MoreHorizontal, Download } from 'lucide-react'
+import { Plus, Search, Truck, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
@@ -14,13 +14,6 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useDeliveryNotes } from '@/lib/queries/delivery-notes'
@@ -28,6 +21,8 @@ import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
 import { formatDate } from '@/lib/utils'
 import { DeliveryNote } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
+import { createDeliveryNotePDF } from '@/lib/utils/export'
 
 export default function DeliveryNotesPage() {
     return (
@@ -41,6 +36,60 @@ function DeliveryNotesContent() {
     const { currentLocationId } = useLocation()
     const { data: notes, isLoading } = useDeliveryNotes()
     const [searchTerm, setSearchTerm] = useState('')
+    const supabase = createClient()
+
+    const handleDownload = async (noteId: string) => {
+        const { data: note, error } = await supabase
+            .from('delivery_notes')
+            .select(`
+                *,
+                customers (
+                    id,
+                    name,
+                    customer_code
+                ),
+                sales_orders (order_number),
+                delivery_note_items (
+                    *,
+                    products (
+                        id,
+                        name,
+                        sku,
+                        uom_id
+                    )
+                )
+            `)
+            .eq('id', noteId)
+            .single()
+
+        if (error || !note) {
+            toast.error('Failed to download delivery note PDF')
+            return
+        }
+
+        const doc = createDeliveryNotePDF({
+            delivery_note_number: note.delivery_note_number,
+            delivery_date: formatDate(note.delivery_date),
+            status: note.status,
+            tracking_number: note.tracking_number,
+            driver_name: note.driver_name,
+            vehicle_number: note.vehicle_number,
+            customer_name: note.customers?.name || 'Customer',
+            customer_code: note.customers?.customer_code || '',
+            order_number: note.sales_orders?.order_number || '',
+            items: (note.delivery_note_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity_delivered: item.quantity_delivered,
+            })),
+            notes: note.notes,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+
+        doc.save(`DeliveryNote_${note.delivery_note_number}.pdf`)
+    }
 
     const filteredNotes = notes?.filter(note => {
         // Location filter
@@ -151,27 +200,22 @@ function DeliveryNotesContent() {
                                         </TableCell>
                                         <TableCell>{getStatusBadge(note.status)}</TableCell>
                                         <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <span className="sr-only">Open menu</span>
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem asChild>
-                                                        <Link href={`/dashboard/sales/deliveries/${note.id}`}>
-                                                            <Truck className="mr-2 h-4 w-4" />
-                                                            View Details
-                                                        </Link>
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => toast.info("Downloading PDF...")}>
-                                                        <Download className="mr-2 h-4 w-4" />
-                                                        Download PDF
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={`/dashboard/sales/deliveries/${note.id}`}>
+                                                        <Truck className="mr-2 h-4 w-4" />
+                                                        View
+                                                    </Link>
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleDownload(note.id)}
+                                                >
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    PDF
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))

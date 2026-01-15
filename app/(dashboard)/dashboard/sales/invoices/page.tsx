@@ -2,17 +2,10 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, FileText, Eye, MoreHorizontal, Download } from 'lucide-react'
+import { Plus, Search, Eye, Download, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
     Table,
     TableBody,
@@ -23,12 +16,14 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useSalesInvoices } from '@/lib/queries/sales-invoices'
+import { useSalesInvoices, useUpdateInvoiceStatus } from '@/lib/queries/sales-invoices'
 import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
 import { isPast, parseISO } from 'date-fns'
 import { formatDate } from '@/lib/utils'
 import { SalesInvoice } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
+import { generateInvoicePDF } from '@/lib/utils/export'
 
 export default function SalesInvoicesPage() {
     return (
@@ -42,6 +37,60 @@ function SalesInvoicesContent() {
     const { currentLocationId } = useLocation()
     const { data: invoices, isLoading } = useSalesInvoices()
     const [searchTerm, setSearchTerm] = useState('')
+    const supabase = createClient()
+    const updateStatus = useUpdateInvoiceStatus()
+
+    const handleDownload = async (invoiceId: string) => {
+        const { data: invoice, error } = await supabase
+            .from('sales_invoices')
+            .select(`
+                *,
+                customers (
+                    id,
+                    name,
+                    customer_code
+                ),
+                sales_invoice_items (
+                    *,
+                    products (
+                        id,
+                        name,
+                        sku,
+                        uom_id
+                    )
+                )
+            `)
+            .eq('id', invoiceId)
+            .single()
+
+        if (error || !invoice) {
+            toast.error('Failed to download invoice PDF')
+            return
+        }
+
+        generateInvoicePDF({
+            invoice_number: invoice.invoice_number,
+            invoice_date: formatDate(invoice.invoice_date),
+            due_date: formatDate(invoice.due_date),
+            customer_name: invoice.customers?.name || 'Customer',
+            items: (invoice.sales_invoice_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                amount: item.line_total,
+            })),
+            subtotal: invoice.subtotal,
+            tax_amount: invoice.tax_amount,
+            total_amount: invoice.total_amount,
+            notes: invoice.notes || undefined,
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        }, {
+            filename: `Invoice_${invoice.invoice_number}.pdf`,
+        })
+    }
 
     const filteredInvoices = invoices?.filter(invoice => {
         // Location filter
@@ -154,27 +203,31 @@ function SalesInvoicesContent() {
                                             ${(invoice.total_amount - invoice.amount_paid).toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <span className="sr-only">Open menu</span>
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem asChild>
-                                                        <Link href={`/dashboard/sales/invoices/${invoice.id}`}>
-                                                            <Eye className="mr-2 h-4 w-4" />
-                                                            View Details
-                                                        </Link>
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => toast.info("Downloading PDF...")}>
-                                                        <Download className="mr-2 h-4 w-4" />
-                                                        Download PDF
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={`/dashboard/sales/invoices/${invoice.id}`}>
+                                                        <Eye className="mr-2 h-4 w-4" />
+                                                        View
+                                                    </Link>
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={invoice.status === 'posted' || updateStatus.isPending}
+                                                    onClick={() => updateStatus.mutate({ id: invoice.id, status: 'posted' })}
+                                                >
+                                                    <CheckCircle className="mr-2 h-4 w-4" />
+                                                    Post
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleDownload(invoice.id)}
+                                                >
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    PDF
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))

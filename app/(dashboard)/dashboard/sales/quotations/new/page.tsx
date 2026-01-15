@@ -171,8 +171,7 @@ export default function NewQuotationPage() {
                     quantity: i.quantity,
                     unit_price: i.unit_price,
                     discount_percentage: i.discount_percentage,
-                    tax_percentage: i.tax_percentage,
-                    line_total: i.line_total
+                    tax_percentage: i.tax_percentage
                 }))
             })
             router.push('/dashboard/sales/quotations')

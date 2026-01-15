@@ -3,6 +3,15 @@ import { createClient } from '@/lib/supabase/client'
 import type { POSSale, POSSaleItem, CartItem } from '@/lib/types/database'
 
 const supabase = createClient()
+const formatPostgrestError = (error: any) => {
+    if (!error) return null
+    return {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+    }
+}
 
 // Get all POS sales
 export function usePOSSales(locationId?: string, startDate?: string, endDate?: string) {
@@ -50,8 +59,32 @@ export function usePOSSales(locationId?: string, startDate?: string, endDate?: s
             const { data, error } = await query
 
             if (error) {
-                console.error('❌ POS Sales Query Error:', error)
-                throw error
+                console.error('❌ POS Sales Query Error:', formatPostgrestError(error))
+                // Fallback: try without joins to avoid relationship/RLS failures
+                let fallbackQuery = supabase
+                    .from('pos_sales')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+
+                if (locationId) {
+                    fallbackQuery = fallbackQuery.eq('location_id', locationId)
+                }
+
+                if (startDate) {
+                    fallbackQuery = fallbackQuery.gte('sale_date', startDate)
+                }
+
+                if (endDateExclusive) {
+                    fallbackQuery = fallbackQuery.lt('sale_date', endDateExclusive)
+                }
+
+                const { data: fallbackData, error: fallbackError } = await fallbackQuery
+                if (fallbackError) {
+                    console.error('❌ POS Sales Fallback Error:', formatPostgrestError(fallbackError))
+                    throw fallbackError
+                }
+                console.warn('⚠️ POS Sales loaded without related data (fallback mode)')
+                return fallbackData
             }
 
             console.log('✅ POS Sales fetched:', data?.length || 0, 'sales')
@@ -83,8 +116,57 @@ export function usePOSSale(id: string) {
                 .single()
 
             if (error) {
-                console.error('❌ Single POS Sale Query Error:', error)
-                throw error
+                console.error('❌ Single POS Sale Query Error:', formatPostgrestError(error))
+                const { data: fallbackData, error: fallbackError } = await supabase
+                    .from('pos_sales')
+                    .select('*')
+                    .eq('id', id)
+                    .single()
+
+                if (fallbackError) {
+                    console.error('❌ Single POS Sale Fallback Error:', formatPostgrestError(fallbackError))
+                    throw fallbackError
+                }
+                const { data: items, error: itemsError } = await supabase
+                    .from('pos_sale_items')
+                    .select('id, sale_id, product_id, quantity, unit_price, discount_percentage, line_total')
+                    .eq('sale_id', id)
+
+                if (itemsError) {
+                    console.warn('⚠️ POS Sale items fallback failed:', formatPostgrestError(itemsError))
+                    console.warn('⚠️ POS Sale loaded without related data (fallback mode)')
+                    return fallbackData
+                }
+
+                const productIds = Array.from(new Set((items || []).map(item => item.product_id).filter(Boolean)))
+                let productsById: Record<string, { id: string; sku: string | null; name: string | null }> = {}
+
+                if (productIds.length > 0) {
+                    const { data: products, error: productsError } = await supabase
+                        .from('products')
+                        .select('id, sku, name')
+                        .in('id', productIds)
+
+                    if (productsError) {
+                        console.warn('⚠️ POS Sale products fallback failed:', formatPostgrestError(productsError))
+                    } else if (products) {
+                        productsById = products.reduce((acc, product) => {
+                            acc[product.id] = product
+                            return acc
+                        }, {} as Record<string, { id: string; sku: string | null; name: string | null }>)
+                    }
+                }
+
+                const itemsWithProducts = (items || []).map(item => ({
+                    ...item,
+                    products: productsById[item.product_id] || null,
+                }))
+
+                console.warn('⚠️ POS Sale loaded via fallback (items fetched separately)')
+                return {
+                    ...fallbackData,
+                    pos_sale_items: itemsWithProducts,
+                }
             }
 
             console.log('✅ POS Sale fetched:', data?.sale_number)
@@ -114,8 +196,20 @@ export function useTodaySales(locationId: string) {
                 .gte('sale_date', today)
 
             if (error) {
-                console.error('❌ Today\'s Sales Query Error:', error)
-                throw error
+                console.error('❌ Today\'s Sales Query Error:', formatPostgrestError(error))
+                // Fallback: pull sales without joins for daily closing calculations
+                const { data: fallbackData, error: fallbackError } = await supabase
+                    .from('pos_sales')
+                    .select('*')
+                    .eq('location_id', locationId)
+                    .gte('sale_date', today)
+
+                if (fallbackError) {
+                    console.error('❌ Today\'s Sales Fallback Error:', formatPostgrestError(fallbackError))
+                    throw fallbackError
+                }
+                console.warn('⚠️ Today\'s sales loaded without related data (fallback mode)')
+                return fallbackData
             }
 
             console.log('✅ Today\'s Sales fetched:', data?.length || 0, 'sales')

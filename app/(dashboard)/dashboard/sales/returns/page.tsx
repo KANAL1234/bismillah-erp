@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, RotateCcw, MoreHorizontal, Download } from 'lucide-react'
+import { Plus, Search, RotateCcw, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
@@ -14,13 +14,6 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PermissionGuard } from '@/components/permission-guard'
@@ -28,6 +21,8 @@ import { useSalesReturns } from '@/lib/queries/sales-returns'
 import { useLocation } from '@/components/providers/location-provider'
 import { formatDate } from '@/lib/utils'
 import { SalesReturn } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
+import { createSalesReturnPDF } from '@/lib/utils/export'
 
 export default function SalesReturnsPage() {
     return (
@@ -41,6 +36,60 @@ function SalesReturnsContent() {
     const { currentLocationId } = useLocation()
     const { data: returns, isLoading } = useSalesReturns()
     const [searchTerm, setSearchTerm] = useState('')
+    const supabase = createClient()
+
+    const handleDownload = async (returnId: string) => {
+        const { data: salesReturn, error } = await supabase
+            .from('sales_returns')
+            .select(`
+                *,
+                customers (
+                    id,
+                    name,
+                    customer_code
+                ),
+                sales_invoices (invoice_number),
+                sales_return_items (
+                    *,
+                    products (
+                        id,
+                        name,
+                        sku,
+                        uom_id
+                    )
+                )
+            `)
+            .eq('id', returnId)
+            .single()
+
+        if (error || !salesReturn) {
+            toast.error('Failed to download return PDF')
+            return
+        }
+
+        const doc = createSalesReturnPDF({
+            return_number: salesReturn.return_number,
+            return_date: formatDate(salesReturn.return_date),
+            status: salesReturn.status,
+            reason: salesReturn.reason,
+            customer_name: salesReturn.customers?.name || 'Customer',
+            customer_code: salesReturn.customers?.customer_code || '',
+            invoice_number: salesReturn.sales_invoices?.invoice_number || '',
+            refund_amount: salesReturn.refund_amount,
+            items: (salesReturn.sales_return_items || []).map((item: any) => ({
+                description: item.products?.name || 'Item',
+                quantity_returned: item.quantity_returned,
+                condition: item.condition,
+                action: item.action,
+            })),
+        }, {
+            name: 'Bismillah Oil Agency',
+            address: 'Rawalpindi, Pakistan',
+            phone: '051-XXXXXXX',
+        })
+
+        doc.save(`SalesReturn_${salesReturn.return_number}.pdf`)
+    }
 
     const filteredReturns = returns?.filter(ret => {
         // Location filter
@@ -142,27 +191,22 @@ function SalesReturnsContent() {
                                         <TableCell className="font-medium">${ret.refund_amount.toLocaleString()}</TableCell>
                                         <TableCell>{getStatusBadge(ret.status)}</TableCell>
                                         <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <span className="sr-only">Open menu</span>
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem asChild>
-                                                        <Link href={`/dashboard/sales/returns/${ret.id}`}>
-                                                            <RotateCcw className="mr-2 h-4 w-4" />
-                                                            View Details
-                                                        </Link>
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => toast.info("Downloading PDF...")}>
-                                                        <Download className="mr-2 h-4 w-4" />
-                                                        Download PDF
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={`/dashboard/sales/returns/${ret.id}`}>
+                                                        <RotateCcw className="mr-2 h-4 w-4" />
+                                                        View
+                                                    </Link>
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleDownload(ret.id)}
+                                                >
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    PDF
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))

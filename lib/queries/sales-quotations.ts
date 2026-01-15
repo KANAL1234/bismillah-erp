@@ -23,8 +23,11 @@ export type CreateQuotationInput = {
         unit_price: number
         discount_percentage: number
         tax_percentage: number
-        line_total: number
     }[]
+}
+
+export type UpdateQuotationInput = CreateQuotationInput & {
+    id: string
 }
 
 export function useSalesQuotations() {
@@ -178,6 +181,68 @@ export function useUpdateSalesQuotationStatus() {
         },
         onError: (error) => {
             toast.error('Failed to update status')
+        }
+    })
+}
+
+export function useUpdateSalesQuotation() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, ...input }: UpdateQuotationInput) => {
+            const supabase = createClient()
+
+            const { error: quotationError } = await supabase
+                .from('sales_quotations')
+                .update({
+                    customer_id: input.customer_id,
+                    quotation_date: input.quotation_date,
+                    valid_until: input.valid_until,
+                    reference_number: input.reference_number,
+                    status: input.status,
+                    subtotal: input.subtotal,
+                    tax_amount: input.tax_amount,
+                    discount_amount: input.discount_amount,
+                    shipping_charges: input.shipping_charges,
+                    total_amount: input.total_amount,
+                    notes: input.notes,
+                    term_and_conditions: input.term_and_conditions,
+                })
+                .eq('id', id)
+
+            if (quotationError) throw quotationError
+
+            const { error: deleteError } = await supabase
+                .from('sales_quotation_items')
+                .delete()
+                .eq('quotation_id', id)
+
+            if (deleteError) throw deleteError
+
+            const items = input.items.map(item => ({
+                quotation_id: id,
+                product_id: item.product_id,
+                description: item.description,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                discount_percentage: item.discount_percentage,
+                tax_percentage: item.tax_percentage
+            }))
+
+            const { error: itemsError } = await supabase
+                .from('sales_quotation_items')
+                .insert(items)
+
+            if (itemsError) throw itemsError
+        },
+        onSuccess: (_, { id }) => {
+            queryClient.invalidateQueries({ queryKey: ['sales-quotations'] })
+            queryClient.invalidateQueries({ queryKey: ['sales-quotation', id] })
+            toast.success('Quotation updated successfully')
+        },
+        onError: (error) => {
+            console.error('Error updating quotation:', error)
+            toast.error('Failed to update quotation')
         }
     })
 }

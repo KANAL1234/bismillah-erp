@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 
 // ============================================================================
 // EXCEL EXPORT UTILITIES
@@ -184,7 +184,7 @@ export function generateInvoicePDF(invoice: InvoiceData, companyInfo?: {
     address?: string
     phone?: string
     email?: string
-}) {
+}, options?: { filename?: string }) {
     const doc = new jsPDF()
 
     // Company Header
@@ -224,7 +224,7 @@ export function generateInvoicePDF(invoice: InvoiceData, companyInfo?: {
     }
 
     // Items Table
-    ; (doc as any).autoTable({
+    autoTable(doc, {
         startY: 75,
         head: [['Description', 'Qty', 'Unit Price', 'Amount']],
         body: invoice.items.map((item) => [
@@ -279,7 +279,11 @@ export function generateInvoicePDF(invoice: InvoiceData, companyInfo?: {
         { align: 'center' }
     )
 
-    doc.save(`Invoice_${invoice.invoice_number}.pdf`)
+    if (options?.filename) {
+        doc.save(options.filename)
+    }
+
+    return doc
 }
 
 // ============================================================================
@@ -335,7 +339,7 @@ export function generatePayslipPDF(payslip: PayslipData, companyInfo?: {
         ...payslip.allowances.map((a) => [a.name, `Rs. ${a.amount.toLocaleString()}`]),
     ]
 
-        ; (doc as any).autoTable({
+        autoTable(doc, {
             startY: 85,
             head: [['Earnings', 'Amount']],
             body: earningsData,
@@ -350,7 +354,7 @@ export function generatePayslipPDF(payslip: PayslipData, companyInfo?: {
         `Rs. ${d.amount.toLocaleString()}`,
     ])
 
-        ; (doc as any).autoTable({
+        autoTable(doc, {
             startY: 85,
             head: [['Deductions', 'Amount']],
             body: deductionsData.length > 0 ? deductionsData : [['None', 'Rs. 0']],
@@ -381,4 +385,493 @@ export function generatePayslipPDF(payslip: PayslipData, companyInfo?: {
     )
 
     doc.save(`Payslip_${payslip.employee_code}_${payslip.pay_period.replace(' ', '_')}.pdf`)
+}
+
+// ============================================================================
+// QUOTATION PDF GENERATION
+// ============================================================================
+
+export interface QuotationData {
+    quotation_number: string
+    quotation_date: string
+    valid_until: string
+    reference_number?: string | null
+    customer_name: string
+    customer_code?: string | null
+    items: {
+        description: string
+        quantity: number
+        unit_price: number
+        line_total: number
+    }[]
+    subtotal: number
+    tax_amount: number
+    discount_amount: number
+    shipping_charges: number
+    total_amount: number
+    notes?: string | null
+    term_and_conditions?: string | null
+}
+
+export function createQuotationPDF(quotation: QuotationData, companyInfo?: {
+    name: string
+    address?: string
+    phone?: string
+    email?: string
+}) {
+    const doc = new jsPDF()
+
+    // Company Header
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyInfo?.name || 'Company Name', 14, 20)
+
+    if (companyInfo?.address) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(companyInfo.address, 14, 27)
+    }
+    if (companyInfo?.phone) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Phone: ${companyInfo.phone}`, 14, 32)
+    }
+    if (companyInfo?.email) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Email: ${companyInfo.email}`, 14, 37)
+    }
+
+    // Quotation Title
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.text('QUOTATION', 150, 20)
+
+    // Quotation Details
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Quotation #: ${quotation.quotation_number}`, 150, 30)
+    doc.text(`Date: ${quotation.quotation_date}`, 150, 36)
+    doc.text(`Valid Until: ${quotation.valid_until}`, 150, 42)
+    if (quotation.reference_number) {
+        doc.text(`Reference: ${quotation.reference_number}`, 150, 48)
+    }
+
+    // Customer Details
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Bill To:', 14, 50)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(quotation.customer_name, 14, 57)
+    if (quotation.customer_code) {
+        doc.text(`Customer Code: ${quotation.customer_code}`, 14, 63)
+    }
+
+    // Items Table
+    autoTable(doc, {
+        startY: 75,
+        head: [['Description', 'Qty', 'Unit Price', 'Line Total']],
+        body: quotation.items.map((item) => [
+            item.description,
+            item.quantity,
+            `Rs. ${item.unit_price.toLocaleString()}`,
+            `Rs. ${item.line_total.toLocaleString()}`,
+        ]),
+        theme: 'grid',
+        headStyles: {
+            fillColor: [71, 85, 105],
+            textColor: 255,
+            fontStyle: 'bold',
+        },
+        columnStyles: {
+            0: { cellWidth: 90 },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 35, halign: 'right' },
+            3: { cellWidth: 35, halign: 'right' },
+        },
+    })
+
+    // Totals
+    const finalY = (doc as any).lastAutoTable.finalY + 10
+    doc.setFontSize(10)
+    doc.text('Subtotal:', 140, finalY)
+    doc.text(`Rs. ${quotation.subtotal.toLocaleString()}`, 180, finalY, { align: 'right' })
+
+    doc.text('Discount:', 140, finalY + 6)
+    doc.text(`Rs. ${quotation.discount_amount.toLocaleString()}`, 180, finalY + 6, { align: 'right' })
+
+    doc.text('Tax:', 140, finalY + 12)
+    doc.text(`Rs. ${quotation.tax_amount.toLocaleString()}`, 180, finalY + 12, { align: 'right' })
+
+    doc.text('Shipping:', 140, finalY + 18)
+    doc.text(`Rs. ${quotation.shipping_charges.toLocaleString()}`, 180, finalY + 18, { align: 'right' })
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.text('Total:', 140, finalY + 26)
+    doc.text(`Rs. ${quotation.total_amount.toLocaleString()}`, 180, finalY + 26, { align: 'right' })
+
+    // Notes and Terms
+    let notesStartY = finalY + 36
+    if (quotation.notes) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.text('Notes:', 14, notesStartY)
+        doc.text(quotation.notes, 14, notesStartY + 6, { maxWidth: 180 })
+        notesStartY += 18
+    }
+    if (quotation.term_and_conditions) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.text('Terms & Conditions:', 14, notesStartY)
+        doc.text(quotation.term_and_conditions, 14, notesStartY + 6, { maxWidth: 180 })
+    }
+
+    return doc
+}
+
+// ============================================================================
+// SALES ORDER PDF GENERATION
+// ============================================================================
+
+export interface SalesOrderPDFData {
+    order_number: string
+    order_date: string
+    expected_delivery_date?: string | null
+    status?: string | null
+    payment_status?: string | null
+    customer_name: string
+    customer_code?: string | null
+    items: {
+        description: string
+        quantity: number
+        unit_price: number
+        line_total: number
+    }[]
+    subtotal: number
+    tax_amount: number
+    discount_amount: number
+    shipping_charges: number
+    total_amount: number
+    notes?: string | null
+}
+
+export function createSalesOrderPDF(order: SalesOrderPDFData, companyInfo?: {
+    name: string
+    address?: string
+    phone?: string
+    email?: string
+}) {
+    const doc = new jsPDF()
+
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyInfo?.name || 'Company Name', 14, 20)
+
+    if (companyInfo?.address) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(companyInfo.address, 14, 27)
+    }
+    if (companyInfo?.phone) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Phone: ${companyInfo.phone}`, 14, 32)
+    }
+
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.text('SALES ORDER', 140, 20)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Order #: ${order.order_number}`, 140, 30)
+    doc.text(`Date: ${order.order_date}`, 140, 36)
+    if (order.expected_delivery_date) {
+        doc.text(`Expected: ${order.expected_delivery_date}`, 140, 42)
+    }
+    if (order.status) {
+        doc.text(`Status: ${order.status}`, 140, 48)
+    }
+    if (order.payment_status) {
+        doc.text(`Payment: ${order.payment_status}`, 140, 54)
+    }
+
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Bill To:', 14, 50)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(order.customer_name, 14, 57)
+    if (order.customer_code) {
+        doc.text(`Customer Code: ${order.customer_code}`, 14, 63)
+    }
+
+    autoTable(doc, {
+        startY: 75,
+        head: [['Description', 'Qty', 'Unit Price', 'Line Total']],
+        body: order.items.map((item) => [
+            item.description,
+            item.quantity,
+            `Rs. ${item.unit_price.toLocaleString()}`,
+            `Rs. ${item.line_total.toLocaleString()}`,
+        ]),
+        theme: 'grid',
+        headStyles: {
+            fillColor: [71, 85, 105],
+            textColor: 255,
+            fontStyle: 'bold',
+        },
+        columnStyles: {
+            0: { cellWidth: 90 },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 35, halign: 'right' },
+            3: { cellWidth: 35, halign: 'right' },
+        },
+    })
+
+    const finalY = (doc as any).lastAutoTable.finalY + 10
+    doc.setFontSize(10)
+    doc.text('Subtotal:', 140, finalY)
+    doc.text(`Rs. ${order.subtotal.toLocaleString()}`, 180, finalY, { align: 'right' })
+
+    doc.text('Discount:', 140, finalY + 6)
+    doc.text(`Rs. ${order.discount_amount.toLocaleString()}`, 180, finalY + 6, { align: 'right' })
+
+    doc.text('Tax:', 140, finalY + 12)
+    doc.text(`Rs. ${order.tax_amount.toLocaleString()}`, 180, finalY + 12, { align: 'right' })
+
+    doc.text('Shipping:', 140, finalY + 18)
+    doc.text(`Rs. ${order.shipping_charges.toLocaleString()}`, 180, finalY + 18, { align: 'right' })
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.text('Total:', 140, finalY + 26)
+    doc.text(`Rs. ${order.total_amount.toLocaleString()}`, 180, finalY + 26, { align: 'right' })
+
+    if (order.notes) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.text('Notes:', 14, finalY + 36)
+        doc.text(order.notes, 14, finalY + 42, { maxWidth: 180 })
+    }
+
+    return doc
+}
+
+// ============================================================================
+// DELIVERY NOTE PDF GENERATION
+// ============================================================================
+
+export interface DeliveryNotePDFData {
+    delivery_note_number: string
+    delivery_date: string
+    status?: string | null
+    tracking_number?: string | null
+    driver_name?: string | null
+    vehicle_number?: string | null
+    customer_name: string
+    customer_code?: string | null
+    order_number?: string | null
+    items: {
+        description: string
+        quantity_delivered: number
+    }[]
+    notes?: string | null
+}
+
+export function createDeliveryNotePDF(note: DeliveryNotePDFData, companyInfo?: {
+    name: string
+    address?: string
+    phone?: string
+    email?: string
+}) {
+    const doc = new jsPDF()
+
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyInfo?.name || 'Company Name', 14, 20)
+
+    if (companyInfo?.address) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(companyInfo.address, 14, 27)
+    }
+    if (companyInfo?.phone) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Phone: ${companyInfo.phone}`, 14, 32)
+    }
+
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.text('DELIVERY NOTE', 140, 20)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Delivery #: ${note.delivery_note_number}`, 140, 30)
+    doc.text(`Date: ${note.delivery_date}`, 140, 36)
+    if (note.order_number) {
+        doc.text(`Order #: ${note.order_number}`, 140, 42)
+    }
+    if (note.status) {
+        doc.text(`Status: ${note.status}`, 140, 48)
+    }
+
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Deliver To:', 14, 50)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(note.customer_name, 14, 57)
+    if (note.customer_code) {
+        doc.text(`Customer Code: ${note.customer_code}`, 14, 63)
+    }
+
+    autoTable(doc, {
+        startY: 75,
+        head: [['Description', 'Qty Delivered']],
+        body: note.items.map((item) => [
+            item.description,
+            item.quantity_delivered,
+        ]),
+        theme: 'grid',
+        headStyles: {
+            fillColor: [71, 85, 105],
+            textColor: 255,
+            fontStyle: 'bold',
+        },
+        columnStyles: {
+            0: { cellWidth: 140 },
+            1: { cellWidth: 40, halign: 'center' },
+        },
+    })
+
+    let metaY = (doc as any).lastAutoTable.finalY + 8
+    doc.setFontSize(9)
+    if (note.tracking_number) {
+        doc.text(`Tracking #: ${note.tracking_number}`, 14, metaY)
+        metaY += 6
+    }
+    if (note.driver_name) {
+        doc.text(`Driver: ${note.driver_name}`, 14, metaY)
+        metaY += 6
+    }
+    if (note.vehicle_number) {
+        doc.text(`Vehicle #: ${note.vehicle_number}`, 14, metaY)
+        metaY += 6
+    }
+    if (note.notes) {
+        doc.text('Notes:', 14, metaY)
+        doc.text(note.notes, 14, metaY + 6, { maxWidth: 180 })
+    }
+
+    return doc
+}
+
+// ============================================================================
+// SALES RETURN PDF GENERATION
+// ============================================================================
+
+export interface SalesReturnPDFData {
+    return_number: string
+    return_date: string
+    status?: string | null
+    reason?: string | null
+    customer_name: string
+    customer_code?: string | null
+    invoice_number?: string | null
+    refund_amount: number
+    items: {
+        description: string
+        quantity_returned: number
+        condition?: string | null
+        action?: string | null
+    }[]
+}
+
+export function createSalesReturnPDF(salesReturn: SalesReturnPDFData, companyInfo?: {
+    name: string
+    address?: string
+    phone?: string
+    email?: string
+}) {
+    const doc = new jsPDF()
+
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyInfo?.name || 'Company Name', 14, 20)
+
+    if (companyInfo?.address) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(companyInfo.address, 14, 27)
+    }
+    if (companyInfo?.phone) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Phone: ${companyInfo.phone}`, 14, 32)
+    }
+
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.text('SALES RETURN', 140, 20)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Return #: ${salesReturn.return_number}`, 140, 30)
+    doc.text(`Date: ${salesReturn.return_date}`, 140, 36)
+    if (salesReturn.invoice_number) {
+        doc.text(`Invoice #: ${salesReturn.invoice_number}`, 140, 42)
+    }
+    if (salesReturn.status) {
+        doc.text(`Status: ${salesReturn.status}`, 140, 48)
+    }
+
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Customer:', 14, 50)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(salesReturn.customer_name, 14, 57)
+    if (salesReturn.customer_code) {
+        doc.text(`Customer Code: ${salesReturn.customer_code}`, 14, 63)
+    }
+
+    autoTable(doc, {
+        startY: 75,
+        head: [['Description', 'Qty Returned', 'Condition', 'Action']],
+        body: salesReturn.items.map((item) => [
+            item.description,
+            item.quantity_returned,
+            item.condition || '-',
+            item.action || '-',
+        ]),
+        theme: 'grid',
+        headStyles: {
+            fillColor: [71, 85, 105],
+            textColor: 255,
+            fontStyle: 'bold',
+        },
+        columnStyles: {
+            0: { cellWidth: 80 },
+            1: { cellWidth: 30, halign: 'center' },
+            2: { cellWidth: 40, halign: 'center' },
+            3: { cellWidth: 40, halign: 'center' },
+        },
+    })
+
+    const finalY = (doc as any).lastAutoTable.finalY + 10
+    doc.setFontSize(10)
+    doc.text('Refund Amount:', 140, finalY)
+    doc.text(`Rs. ${salesReturn.refund_amount.toLocaleString()}`, 180, finalY, { align: 'right' })
+
+    if (salesReturn.reason) {
+        doc.setFontSize(9)
+        doc.text('Reason:', 14, finalY + 10)
+        doc.text(salesReturn.reason, 14, finalY + 16, { maxWidth: 180 })
+    }
+
+    return doc
 }

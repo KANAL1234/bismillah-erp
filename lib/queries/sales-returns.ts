@@ -47,6 +47,37 @@ export function useSalesReturns() {
     })
 }
 
+export function useSalesReturn(id: string) {
+    return useQuery({
+        queryKey: ['sales-return', id],
+        queryFn: async () => {
+            const supabase = createClient()
+            const { data, error } = await supabase
+                .from('sales_returns')
+                .select(`
+                    *,
+                    customers (*),
+                    sales_invoices (invoice_number),
+                    sales_return_items (
+                        *,
+                        products (
+                            id,
+                            name,
+                            sku,
+                            uom_id
+                        )
+                    )
+                `)
+                .eq('id', id)
+                .single()
+
+            if (error) throw error
+            return data
+        },
+        enabled: !!id
+    })
+}
+
 export function useCreateSalesReturn() {
     const queryClient = useQueryClient()
 

@@ -139,10 +139,10 @@ export function useCreateDeliveryNote() {
 
             if (itemsError) throw itemsError
 
-            // 4. Get sales order to retrieve warehouse_id
+            // 4. Get sales order to retrieve warehouse_id and quotation linkage
             const { data: salesOrder } = await supabase
                 .from('sales_orders')
-                .select('warehouse_id')
+                .select('warehouse_id, quotation_id')
                 .eq('id', input.sales_order_id)
                 .single()
 
@@ -183,12 +183,24 @@ export function useCreateDeliveryNote() {
                 }
             }
 
-            // 6. Update Sales Order Status if fully delivered
+            // 6. Update statuses if shipped
             if (input.status === 'shipped') {
                 await supabase
                     .from('sales_orders')
-                    .update({ status: 'shipped' })
+                    .update({ status: 'completed' })
                     .eq('id', input.sales_order_id)
+
+                await supabase
+                    .from('delivery_notes')
+                    .update({ status: 'delivered' })
+                    .eq('id', note.id)
+
+                if (salesOrder?.quotation_id) {
+                    await supabase
+                        .from('sales_quotations')
+                        .update({ status: 'converted' })
+                        .eq('id', salesOrder.quotation_id)
+                }
             }
 
             return note
