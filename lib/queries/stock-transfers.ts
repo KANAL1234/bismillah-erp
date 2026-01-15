@@ -140,38 +140,11 @@ export function useUpdateTransferStatus() {
             if (fetchError) throw fetchError
 
             // Update transfer status
-            const { data: updatedTransfer, error: updateError } = await supabase
-                .from('stock_transfers')
-                .update({ status })
-                .eq('id', id)
-                .neq('status', status) // Prevent duplicate processing if already updated
-                .select()
-                .maybeSingle()
-
-            if (updateError) throw updateError
-
-            // If no update occurred (already completed/same status), skip inventory logic
-            if (!updatedTransfer) {
-                console.log('⚠️ Transfer status already matches target or updated concurrently. Skipping inventory processing.')
-                return { id, status }
-            }
-
-            // If completing, update quantities and create inventory transactions
+            // If completing, update item quantities first so the trigger sees them
             if (status === 'COMPLETED') {
-                console.log('🔄 Starting inventory updates for COMPLETED transfer:', id)
-                console.log('Transfer items:', transfer.stock_transfer_items)
-
                 for (const item of transfer.stock_transfer_items) {
                     const quantityReceived = (quantities && quantities[item.id]) || item.quantity_requested
 
-                    console.log(`📦 Processing item ${item.id}:`, {
-                        product_id: item.product_id,
-                        from_location: transfer.from_location_id,
-                        to_location: transfer.to_location_id,
-                        quantity: quantityReceived
-                    })
-
-                    // Update item quantities
                     await supabase
                         .from('stock_transfer_items')
                         .update({
@@ -179,97 +152,35 @@ export function useUpdateTransferStatus() {
                             quantity_received: quantityReceived,
                         })
                         .eq('id', item.id)
+                }
+            }
 
-                    // Reduce stock at FROM location
-                    const { data: fromStock, error: fromStockError } = await supabase
-                        .from('inventory_stock')
-                        .select('quantity_on_hand, quantity_available, average_cost')
-                        .eq('product_id', item.product_id)
-                        .eq('location_id', transfer.from_location_id)
-                        .single()
+            // Update transfer status - this fires the database trigger
+            const { data: updatedTransfer, error: updateError } = await supabase
+                .from('stock_transfers')
+                .update({ status })
+                .eq('id', id)
+                .neq('status', status)
+                .select()
+                .maybeSingle()
 
-                    if (fromStockError) {
-                        console.error('Error fetching FROM stock:', fromStockError)
-                        throw new Error(`Failed to fetch FROM location stock: ${fromStockError.message}`)
-                    }
+            if (updateError) throw updateError
 
-                    if (fromStock) {
-                        const newQuantity = fromStock.quantity_on_hand - item.quantity_requested
-                        const { error: updateFromError } = await supabase
-                            .from('inventory_stock')
-                            .update({
-                                quantity_on_hand: newQuantity,
-                                quantity_available: newQuantity, // Will be stored after migration
-                                total_value: newQuantity * (fromStock.average_cost || 0),
-                                last_updated: new Date().toISOString()
-                            })
-                            .eq('product_id', item.product_id)
-                            .eq('location_id', transfer.from_location_id)
+            // If no update occurred (already completed/same status), skip transaction logs
+            if (!updatedTransfer) {
+                console.log('⚠️ Transfer status already matches target or updated concurrently. Skipping transaction logs.')
+                return { id, status }
+            }
 
-                        if (updateFromError) {
-                            console.error('Error updating FROM stock:', updateFromError)
-                            throw new Error(`Failed to update FROM location stock: ${updateFromError.message}`)
-                        }
-                    }
-
-                    // Increase stock at TO location
-                    const { data: toStock, error: toStockError } = await supabase
-                        .from('inventory_stock')
-                        .select('quantity_on_hand, quantity_available, average_cost')
-                        .eq('product_id', item.product_id)
-                        .eq('location_id', transfer.to_location_id)
-                        .single()
-
-                    // Ignore "not found" errors for TO location (we'll create it)
-                    if (toStockError && toStockError.code !== 'PGRST116') {
-                        console.error('Error fetching TO stock:', toStockError)
-                        throw new Error(`Failed to fetch TO location stock: ${toStockError.message}`)
-                    }
-
-                    if (toStock) {
-                        const newQuantity = toStock.quantity_on_hand + quantityReceived
-                        const { error: updateToError } = await supabase
-                            .from('inventory_stock')
-                            .update({
-                                quantity_on_hand: newQuantity,
-                                quantity_available: newQuantity,
-                                total_value: newQuantity * (toStock.average_cost || 0),
-                                last_updated: new Date().toISOString()
-                            })
-                            .eq('product_id', item.product_id)
-                            .eq('location_id', transfer.to_location_id)
-
-                        if (updateToError) {
-                            console.error('Error updating TO stock:', updateToError)
-                            throw new Error(`Failed to update TO location stock: ${updateToError.message}`)
-                        }
-                    } else {
-                        // Create new record for TO location
-                        const { error: insertError } = await supabase
-                            .from('inventory_stock')
-                            .insert({
-                                product_id: item.product_id,
-                                location_id: transfer.to_location_id,
-                                quantity_on_hand: quantityReceived,
-                                quantity_available: quantityReceived,
-                                average_cost: item.unit_cost,
-                                total_value: quantityReceived * item.unit_cost,
-                                last_updated: new Date().toISOString()
-                            })
-
-                        if (insertError) {
-                            console.error('Error inserting TO stock:', insertError)
-                            throw new Error(`Failed to create TO location stock: ${insertError.message}`)
-                        }
-                    }
-
-                    console.log(`✅ Successfully updated inventory for item ${item.id}`)
+            // Create inventory transactions (logs only, trigger doesn't do this)
+            if (status === 'COMPLETED') {
+                for (const item of transfer.stock_transfer_items) {
+                    const quantityReceived = (quantities && quantities[item.id]) || item.quantity_requested
 
                     // Fetch transaction types
                     const { data: outType } = await supabase.from('transaction_types').select('id').eq('code', 'TRANSFER_OUT').single()
                     const { data: inType } = await supabase.from('transaction_types').select('id').eq('code', 'TRANSFER_IN').single()
 
-                    // Create inventory transactions
                     if (outType && inType) {
                         await supabase.from('inventory_transactions').insert([
                             {
