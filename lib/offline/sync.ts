@@ -1,145 +1,161 @@
 // lib/offline/sync.ts
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { processQueue, getQueueStats, resetQueueRetries } from './queue'
 import { toast } from 'sonner'
 
-// Check if online
-export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(
-    typeof window !== 'undefined' ? navigator.onLine : true
-  )
+// Global state to prevent redundant listeners and sync storms
+let isGlobalSyncing = false;
+let lastSyncTime = 0;
+const MIN_SYNC_INTERVAL = 5000; // 5 seconds minimum between automated syncs
 
-  useEffect(() => {
-    function handleOnline() {
-      setIsOnline(true)
-      toast.success('Back online! Syncing data...')
-      // Trigger sync when back online
-      syncNow()
-    }
+// Check if online (Module level to keep state consistent)
+let globalOnlineStatus = typeof window !== 'undefined' ? navigator.onLine : true;
+const onlineListeners = new Set<(online: boolean) => void>();
 
-    function handleOffline() {
-      setIsOnline(false)
-      toast.warning('You are offline. Data will be saved locally.')
-    }
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    globalOnlineStatus = true;
+    onlineListeners.forEach(l => l(true));
+    // Trigger deliberate summary toast instead of multiple small ones
+    toast.success('System Online', {
+      description: 'Attempting to sync local changes...',
+      id: 'online-status-toast'
+    });
+    syncNow();
+  });
 
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [])
-
-  return isOnline
+  window.addEventListener('offline', () => {
+    globalOnlineStatus = false;
+    onlineListeners.forEach(l => l(false));
+    toast.warning('System Offline', {
+      description: 'Changes will be saved to your device',
+      id: 'online-status-toast'
+    });
+  });
 }
 
-// Sync now
+export function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(globalOnlineStatus);
+
+  useEffect(() => {
+    const listener = (status: boolean) => setIsOnline(status);
+    onlineListeners.add(listener);
+    return () => {
+      onlineListeners.delete(listener);
+    }
+  }, []);
+
+  return isOnline;
+}
+
+// Sync now with primitive locking
 export async function syncNow(): Promise<boolean> {
-  if (!navigator.onLine) {
-    console.log('⚠️ Cannot sync: offline')
-    return false
+  if (!navigator.onLine || isGlobalSyncing) {
+    return false;
+  }
+
+  // Throttle automated syncs
+  const now = Date.now();
+  if (now - lastSyncTime < 2000) { // 2 second hard throttle
+    return false;
   }
 
   try {
-    const result = await processQueue()
+    isGlobalSyncing = true;
+    lastSyncTime = now;
+
+    const result = await processQueue();
 
     if (result.processed > 0) {
-      toast.success(`✅ Synced ${result.processed} items`)
+      toast.success('Sync Complete', {
+        description: `Successfully uploaded ${result.processed} items.`,
+        duration: 3000,
+      });
     }
 
     if (result.failed > 0) {
-      toast.error(`❌ Failed to sync ${result.failed} items`)
+      toast.error('Sync Summary', {
+        description: `${result.failed} items failed to upload. Check your connection.`,
+      });
     }
 
-    return result.remaining === 0
+    return result.remaining === 0;
   } catch (error) {
-    console.error('Sync error:', error)
-    toast.error('Sync failed. Will retry later.')
-    return false
+    console.error('Core Sync error:', error);
+    return false;
+  } finally {
+    isGlobalSyncing = false;
   }
 }
 
 // Auto-sync hook
-export function useAutoSync(intervalMs: number = 30000) {
-  const isOnline = useOnlineStatus()
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [stats, setStats] = useState({ total: 0, pending: 0, retrying: 0, failed: 0 })
+export function useAutoSync(intervalMs: number = 60000) {
+  const isOnline = useOnlineStatus();
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [stats, setStats] = useState({ total: 0, pending: 0, retrying: 0, failed: 0 });
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Update stats
+  const updateStats = useCallback(async () => {
+    const queueStats = await getQueueStats();
+    setStats(queueStats);
+  }, []);
+
+  // Update stats periodically
   useEffect(() => {
-    async function updateStats() {
-      const queueStats = await getQueueStats()
-      setStats(queueStats)
+    updateStats();
+    const id = setInterval(updateStats, 5000);
+    return () => clearInterval(id);
+  }, [updateStats]);
+
+  // Handle automated sync trigger
+  useEffect(() => {
+    if (!isOnline) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
     }
 
-    updateStats()
-    const interval = setInterval(updateStats, 5000) // Update every 5 seconds
+    const triggerSync = async () => {
+      if (isGlobalSyncing) return;
 
-    return () => clearInterval(interval)
-  }, [])
+      const currentStats = await getQueueStats();
+      if (currentStats.total === 0) return;
 
-  // Auto-sync when online
-  useEffect(() => {
-    if (!isOnline) return
+      setIsSyncing(true);
+      await syncNow();
+      setIsSyncing(false);
+      await updateStats();
+    };
 
-    async function sync() {
-      if (isSyncing) return
+    // Initial sync check when coming online
+    triggerSync();
 
-      const queueStats = await getQueueStats()
-      if (queueStats.total === 0) return
+    // Set up interval for background sync
+    intervalRef.current = setInterval(triggerSync, intervalMs);
 
-      setIsSyncing(true)
-      await syncNow()
-      setIsSyncing(false)
-    }
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isOnline, intervalMs, updateStats]);
 
-    // Sync immediately when coming online
-    sync()
-
-    // Then sync at intervals
-    const interval = setInterval(sync, intervalMs)
-
-    return () => clearInterval(interval)
-  }, [isOnline, intervalMs, isSyncing])
-
-  return { isOnline, isSyncing, stats, syncNow, resetQueueRetries }
+  return { isOnline, isSyncing: isSyncing || isGlobalSyncing, stats, syncNow, resetQueueRetries };
 }
 
-// Background sync (using Service Worker)
+// Background sync (Generic fallback)
 export function registerBackgroundSync() {
-  if ('serviceWorker' in navigator && 'sync' in ServiceWorkerRegistration.prototype) {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     navigator.serviceWorker.ready.then((registration) => {
       if ('sync' in registration) {
-        // @ts-ignore - SyncManager is not in default TS types
-        return (registration as any).sync.register('sync-queue')
+        // @ts-ignore
+        return (registration as any).sync.register('sync-queue');
       }
-      // If 'sync' is not in registration (shouldn't happen given the outer check),
-      // return a resolved promise to avoid breaking the chain.
-      return Promise.resolve()
-    }).then(() => {
-      console.log('✅ Background sync registered')
-    }).catch((error) => {
-      console.error('❌ Background sync registration failed:', error)
-    })
+    }).catch(console.error);
   }
-}
-
-// Request persistent storage
-export async function requestPersistentStorage(): Promise<boolean> {
-  if ('storage' in navigator && 'persist' in navigator.storage) {
-    const isPersisted = await navigator.storage.persist()
-
-    if (isPersisted) {
-      console.log('✅ Persistent storage granted')
-      toast.success('Offline data will be preserved')
-    } else {
-      console.log('⚠️ Persistent storage not granted')
-    }
-
-    return isPersisted
-  }
-  return false
 }
