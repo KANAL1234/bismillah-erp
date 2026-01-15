@@ -115,7 +115,17 @@ async function processQueueItem(item: QueueItem): Promise<boolean> {
 
         // Resolve driver if it's on a trip
         if (saleData.trip_id) {
-          // We might want to ensure trip exists or resolve other fields but keep it simple for now
+          // Verify Trip exists before inserting sale to avoid FK constraint error
+          const { data: tripExists } = await supabase
+            .from('fleet_trips')
+            .select('id')
+            .eq('id', saleData.trip_id)
+            .maybeSingle()
+          
+          if (!tripExists) {
+            console.warn(`⚠️ Trip ${saleData.trip_id} not found in DB. Unlinking sale to prevent sync failure.`)
+            saleData.trip_id = null
+          }
         }
 
         // 1. Check if sale already exists (Idempotency check)

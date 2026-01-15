@@ -15,6 +15,21 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
 import Link from 'next/link'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 
 export default function MobilePOSPage() {
     const supabase = createClient()
@@ -24,6 +39,22 @@ export default function MobilePOSPage() {
     const [cart, setCart] = useState<any[]>([])
     const [locationId, setLocationId] = useState<string | null>(null)
     const [vehicleInfo, setVehicleInfo] = useState<string>('')
+    const [isCheckoutOpen, setIsCheckoutOpen] = useState(false)
+    const [amountPaid, setAmountPaid] = useState('')
+    const [customerId, setCustomerId] = useState<string | null>(null)
+
+    // Fetch customers for the checkout dropdown
+    const { data: customers } = useQuery({
+        queryKey: ['pos-customers'],
+        queryFn: async () => {
+            const { data } = await supabase
+                .from('customers')
+                .select('id, name')
+                .eq('is_active', true)
+                .order('name')
+            return data || []
+        }
+    })
 
     // Check for active trip
     const { data: activeTrip, isLoading: tripLoading } = useQuery({
@@ -138,7 +169,7 @@ export default function MobilePOSPage() {
         return cart.reduce((sum, item) => sum + ((item.selling_price || 0) * item.quantity), 0)
     }
 
-    const handleCheckout = async () => {
+    const handleCompleteSale = async () => {
         if (!locationId) {
             toast.error('No vehicle selected')
             return
@@ -148,24 +179,33 @@ export default function MobilePOSPage() {
             return
         }
 
+        const total = calculateTotal()
+        const paid = parseFloat(amountPaid) || 0
+
+        if (paid < total) {
+            toast.error('Payment amount is less than total')
+            return
+        }
+
         const saleData = {
             location_id: locationId,
-            total_amount: calculateTotal(),
+            customer_id: customerId || null,
+            total_amount: total,
+            subtotal: total,
+            tax_amount: 0,
+            discount_amount: 0,
+            amount_paid: paid,
             payment_method: 'CASH',
             sale_date: new Date().toISOString(),
         }
 
+        const tripId = activeTrip?.id || localStorage.getItem('current_trip_id')
+
         if (isOnline) {
             const saleNumber = `POS-${Date.now()}`
-            const tripId = activeTrip?.id || localStorage.getItem('current_trip_id')
-
             const { data: sale, error: saleError } = await supabase.from('pos_sales').insert({
                 ...saleData,
                 sale_number: saleNumber,
-                subtotal: saleData.total_amount,
-                tax_amount: 0,
-                discount_amount: 0,
-                amount_paid: saleData.total_amount,
                 is_synced: true,
                 trip_id: tripId
             }).select('id').single()
@@ -176,7 +216,7 @@ export default function MobilePOSPage() {
                 return
             }
 
-            // Insert sale items
+            // Insert sale items and update stock (stock is already handled by queue, but since we are online we should probably do it here or let the queue handle it - but usually online direct insert should handle stock too for immediate consistency)
             if (sale && cart.length > 0) {
                 const saleItems = cart.map(item => ({
                     sale_id: sale.id,
@@ -193,11 +233,19 @@ export default function MobilePOSPage() {
                 if (itemsError) {
                     console.error('Failed to save sale items:', itemsError)
                 }
+
+                // Immediate stock reduction for online sales
+                for (const item of cart) {
+                    await supabase.rpc('adjust_inventory_stock', {
+                        p_product_id: item.id,
+                        p_location_id: locationId,
+                        p_quantity_change: -item.quantity
+                    })
+                }
             }
 
             toast.success('Sale completed successfully!')
         } else {
-            const tripId = localStorage.getItem('current_trip_id')
             await addToQueue('CREATE_POS_SALE', {
                 ...saleData,
                 items: cart.map(item => ({
@@ -207,10 +255,6 @@ export default function MobilePOSPage() {
                     total_amount: (item.selling_price || 0) * item.quantity
                 })),
                 sale_number: `POS-OFF-${Date.now()}`,
-                subtotal: saleData.total_amount,
-                tax_amount: 0,
-                discount_amount: 0,
-                amount_paid: saleData.total_amount,
                 is_synced: false,
                 trip_id: tripId
             })
@@ -218,7 +262,12 @@ export default function MobilePOSPage() {
         }
 
         setCart([])
+        setIsCheckoutOpen(false)
+        setAmountPaid('')
+        setCustomerId('')
     }
+
+    const change = (parseFloat(amountPaid) || 0) - calculateTotal()
 
     // Show loading state while checking trip
     if (tripLoading) {
@@ -388,7 +437,7 @@ export default function MobilePOSPage() {
                                     <div key={item.id} className="flex items-start justify-between bg-slate-50/50 p-2 rounded-lg border border-slate-100">
                                         <div className="flex-1 pr-4">
                                             <p className="font-bold text-xs text-slate-800 line-clamp-1">{item.name}</p>
-                                            <p className="text-[10px] font-black text-blue-600 mt-0.5">PKR {item.selling_price?.toLocaleString()}</p>
+                                            <p className="text-[10px] font-black text-blue-600 mt-0.5">Rs. {item.selling_price?.toLocaleString()}</p>
                                         </div>
                                         <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-sm">
                                             <button
@@ -418,12 +467,15 @@ export default function MobilePOSPage() {
                             <div>
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Estimated Total</p>
                                 <p className="text-2xl font-black text-slate-900 leading-none mt-1 uppercase">
-                                    <span className="text-sm font-bold mr-1">PKR</span>
+                                    <span className="text-sm font-bold mr-1">Rs.</span>
                                     {calculateTotal().toLocaleString()}
                                 </p>
                             </div>
                             <Button
-                                onClick={handleCheckout}
+                                onClick={() => {
+                                    setAmountPaid(calculateTotal().toString())
+                                    setIsCheckoutOpen(true)
+                                }}
                                 size="lg"
                                 className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 active:scale-95 transition-all px-8 h-12 rounded-xl"
                             >
@@ -434,6 +486,67 @@ export default function MobilePOSPage() {
                     </div>
                 </div>
             )}
+
+            {/* Checkout Dialog */}
+            <Dialog open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Complete Sale</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-6 py-4">
+                        <div className="space-y-2">
+                            <Label>Select Customer (Optional)</Label>
+                            <Select value={customerId || undefined} onValueChange={setCustomerId}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Choose customer..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {customers?.map((c) => (
+                                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="bg-slate-50 p-4 rounded-xl space-y-3">
+                            <div className="flex justify-between items-center text-slate-600">
+                                <span>Total Amount</span>
+                                <span className="font-bold text-slate-900">Rs. {calculateTotal().toLocaleString()}</span>
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label className="text-xs uppercase font-bold text-slate-400">Amount Received</Label>
+                                <Input
+                                    type="number"
+                                    value={amountPaid}
+                                    onChange={(e) => setAmountPaid(e.target.value)}
+                                    placeholder="Enter amount..."
+                                    className="text-2xl h-14 font-bold text-blue-600 focus:ring-blue-500"
+                                    autoFocus
+                                />
+                            </div>
+                            <Separator />
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-600">Change Due</span>
+                                <span className={`text-2xl font-black ${change < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                    Rs. {change > 0 ? change.toLocaleString() : '0'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter className="sm:justify-start gap-2">
+                        <Button
+                            className="flex-1 h-12 text-lg font-bold"
+                            disabled={change < 0 || !amountPaid}
+                            onClick={handleCompleteSale}
+                        >
+                            Complete Sale
+                        </Button>
+                        <Button variant="outline" onClick={() => setIsCheckoutOpen(false)} className="h-12">
+                            Cancel
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
