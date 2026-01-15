@@ -370,11 +370,6 @@ function VendorBillsContent() {
                                                         {/* Posted/Approved status actions */}
                                                         {(bill.status === 'approved' || bill.status === 'posted' || bill.status === 'goods_received') && (
                                                             <>
-                                                                <DropdownMenuSeparator />
-                                                                <DropdownMenuItem onClick={() => openPaymentDialog(bill)}>
-                                                                    <CreditCard className="mr-2 h-4 w-4" />
-                                                                    Record Payment
-                                                                </DropdownMenuItem>
                                                                 {(bill as any).journal_entry_id && (
                                                                     <DropdownMenuItem asChild>
                                                                         <Link href={`/dashboard/accounting/journal-entries/${(bill as any).journal_entry_id}`}>
@@ -414,7 +409,7 @@ function VendorBillsContent() {
                                                         )}
 
                                                         {/* Payment history - when has payments */}
-                                                        {(bill.payment_status === 'partial' || bill.payment_status === 'paid') && (
+                                                        {bill.total_amount > bill.amount_due && (
                                                             <>
                                                                 <DropdownMenuSeparator />
                                                                 <DropdownMenuItem asChild>
