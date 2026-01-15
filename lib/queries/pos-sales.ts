@@ -9,6 +9,8 @@ export function usePOSSales(locationId?: string, startDate?: string, endDate?: s
     return useQuery({
         queryKey: ['pos-sales', locationId, startDate, endDate],
         queryFn: async () => {
+            console.log('🔍 Fetching POS Sales with filters:', { locationId, startDate, endDate })
+
             let query = supabase
                 .from('pos_sales')
                 .select(`
@@ -19,25 +21,33 @@ export function usePOSSales(locationId?: string, startDate?: string, endDate?: s
           ),
           customers(id, customer_code, name),
           locations(id, code, name),
-          cashier:user_profiles!cashier_id(id, full_name)
+          cashier:user_profiles(id, full_name)
         `)
                 .order('created_at', { ascending: false })
 
             if (locationId) {
+                console.log('📍 Filtering by location:', locationId)
                 query = query.eq('location_id', locationId)
             }
 
             if (startDate) {
+                console.log('📅 Start date filter:', startDate)
                 query = query.gte('sale_date', startDate)
             }
 
             if (endDate) {
+                console.log('📅 End date filter:', endDate)
                 query = query.lte('sale_date', endDate)
             }
 
             const { data, error } = await query
 
-            if (error) throw error
+            if (error) {
+                console.error('❌ POS Sales Query Error:', error)
+                throw error
+            }
+
+            console.log('✅ POS Sales fetched:', data?.length || 0, 'sales')
             return data
         },
     })
@@ -48,6 +58,8 @@ export function usePOSSale(id: string) {
     return useQuery({
         queryKey: ['pos-sales', id],
         queryFn: async () => {
+            console.log('🔍 Fetching single POS Sale:', id)
+
             const { data, error } = await supabase
                 .from('pos_sales')
                 .select(`
@@ -58,12 +70,17 @@ export function usePOSSale(id: string) {
           ),
           customers(id, customer_code, name, phone),
           locations(id, code, name),
-          cashier:user_profiles!cashier_id(id, full_name)
+          cashier:user_profiles(id, full_name)
         `)
                 .eq('id', id)
                 .single()
 
-            if (error) throw error
+            if (error) {
+                console.error('❌ Single POS Sale Query Error:', error)
+                throw error
+            }
+
+            console.log('✅ POS Sale fetched:', data?.sale_number)
             return data
         },
         enabled: !!id,
@@ -77,16 +94,24 @@ export function useTodaySales(locationId: string) {
     return useQuery({
         queryKey: ['pos-sales', 'today', locationId],
         queryFn: async () => {
+            console.log('🔍 Fetching Today\'s Sales for location:', locationId, 'date:', today)
+
             const { data, error } = await supabase
                 .from('pos_sales')
                 .select(`
           *,
-          pos_sale_items(quantity, line_total)
+          pos_sale_items(quantity, line_total),
+          customers(name)
         `)
                 .eq('location_id', locationId)
                 .gte('sale_date', today)
 
-            if (error) throw error
+            if (error) {
+                console.error('❌ Today\'s Sales Query Error:', error)
+                throw error
+            }
+
+            console.log('✅ Today\'s Sales fetched:', data?.length || 0, 'sales')
             return data
         },
         enabled: !!locationId,
