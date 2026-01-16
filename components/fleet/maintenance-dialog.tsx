@@ -44,7 +44,7 @@ const formSchema = z.object({
     vendor_name: z.string().optional(),
     next_service_due_date: z.string().optional(),
     next_service_due_mileage: z.string().optional(),
-    payment_method: z.enum(["CASH", "CREDIT"]),
+    payment_method: z.enum(["CASH", "CREDIT", "ADVANCE"]),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -295,6 +295,7 @@ export function MaintenanceDialog({ maintenance, trigger, open, onOpenChange, on
                                         <SelectContent>
                                             <SelectItem value="CASH">Cash</SelectItem>
                                             <SelectItem value="CREDIT">Credit (Payable)</SelectItem>
+                                            <SelectItem value="ADVANCE">Driver Advance</SelectItem>
                                         </SelectContent>
                                     </Select>
                                     <FormMessage />

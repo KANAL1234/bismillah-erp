@@ -1311,7 +1311,7 @@ export default function SystemHealthPage() {
                 accountingInvoiceId = accInv.id
             }
 
-            const { data: invPost, error: invPostError } = await supabase.rpc('post_customer_invoice', { p_invoice_id: accInv.id })
+            const { data: invPost, error: invPostError } = await supabase.rpc('post_customer_invoice', { p_invoice_id: accountingInvoiceId })
             if (invPostError) throw invPostError
             if (!invPost?.success) throw new Error(`Invoice GL posting failed: ${invPost?.error || 'Unknown error'}`)
 
@@ -1319,7 +1319,7 @@ export default function SystemHealthPage() {
                 .from('journal_entries')
                 .select('id, total_debit, total_credit')
                 .eq('reference_type', 'CUSTOMER_INVOICE')
-                .eq('reference_id', accInv.id)
+                .eq('reference_id', accountingInvoiceId)
                 .single()
 
             if (!invJournal) throw new Error('Invoice journal entry not found')
