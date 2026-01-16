@@ -4,13 +4,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { useJournalEntries, usePostJournalEntry } from '@/lib/queries/journal-entries'
+import { useJournalEntries, usePostJournalEntry, useDeleteJournalEntry } from '@/lib/queries/journal-entries'
 import { PermissionGuard } from '@/components/permission-guard'
-import { FileText, Plus, CheckCircle, Eye, Send } from 'lucide-react'
+import { FileText, Plus, CheckCircle, Eye, Send, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 import { ListSortControls } from '@/components/list-sort-controls'
 import { useMemo, useState } from 'react'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 export default function JournalEntriesPage() {
     return (
@@ -23,8 +34,10 @@ export default function JournalEntriesPage() {
 function JournalEntriesContent() {
     const { data: entries, isLoading } = useJournalEntries()
     const postEntry = usePostJournalEntry()
+    const deleteEntry = useDeleteJournalEntry()
     const [sortBy, setSortBy] = useState('journal_date')
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+    const [entryToDelete, setEntryToDelete] = useState<{ id: string, number: string } | null>(null)
 
     const getStatusBadge = (status: string) => {
         const colors: Record<string, string> = {
@@ -185,15 +198,55 @@ function JournalEntriesContent() {
                                                     </Link>
                                                 </Button>
                                                 {entry.status === 'draft' && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => postEntry.mutate(entry.id)}
-                                                        disabled={postEntry.isPending}
-                                                    >
-                                                        <Send className="mr-2 h-4 w-4" />
-                                                        Post
-                                                    </Button>
+                                                    <>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => postEntry.mutate(entry.id)}
+                                                            disabled={postEntry.isPending}
+                                                        >
+                                                            <Send className="mr-2 h-4 w-4" />
+                                                            Post
+                                                        </Button>
+                                                        <PermissionGuard permission="accounting.journal_entries.delete">
+                                                            <AlertDialog
+                                                                open={entryToDelete?.id === entry.id}
+                                                                onOpenChange={(open) => !open && setEntryToDelete(null)}
+                                                            >
+                                                                <AlertDialogTrigger asChild>
+                                                                    <Button
+                                                                        variant="destructive"
+                                                                        size="sm"
+                                                                        onClick={() => setEntryToDelete({ id: entry.id, number: entry.journal_number })}
+                                                                    >
+                                                                        <Trash2 className="mr-2 h-4 w-4" />
+                                                                        Delete
+                                                                    </Button>
+                                                                </AlertDialogTrigger>
+                                                                <AlertDialogContent>
+                                                                    <AlertDialogHeader>
+                                                                        <AlertDialogTitle>Delete Journal Entry?</AlertDialogTitle>
+                                                                        <AlertDialogDescription>
+                                                                            Are you sure you want to delete journal entry <strong>{entryToDelete?.number}</strong>?
+                                                                            This action cannot be undone.
+                                                                        </AlertDialogDescription>
+                                                                    </AlertDialogHeader>
+                                                                    <AlertDialogFooter>
+                                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                        <AlertDialogAction
+                                                                            onClick={() => entryToDelete && deleteEntry.mutate(entryToDelete.id, {
+                                                                                onSuccess: () => setEntryToDelete(null),
+                                                                            })}
+                                                                            className="bg-red-600 hover:bg-red-700"
+                                                                            disabled={deleteEntry.isPending}
+                                                                        >
+                                                                            {deleteEntry.isPending ? 'Deleting...' : 'Delete'}
+                                                                        </AlertDialogAction>
+                                                                    </AlertDialogFooter>
+                                                                </AlertDialogContent>
+                                                            </AlertDialog>
+                                                        </PermissionGuard>
+                                                    </>
                                                 )}
                                             </div>
                                         </TableCell>
