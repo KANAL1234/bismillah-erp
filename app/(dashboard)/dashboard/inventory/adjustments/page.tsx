@@ -83,6 +83,13 @@ function StockAdjustmentsContent() {
         return labels[type as keyof typeof labels] || type
     }
 
+    const formatDate = (value: string | null | undefined, pattern: string) => {
+        if (!value) return '-'
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return '-'
+        return format(date, pattern)
+    }
+
     const handleSubmit = async (id: string, adjustmentNumber: string) => {
         try {
             await submitAdjustment.mutateAsync(id)
@@ -259,14 +266,14 @@ function StockAdjustmentsContent() {
                                                             <TableCell className="font-bold text-slate-900">
                                                                 {adjustment.adjustment_number}
                                                             </TableCell>
-                                                            <TableCell className="font-medium">{adjustment.locations.name}</TableCell>
+                                                            <TableCell className="font-medium">{adjustment.locations?.name || 'Unknown'}</TableCell>
                                                             <TableCell>
                                                                 <Badge variant="outline" className="bg-amber-50 border-amber-200 text-amber-700">
                                                                     {getTypeLabel(adjustment.adjustment_type)}
                                                                 </Badge>
                                                             </TableCell>
                                                             <TableCell className="text-slate-600">
-                                                                {format(new Date(adjustment.adjustment_date), 'MMM dd, yyyy')}
+                                                                {formatDate(adjustment.adjustment_date, 'MMM dd, yyyy')}
                                                             </TableCell>
                                                             <TableCell className="text-right">
                                                                 <Badge variant="secondary" className="font-normal">

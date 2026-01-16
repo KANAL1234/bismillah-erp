@@ -53,8 +53,19 @@ export default function TransferDetailsPage() {
         return colors[status as keyof typeof colors] || 'secondary'
     }
 
-    const totalQuantity = transfer.stock_transfer_items?.reduce((sum: number, item: any) => sum + item.quantity_requested, 0) || 0
-    const totalValue = transfer.stock_transfer_items?.reduce((sum: number, item: any) => sum + (item.quantity_requested * item.unit_cost), 0) || 0
+    const formatDate = (value: string | null | undefined, pattern: string) => {
+        if (!value) return '-'
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return '-'
+        return format(date, pattern)
+    }
+
+    const totalQuantity = transfer.stock_transfer_items?.reduce((sum: number, item: any) => {
+        return sum + Number(item.quantity_requested || 0)
+    }, 0) || 0
+    const totalValue = transfer.stock_transfer_items?.reduce((sum: number, item: any) => {
+        return sum + (Number(item.quantity_requested || 0) * Number(item.unit_cost || 0))
+    }, 0) || 0
 
     return (
         <div className="space-y-6">
@@ -69,7 +80,7 @@ export default function TransferDetailsPage() {
                             {transfer.status.replace('_', ' ')}
                         </Badge>
                     </div>
-                    <p className="text-slate-500 text-sm">Created on {format(new Date(transfer.created_at), 'MMMM dd, yyyy')}</p>
+                    <p className="text-slate-500 text-sm">Created on {formatDate(transfer.created_at, 'MMMM dd, yyyy')}</p>
                 </div>
             </div>
 
@@ -84,16 +95,16 @@ export default function TransferDetailsPage() {
                         <div className="flex items-center justify-between">
                             <div className="text-center flex-1">
                                 <p className="text-xs text-slate-400 mb-1">From</p>
-                                <p className="font-bold text-slate-900">{transfer.from_location.name}</p>
-                                <p className="text-xs text-slate-500">{transfer.from_location.code}</p>
+                                <p className="font-bold text-slate-900">{transfer.from_location?.name || 'Unknown'}</p>
+                                <p className="text-xs text-slate-500">{transfer.from_location?.code || '-'}</p>
                             </div>
                             <div className="px-4 text-slate-300">
                                 <ArrowRight className="h-6 w-6" />
                             </div>
                             <div className="text-center flex-1">
                                 <p className="text-xs text-slate-400 mb-1">To</p>
-                                <p className="font-bold text-slate-900">{transfer.to_location.name}</p>
-                                <p className="text-xs text-slate-500">{transfer.to_location.code}</p>
+                                <p className="font-bold text-slate-900">{transfer.to_location?.name || 'Unknown'}</p>
+                                <p className="text-xs text-slate-500">{transfer.to_location?.code || '-'}</p>
                             </div>
                         </div>
                     </CardContent>
@@ -108,11 +119,11 @@ export default function TransferDetailsPage() {
                     <CardContent className="space-y-3">
                         <div className="flex justify-between">
                             <span className="text-slate-500">Transfer Date:</span>
-                            <span className="font-medium">{format(new Date(transfer.transfer_date), 'MMM dd, yyyy')}</span>
+                            <span className="font-medium">{formatDate(transfer.transfer_date, 'MMM dd, yyyy')}</span>
                         </div>
                         <div className="flex justify-between border-t pt-2">
                             <span className="text-slate-500">Last Updated:</span>
-                            <span className="font-medium">{format(new Date(transfer.updated_at), 'MMM dd, yyyy HH:mm')}</span>
+                            <span className="font-medium">{formatDate(transfer.updated_at, 'MMM dd, yyyy HH:mm')}</span>
                         </div>
                     </CardContent>
                 </Card>
@@ -169,17 +180,21 @@ export default function TransferDetailsPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {transfer.stock_transfer_items?.map((item: any) => (
-                                <TableRow key={item.id}>
-                                    <TableCell className="font-medium text-slate-900">{item.products.name}</TableCell>
-                                    <TableCell className="text-slate-500 text-xs">{item.products.sku}</TableCell>
-                                    <TableCell className="text-right font-medium">{item.quantity_requested.toLocaleString()}</TableCell>
-                                    <TableCell className="text-right">{item.quantity_sent?.toLocaleString() || '-'}</TableCell>
-                                    <TableCell className="text-right font-bold text-slate-900">{item.quantity_received?.toLocaleString() || '-'}</TableCell>
-                                    <TableCell className="text-right text-slate-500">Rs. {item.unit_cost.toLocaleString()}</TableCell>
-                                    <TableCell className="text-right font-bold">Rs. {(item.quantity_requested * item.unit_cost).toLocaleString()}</TableCell>
-                                </TableRow>
-                            ))}
+                            {transfer.stock_transfer_items?.map((item: any) => {
+                                const requestedQty = Number(item.quantity_requested || 0)
+                                const unitCost = Number(item.unit_cost || 0)
+                                return (
+                                    <TableRow key={item.id}>
+                                        <TableCell className="font-medium text-slate-900">{item.products?.name || 'Unknown product'}</TableCell>
+                                        <TableCell className="text-slate-500 text-xs">{item.products?.sku || '-'}</TableCell>
+                                        <TableCell className="text-right font-medium">{requestedQty.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right">{item.quantity_sent != null ? Number(item.quantity_sent).toLocaleString() : '-'}</TableCell>
+                                        <TableCell className="text-right font-bold text-slate-900">{item.quantity_received != null ? Number(item.quantity_received).toLocaleString() : '-'}</TableCell>
+                                        <TableCell className="text-right text-slate-500">Rs. {unitCost.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right font-bold">Rs. {(requestedQty * unitCost).toLocaleString()}</TableCell>
+                                    </TableRow>
+                                )
+                            })}
                         </TableBody>
                     </Table>
                 </CardContent>

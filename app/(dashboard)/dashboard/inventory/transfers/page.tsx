@@ -72,6 +72,13 @@ function StockTransfersContent() {
         return colors[status as keyof typeof colors] || 'secondary'
     }
 
+    const formatDate = (value: string | null | undefined, pattern: string) => {
+        if (!value) return '-'
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return '-'
+        return format(date, pattern)
+    }
+
     const handleStatusChange = async (id: string, newStatus: string) => {
         console.log(`🎯 UI: handleStatusChange called - ID: ${id}, New Status: ${newStatus}`)
         try {
@@ -227,13 +234,13 @@ function StockTransfersContent() {
                                                             <TableCell className="font-bold text-slate-900">
                                                                 {transfer.transfer_number}
                                                             </TableCell>
-                                                            <TableCell className="font-medium">{transfer.from_location.name}</TableCell>
+                                                            <TableCell className="font-medium">{transfer.from_location?.name || 'Unknown'}</TableCell>
                                                             <TableCell className="text-slate-400">
                                                                 <ArrowRight className="h-4 w-4" />
                                                             </TableCell>
-                                                            <TableCell className="font-medium">{transfer.to_location.name}</TableCell>
+                                                            <TableCell className="font-medium">{transfer.to_location?.name || 'Unknown'}</TableCell>
                                                             <TableCell className="text-slate-600">
-                                                                {format(new Date(transfer.transfer_date), 'MMM dd, yyyy')}
+                                                                {formatDate(transfer.transfer_date, 'MMM dd, yyyy')}
                                                             </TableCell>
                                                             <TableCell>
                                                                 <Badge variant="outline" className="font-normal">

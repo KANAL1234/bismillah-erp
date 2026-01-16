@@ -41,7 +41,13 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
     return (
         <header className="flex h-16 items-center justify-between border-b bg-white px-6">
             <div className="flex items-center gap-4">
-                <Button variant="ghost" size="icon" onClick={toggle} className="md:hidden lg:flex">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggle}
+                    className="md:hidden lg:flex"
+                    aria-label={isOpen ? "Collapse sidebar" : "Expand sidebar"}
+                >
                     <PanelLeft className="h-5 w-5" />
                 </Button>
                 <h2 className="text-lg font-semibold text-slate-900">Bismillah Oil Agency</h2>

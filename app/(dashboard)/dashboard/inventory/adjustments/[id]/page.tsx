@@ -62,8 +62,19 @@ export default function AdjustmentDetailsPage() {
         return labels[type as keyof typeof labels] || type
     }
 
-    const netImpactQuantity = adjustment.stock_adjustment_items?.reduce((sum: number, item: any) => sum + (item.physical_quantity - item.system_quantity), 0) || 0
-    const netImpactValue = adjustment.stock_adjustment_items?.reduce((sum: number, item: any) => sum + ((item.physical_quantity - item.system_quantity) * item.unit_cost), 0) || 0
+    const formatDate = (value: string | null | undefined, pattern: string) => {
+        if (!value) return '-'
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return '-'
+        return format(date, pattern)
+    }
+
+    const netImpactQuantity = adjustment.stock_adjustment_items?.reduce((sum: number, item: any) => {
+        return sum + (Number(item.physical_quantity || 0) - Number(item.system_quantity || 0))
+    }, 0) || 0
+    const netImpactValue = adjustment.stock_adjustment_items?.reduce((sum: number, item: any) => {
+        return sum + ((Number(item.physical_quantity || 0) - Number(item.system_quantity || 0)) * Number(item.unit_cost || 0))
+    }, 0) || 0
 
     return (
         <div className="space-y-6">
@@ -78,7 +89,7 @@ export default function AdjustmentDetailsPage() {
                             {adjustment.status.replace('_', ' ')}
                         </Badge>
                     </div>
-                    <p className="text-slate-500 text-sm">Created on {format(new Date(adjustment.created_at), 'MMMM dd, yyyy')}</p>
+                    <p className="text-slate-500 text-sm">Created on {formatDate(adjustment.created_at, 'MMMM dd, yyyy')}</p>
                 </div>
             </div>
 
@@ -90,8 +101,8 @@ export default function AdjustmentDetailsPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="font-bold text-slate-900">{adjustment.locations.name}</p>
-                        <p className="text-xs text-slate-500 font-mono">{adjustment.locations.code}</p>
+                        <p className="font-bold text-slate-900">{adjustment.locations?.name || 'Unknown'}</p>
+                        <p className="text-xs text-slate-500 font-mono">{adjustment.locations?.code || '-'}</p>
                     </CardContent>
                 </Card>
 
@@ -116,7 +127,7 @@ export default function AdjustmentDetailsPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="font-medium text-slate-900">{format(new Date(adjustment.adjustment_date), 'MMMM dd, yyyy')}</p>
+                        <p className="font-medium text-slate-900">{formatDate(adjustment.adjustment_date, 'MMMM dd, yyyy')}</p>
                         <p className="text-xs text-slate-400 mt-1 italic">Effective date</p>
                     </CardContent>
                 </Card>
@@ -163,21 +174,24 @@ export default function AdjustmentDetailsPage() {
                         </TableHeader>
                         <TableBody>
                             {adjustment.stock_adjustment_items?.map((item: any) => {
-                                const variance = item.physical_quantity - item.system_quantity
+                                const physicalQty = Number(item.physical_quantity || 0)
+                                const systemQty = Number(item.system_quantity || 0)
+                                const unitCost = Number(item.unit_cost || 0)
+                                const variance = physicalQty - systemQty
                                 return (
                                     <TableRow key={item.id}>
                                         <TableCell>
-                                            <div className="font-medium text-slate-900">{item.products.name}</div>
-                                            <div className="text-xs text-slate-500">{item.products.sku}</div>
+                                            <div className="font-medium text-slate-900">{item.products?.name || 'Unknown product'}</div>
+                                            <div className="text-xs text-slate-500">{item.products?.sku || '-'}</div>
                                         </TableCell>
-                                        <TableCell className="text-right">{item.system_quantity.toLocaleString()}</TableCell>
-                                        <TableCell className="text-right font-medium">{item.physical_quantity.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right">{systemQty.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right font-medium">{physicalQty.toLocaleString()}</TableCell>
                                         <TableCell className={`text-right font-bold ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : ''}`}>
                                             {variance > 0 ? '+' : ''}{variance.toLocaleString()}
                                         </TableCell>
-                                        <TableCell className="text-right text-slate-500">Rs. {item.unit_cost.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right text-slate-500">Rs. {unitCost.toLocaleString()}</TableCell>
                                         <TableCell className={`text-right font-bold ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-green-600' : ''}`}>
-                                            Rs. {variance > 0 ? '+' : ''}{(variance * item.unit_cost).toLocaleString()}
+                                            Rs. {variance > 0 ? '+' : ''}{(variance * unitCost).toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-slate-500 text-sm max-w-[200px] truncate">{item.notes || '-'}</TableCell>
                                     </TableRow>

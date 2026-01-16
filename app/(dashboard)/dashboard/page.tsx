@@ -264,14 +264,7 @@ function DashboardContent() {
     }
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center h-96">
-                <div className="text-center">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-                    <p className="text-slate-600">Loading dashboard...</p>
-                </div>
-            </div>
-        )
+        return <DashboardLoading />
     }
 
     const locationContext = currentLocationId
@@ -763,6 +756,50 @@ function DashboardContent() {
                         </Link>
                     </CardContent>
                 </Card>
+            </div>
+        </div>
+    )
+}
+
+function DashboardLoading() {
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-3xl font-bold text-slate-900">Dashboard Overview</h2>
+                    <div className="mt-2 h-4 w-64 rounded bg-slate-200 animate-pulse" />
+                </div>
+                <div className="h-9 w-40 rounded border border-slate-200 bg-slate-100 animate-pulse" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                    <Card key={`primary-${index}`} className="border-l-4 border-l-slate-200">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <div className="h-4 w-24 rounded bg-slate-200 animate-pulse" />
+                            <div className="h-4 w-4 rounded bg-slate-200 animate-pulse" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="h-7 w-28 rounded bg-slate-200 animate-pulse" />
+                            <div className="mt-2 h-3 w-20 rounded bg-slate-100 animate-pulse" />
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, index) => (
+                    <Card key={`secondary-${index}`}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <div className="h-4 w-20 rounded bg-slate-200 animate-pulse" />
+                            <div className="h-4 w-4 rounded bg-slate-200 animate-pulse" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="h-7 w-16 rounded bg-slate-200 animate-pulse" />
+                            <div className="mt-2 h-3 w-24 rounded bg-slate-100 animate-pulse" />
+                        </CardContent>
+                    </Card>
+                ))}
             </div>
         </div>
     )
