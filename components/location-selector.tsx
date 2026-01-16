@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { MapPin, Check } from 'lucide-react'
+import { MapPin } from 'lucide-react'
 import {
     Select,
     SelectContent,
@@ -36,7 +36,7 @@ export function LocationSelector() {
     if (allowedLocations.length === 1) {
         // Single location - just show as badge
         return (
-            <Badge variant="outline" className="gap-1 bg-blue-50 text-blue-700 border-blue-200">
+            <Badge variant="outline" className="gap-1 bg-primary/5 text-primary border-primary/20">
                 <MapPin className="h-3 w-3" />
                 {allowedLocations[0].location_name}
             </Badge>
@@ -61,21 +61,11 @@ export function LocationSelector() {
             </SelectTrigger>
             <SelectContent>
                 <SelectItem value="ALL">
-                    <div className="flex items-center justify-between w-full">
-                        <span className="font-medium">All My Locations</span>
-                        {!currentLocationId && (
-                            <Check className="h-4 w-4 ml-2 text-primary" />
-                        )}
-                    </div>
+                    <span className="font-medium">All My Locations</span>
                 </SelectItem>
                 {allowedLocations.map((location) => (
                     <SelectItem key={location.location_id} value={location.location_id}>
-                        <div className="flex items-center justify-between w-full">
-                            <span>{location.location_name}</span>
-                            {currentLocationId === location.location_id && (
-                                <Check className="h-4 w-4 ml-2 text-primary" />
-                            )}
-                        </div>
+                        <span>{location.location_name}</span>
                     </SelectItem>
                 ))}
             </SelectContent>

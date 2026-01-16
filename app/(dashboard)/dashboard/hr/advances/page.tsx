@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Wallet, ArrowUpRight, History, MoreVertical, CheckCircle2, Clock } from 'lucide-react'
+import { Plus, Wallet, ArrowUpRight, History, CheckCircle2, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -13,12 +13,11 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { useAdvances, useEmployees } from '@/lib/queries/hr'
+import { useAdvances } from '@/lib/queries/hr'
 import { PermissionGuard } from '@/components/permission-guard'
 import { formatCurrency } from '@/lib/utils'
 import { format } from 'date-fns'
 import { AdvanceDialog } from '@/components/hr/advances/advance-dialog'
-import { Skeleton } from '@/components/ui/skeleton'
 
 export default function AdvancesPage() {
     const { data: advances, isLoading } = useAdvances()
@@ -26,10 +25,10 @@ export default function AdvancesPage() {
 
     return (
         <PermissionGuard permission="hr.advances.create">
-            <div className="flex-1 space-y-4 p-8 pt-6">
-                <div className="flex items-center justify-between">
+            <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight">Advances & Loans</h2>
+                        <h1 className="text-3xl font-bold tracking-tight">Advances & Loans</h1>
                         <p className="text-muted-foreground">
                             Manage employee advance requests and track repayments.
                         </p>
@@ -77,7 +76,10 @@ export default function AdvancesPage() {
                 </div>
 
                 <Card>
-                    <CardContent className="p-0">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                        <CardTitle className="text-base font-medium">Advance List</CardTitle>
+                    </CardHeader>
+                    <CardContent>
                         <Table>
                             <TableHeader>
                                 <TableRow>
@@ -93,11 +95,17 @@ export default function AdvancesPage() {
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
-                                    [...Array(5)].map((_, i) => (
-                                        <TableRow key={i}>
-                                            <TableCell colSpan={8}><Skeleton className="h-12 w-full" /></TableCell>
-                                        </TableRow>
-                                    ))
+                                    <TableRow>
+                                        <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                                            Loading advances...
+                                        </TableCell>
+                                    </TableRow>
+                                ) : advances?.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                                            No advances or loans found.
+                                        </TableCell>
+                                    </TableRow>
                                 ) : (
                                     advances?.map((adv) => (
                                         <TableRow key={adv.id}>
@@ -130,13 +138,6 @@ export default function AdvancesPage() {
                                             </TableCell>
                                         </TableRow>
                                     ))
-                                )}
-                                {advances?.length === 0 && !isLoading && (
-                                    <TableRow>
-                                        <TableCell colSpan={8} className="h-24 text-center">
-                                            No advances or loans found.
-                                        </TableCell>
-                                    </TableRow>
                                 )}
                             </TableBody>
                         </Table>

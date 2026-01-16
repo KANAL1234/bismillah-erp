@@ -9,6 +9,8 @@ import { PermissionGuard } from '@/components/permission-guard'
 import { FileText, Plus, CheckCircle, Eye, Send } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
+import { ListSortControls } from '@/components/list-sort-controls'
+import { useMemo, useState } from 'react'
 
 export default function JournalEntriesPage() {
     return (
@@ -21,6 +23,8 @@ export default function JournalEntriesPage() {
 function JournalEntriesContent() {
     const { data: entries, isLoading } = useJournalEntries()
     const postEntry = usePostJournalEntry()
+    const [sortBy, setSortBy] = useState('journal_date')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
     const getStatusBadge = (status: string) => {
         const colors: Record<string, string> = {
@@ -42,11 +46,32 @@ function JournalEntriesContent() {
         return labels[type] || type
     }
 
+    const sortedEntries = useMemo(() => {
+        const data = entries ? [...entries] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            journal_date: (row) => new Date(row.journal_date).getTime(),
+            journal_number: (row) => String(row.journal_number || ''),
+            journal_type: (row) => String(row.journal_type || ''),
+            total_debit: (row) => Number(row.total_debit || 0),
+            total_credit: (row) => Number(row.total_credit || 0),
+            status: (row) => String(row.status || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.journal_date
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [entries, sortBy, sortOrder])
+
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Journal Entries</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Journal Entries</h1>
                     <p className="text-muted-foreground">View and manage general ledger postings</p>
                 </div>
                 <Button asChild>
@@ -94,9 +119,25 @@ function JournalEntriesContent() {
             </div>
 
             <Card>
-                <CardHeader>
-                    <CardTitle>All Journal Entries</CardTitle>
-                    <CardDescription>View all general ledger postings</CardDescription>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardTitle className="text-base font-medium">All Journal Entries</CardTitle>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <CardDescription>View all general ledger postings</CardDescription>
+                        <ListSortControls
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortByChange={setSortBy}
+                            onSortOrderChange={setSortOrder}
+                            options={[
+                                { value: 'journal_date', label: 'Date Added' },
+                                { value: 'journal_number', label: 'Journal #' },
+                                { value: 'journal_type', label: 'Type' },
+                                { value: 'total_debit', label: 'Debit' },
+                                { value: 'total_credit', label: 'Credit' },
+                                { value: 'status', label: 'Status' },
+                            ]}
+                        />
+                    </div>
                 </CardHeader>
                 <CardContent>
                     {isLoading ? (
@@ -112,11 +153,11 @@ function JournalEntriesContent() {
                                     <TableHead className="text-right">Debit</TableHead>
                                     <TableHead className="text-right">Credit</TableHead>
                                     <TableHead>Status</TableHead>
-                                    <TableHead>Actions</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {entries?.map((entry) => (
+                                {sortedEntries?.map((entry) => (
                                     <TableRow key={entry.id}>
                                         <TableCell className="font-mono font-medium">{entry.journal_number}</TableCell>
                                         <TableCell>{formatDate(entry.journal_date)}</TableCell>
@@ -135,28 +176,23 @@ function JournalEntriesContent() {
                                                 {entry.status}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell>
-                                            <div className="flex justify-end gap-2">
-                                                <Link href={`/dashboard/accounting/journal-entries/${entry.id}`}>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                        title="View Details"
-                                                    >
-                                                        <Eye className="h-4 w-4" />
-                                                    </Button>
-                                                </Link>
+                                        <TableCell className="text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={`/dashboard/accounting/journal-entries/${entry.id}`}>
+                                                        <Eye className="mr-2 h-4 w-4" />
+                                                        View
+                                                    </Link>
+                                                </Button>
                                                 {entry.status === 'draft' && (
                                                     <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                        variant="outline"
+                                                        size="sm"
                                                         onClick={() => postEntry.mutate(entry.id)}
                                                         disabled={postEntry.isPending}
-                                                        title="Post Entry"
                                                     >
-                                                        <Send className="h-4 w-4" />
+                                                        <Send className="mr-2 h-4 w-4" />
+                                                        Post
                                                     </Button>
                                                 )}
                                             </div>

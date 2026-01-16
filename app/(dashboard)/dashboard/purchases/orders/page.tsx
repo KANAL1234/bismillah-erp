@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { usePurchaseOrders, useUpdatePOStatus, useDeletePurchaseOrder } from '@/lib/queries/purchase-orders'
 import { useGoodsReceipts } from '@/lib/queries/goods-receipts'
 import { createClient } from '@/lib/supabase/client'
@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { Plus, Check, X, Trash2, Send, Eye, Package, Download, Printer } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import { ListSortControls } from '@/components/list-sort-controls'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -47,6 +48,8 @@ function PurchaseOrdersContent() {
     const updateStatus = useUpdatePOStatus()
     const deletePO = useDeletePurchaseOrder()
     const [orderToDelete, setOrderToDelete] = useState<{ id: string, number: string } | null>(null)
+    const [sortBy, setSortBy] = useState('po_date')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const supabase = createClient()
 
     const formatDate = (date: string | null) => {
@@ -161,11 +164,11 @@ function PurchaseOrdersContent() {
             case 'PENDING_APPROVAL':
                 return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
             case 'APPROVED':
-                return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>
+                return <Badge className="bg-primary/50 hover:bg-primary">Approved</Badge>
             case 'SENT_TO_VENDOR':
-                return <Badge className="bg-purple-500 hover:bg-purple-600">Sent</Badge>
+                return <Badge className="bg-primary/50 hover:bg-primary">Sent</Badge>
             case 'PARTIALLY_RECEIVED':
-                return <Badge className="bg-indigo-500 hover:bg-indigo-600">Partial</Badge>
+                return <Badge className="bg-primary/50 hover:bg-primary">Partial</Badge>
             case 'RECEIVED':
                 return <Badge className="bg-green-500 hover:bg-green-600">Received</Badge>
             case 'CANCELLED':
@@ -210,16 +213,39 @@ function PurchaseOrdersContent() {
 
     const grnOrderIds = new Set((grns || []).map((grn: any) => grn.po_id).filter(Boolean))
 
-    const draftOrders = allOrders?.filter(o => o.status === 'DRAFT')
-    const pendingOrders = allOrders?.filter(o => o.status === 'PENDING_APPROVAL')
-    const approvedOrders = allOrders?.filter(o => ['APPROVED', 'SENT_TO_VENDOR'].includes(o.status))
-    const receivedOrders = allOrders?.filter(o => ['PARTIALLY_RECEIVED', 'RECEIVED'].includes(o.status))
+    const sortOrders = useMemo(() => {
+        const sorters: Record<string, (row: any) => string | number> = {
+            po_date: (row) => new Date(row.po_date || row.created_at).getTime(),
+            expected_delivery_date: (row) => row.expected_delivery_date ? new Date(row.expected_delivery_date).getTime() : 0,
+            po_number: (row) => String(row.po_number || ''),
+            total_amount: (row) => Number(row.total_amount || 0),
+            status: (row) => String(row.status || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.po_date
+        return (list?: any[]) => {
+            const data = list ? [...list] : []
+            data.sort((a, b) => {
+                const av = getValue(a)
+                const bv = getValue(b)
+                if (av < bv) return sortOrder === 'asc' ? -1 : 1
+                if (av > bv) return sortOrder === 'asc' ? 1 : -1
+                return 0
+            })
+            return data
+        }
+    }, [sortBy, sortOrder])
+
+    const draftOrders = sortOrders(allOrders?.filter(o => o.status === 'DRAFT'))
+    const pendingOrders = sortOrders(allOrders?.filter(o => o.status === 'PENDING_APPROVAL'))
+    const approvedOrders = sortOrders(allOrders?.filter(o => ['APPROVED', 'SENT_TO_VENDOR'].includes(o.status)))
+    const receivedOrders = sortOrders(allOrders?.filter(o => ['PARTIALLY_RECEIVED', 'RECEIVED'].includes(o.status)))
+    const sortedAllOrders = sortOrders(allOrders)
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Purchase Orders</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Purchase Orders</h1>
                     <p className="text-muted-foreground">Manage relationships and orders with your vendors.</p>
                 </div>
                 <Link href="/dashboard/purchases/orders/new">
@@ -231,6 +257,21 @@ function PurchaseOrdersContent() {
             </div>
 
             <Tabs defaultValue="all" className="space-y-4">
+                <div className="flex justify-end">
+                    <ListSortControls
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSortByChange={setSortBy}
+                        onSortOrderChange={setSortOrder}
+                        options={[
+                            { value: 'po_date', label: 'Date Added' },
+                            { value: 'po_number', label: 'PO #' },
+                            { value: 'expected_delivery_date', label: 'Expected Delivery' },
+                            { value: 'total_amount', label: 'Amount' },
+                            { value: 'status', label: 'Status' },
+                        ]}
+                    />
+                </div>
                 <TabsList>
                     <TabsTrigger value="all">All ({allOrders?.length || 0})</TabsTrigger>
                     <TabsTrigger value="draft">Draft ({draftOrders?.length || 0})</TabsTrigger>
@@ -241,7 +282,7 @@ function PurchaseOrdersContent() {
 
                 {['all', 'draft', 'pending', 'approved', 'received'].map(tab => {
                     const orders =
-                        tab === 'all' ? allOrders :
+                        tab === 'all' ? sortedAllOrders :
                             tab === 'draft' ? draftOrders :
                                 tab === 'pending' ? pendingOrders :
                                     tab === 'approved' ? approvedOrders :
@@ -266,7 +307,7 @@ function PurchaseOrdersContent() {
                                         <TableBody>
                                             {orders?.length === 0 ? (
                                                 <TableRow>
-                                                    <TableCell colSpan={7} className="text-center text-gray-500">
+                                                    <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                                         No purchase orders found
                                                     </TableCell>
                                                 </TableRow>

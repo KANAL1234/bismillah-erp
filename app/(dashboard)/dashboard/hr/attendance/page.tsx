@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Calendar as CalendarIcon, CheckCircle2, UserCheck, Search, Info } from 'lucide-react'
+import { Calendar as CalendarIcon, CheckCircle2, UserCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -92,15 +92,15 @@ export default function AttendancePage() {
 
     return (
         <PermissionGuard permission="hr.attendance.view">
-            <div className="flex-1 space-y-4 p-8 pt-6">
-                <div className="flex items-center justify-between">
+            <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight">Attendance</h2>
+                        <h1 className="text-3xl font-bold tracking-tight">Attendance</h1>
                         <p className="text-muted-foreground">
                             Manage daily check-ins and check-outs for your team.
                         </p>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2">
                         <Input
                             type="date"
                             className="w-[200px]"
@@ -140,88 +140,93 @@ export default function AttendancePage() {
                     </Card>
                 </div>
 
-                <div className="rounded-md border bg-white">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Employee</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Check In</TableHead>
-                                <TableHead>Check Out</TableHead>
-                                <TableHead>Hours</TableHead>
-                                <TableHead>Notes</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isLoading ? (
-                                [...Array(5)].map((_, i) => (
-                                    <TableRow key={i}>
-                                        <TableCell colSpan={6}><Skeleton className="h-12 w-full" /></TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                employees?.filter(e => e.employment_status === 'ACTIVE').map((emp) => {
-                                    const data = attendanceData[emp.id] || { status: 'PRESENT', check_in_time: '09:00', check_out_time: '18:00' }
-                                    const existingReport = report?.find(r => r.employee_code === emp.employee_code)
-
-                                    return (
-                                        <TableRow key={emp.id}>
-                                            <TableCell>
-                                                <div className="font-medium">{emp.full_name}</div>
-                                                <div className="text-xs text-muted-foreground">{emp.employee_code}</div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Select
-                                                    value={data.status}
-                                                    onValueChange={(val) => handleStatusChange(emp.id, val)}
-                                                >
-                                                    <SelectTrigger className="w-[130px]">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="PRESENT">Present</SelectItem>
-                                                        <SelectItem value="ABSENT">Absent</SelectItem>
-                                                        <SelectItem value="LATE">Late</SelectItem>
-                                                        <SelectItem value="HALF_DAY">Half Day</SelectItem>
-                                                        <SelectItem value="ON_LEAVE">On Leave</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Input
-                                                    type="time"
-                                                    className="w-[120px]"
-                                                    disabled={data.status === 'ABSENT' || data.status === 'ON_LEAVE'}
-                                                    value={data.check_in_time}
-                                                    onChange={(e) => handleTimeChange(emp.id, 'check_in_time', e.target.value)}
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Input
-                                                    type="time"
-                                                    className="w-[120px]"
-                                                    disabled={data.status === 'ABSENT' || data.status === 'ON_LEAVE'}
-                                                    value={data.check_out_time}
-                                                    onChange={(e) => handleTimeChange(emp.id, 'check_out_time', e.target.value)}
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                {existingReport?.total_hours ? (
-                                                    <Badge variant="secondary">{existingReport.total_hours} hrs</Badge>
-                                                ) : '-'}
-                                            </TableCell>
-                                            <TableCell>
-                                                {existingReport?.status && !markAttendance.isPending && (
-                                                    <Badge variant="outline" className="text-[10px] uppercase">Marked</Badge>
-                                                )}
-                                            </TableCell>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                        <CardTitle className="text-base font-medium">Attendance Register</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Employee</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead>Check In</TableHead>
+                                    <TableHead>Check Out</TableHead>
+                                    <TableHead>Hours</TableHead>
+                                    <TableHead>Notes</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isLoading ? (
+                                    [...Array(5)].map((_, i) => (
+                                        <TableRow key={i}>
+                                            <TableCell colSpan={6}><Skeleton className="h-12 w-full" /></TableCell>
                                         </TableRow>
-                                    )
-                                })
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
+                                    ))
+                                ) : (
+                                    employees?.filter(e => e.employment_status === 'ACTIVE').map((emp) => {
+                                        const data = attendanceData[emp.id] || { status: 'PRESENT', check_in_time: '09:00', check_out_time: '18:00' }
+                                        const existingReport = report?.find(r => r.employee_code === emp.employee_code)
+
+                                        return (
+                                            <TableRow key={emp.id}>
+                                                <TableCell>
+                                                    <div className="font-medium">{emp.full_name}</div>
+                                                    <div className="text-xs text-muted-foreground">{emp.employee_code}</div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Select
+                                                        value={data.status}
+                                                        onValueChange={(val) => handleStatusChange(emp.id, val)}
+                                                    >
+                                                        <SelectTrigger className="w-[130px]">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="PRESENT">Present</SelectItem>
+                                                            <SelectItem value="ABSENT">Absent</SelectItem>
+                                                            <SelectItem value="LATE">Late</SelectItem>
+                                                            <SelectItem value="HALF_DAY">Half Day</SelectItem>
+                                                            <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Input
+                                                        type="time"
+                                                        className="w-[120px]"
+                                                        disabled={data.status === 'ABSENT' || data.status === 'ON_LEAVE'}
+                                                        value={data.check_in_time}
+                                                        onChange={(e) => handleTimeChange(emp.id, 'check_in_time', e.target.value)}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Input
+                                                        type="time"
+                                                        className="w-[120px]"
+                                                        disabled={data.status === 'ABSENT' || data.status === 'ON_LEAVE'}
+                                                        value={data.check_out_time}
+                                                        onChange={(e) => handleTimeChange(emp.id, 'check_out_time', e.target.value)}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    {existingReport?.total_hours ? (
+                                                        <Badge variant="secondary">{existingReport.total_hours} hrs</Badge>
+                                                    ) : '-'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {existingReport?.status && !markAttendance.isPending && (
+                                                        <Badge variant="outline" className="text-[10px] uppercase">Marked</Badge>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        )
+                                    })
+                                )}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
             </div>
         </PermissionGuard>
     )

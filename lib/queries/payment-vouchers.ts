@@ -3,9 +3,9 @@ import { createClient } from '@/lib/supabase/client'
 import { PaymentVoucher } from '@/lib/types/database'
 import { toast } from 'sonner'
 
-export function usePaymentVouchers() {
+export function usePaymentVouchers(vendorBillId?: string) {
     return useQuery({
-        queryKey: ['payment-vouchers'],
+        queryKey: ['payment-vouchers', vendorBillId],
         queryFn: async () => {
             const supabase = createClient()
             const { data, error } = await supabase
@@ -13,12 +13,19 @@ export function usePaymentVouchers() {
                 .select(`
                     *,
                     vendors (id, name, vendor_code),
-                    bank_accounts (id, account_name, account_number)
+                    bank_accounts (id, account_name, account_number),
+                    payment_allocations (vendor_bill_id, allocated_amount)
                 `)
                 .order('payment_date', { ascending: false })
 
             if (error) throw error
-            return data
+            if (!vendorBillId) return data
+
+            return (data || []).filter((voucher: any) =>
+                (voucher.payment_allocations || []).some(
+                    (alloc: any) => alloc.vendor_bill_id === vendorBillId
+                )
+            )
         }
     })
 }
@@ -130,7 +137,6 @@ export function useCreatePaymentVoucher() {
                         const { error: billUpdateError } = await supabase
                             .from('vendor_bills')
                             .update({
-                                amount_due: newAmountDue,
                                 amount_paid: updatedPaid,
                                 payment_status: paymentStatus
                             })

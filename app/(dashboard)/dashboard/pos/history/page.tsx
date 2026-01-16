@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { usePOSSales } from '@/lib/queries/pos-sales'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,7 @@ import { format } from 'date-fns'
 import { formatDate } from '@/lib/utils'
 import { useLocation } from '@/components/providers/location-provider'
 import { PermissionGuard } from '@/components/permission-guard'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 export default function SalesHistoryPage() {
     return (
@@ -44,6 +45,8 @@ function SalesHistoryContent() {
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null)
+    const [sortBy, setSortBy] = useState('sale_date')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const { allowedLocationIds, currentLocationId } = useLocation()
 
     const { data: sales, isLoading } = usePOSSales(currentLocationId || undefined, startDate, endDate)
@@ -63,6 +66,26 @@ function SalesHistoryContent() {
         )
     })
 
+    const sortedSales = useMemo(() => {
+        const data = filteredSales ? [...filteredSales] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            sale_date: (row) => new Date(row.sale_date).getTime(),
+            sale_number: (row) => String(row.sale_number || ''),
+            total_amount: (row) => Number(row.total_amount || 0),
+            items: (row) => Number(row.pos_sale_items?.length || 0),
+            customer: (row) => String(row.customers?.name || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.sale_date
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [filteredSales, sortBy, sortOrder])
+
     // Calculate summary
     const totalSales = filteredSales?.length || 0
     const totalAmount = filteredSales?.reduce((sum, s) => sum + s.total_amount, 0) || 0
@@ -72,15 +95,18 @@ function SalesHistoryContent() {
         .reduce((sum, s) => sum + s.total_amount, 0) || 0
 
     return (
-        <div className="px-4 sm:px-0">
-            <div className="flex items-center mb-6">
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Sales History</h1>
+                    <p className="text-muted-foreground">Review POS sales and receipts</p>
+                </div>
                 <Link href="/dashboard/pos">
-                    <Button variant="ghost" size="sm">
+                    <Button variant="outline">
                         <ArrowLeft className="mr-2 h-4 w-4" />
                         Back to POS
                     </Button>
                 </Link>
-                <h2 className="text-3xl font-bold text-gray-900 ml-4">Sales History</h2>
             </div>
 
             {/* Summary Cards */}
@@ -129,7 +155,7 @@ function SalesHistoryContent() {
             {/* Filters */}
             <Card className="mb-6">
                 <CardContent className="pt-6">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Start Date</label>
                             <div className="relative">
@@ -168,13 +194,31 @@ function SalesHistoryContent() {
                                 />
                             </div>
                         </div>
+                        <div className="md:col-span-2">
+                            <ListSortControls
+                                sortBy={sortBy}
+                                sortOrder={sortOrder}
+                                onSortByChange={setSortBy}
+                                onSortOrderChange={setSortOrder}
+                                options={[
+                                    { value: 'sale_date', label: 'Date Added' },
+                                    { value: 'sale_number', label: 'Sale #' },
+                                    { value: 'total_amount', label: 'Amount' },
+                                    { value: 'items', label: 'Items' },
+                                    { value: 'customer', label: 'Customer' },
+                                ]}
+                            />
+                        </div>
                     </div>
                 </CardContent>
             </Card>
 
             {/* Sales Table */}
             <Card>
-                <CardContent className="pt-6">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardTitle className="text-base font-medium">Sales History</CardTitle>
+                </CardHeader>
+                <CardContent>
                     {isLoading ? (
                         <div className="text-center py-8">Loading sales...</div>
                     ) : (
@@ -192,14 +236,14 @@ function SalesHistoryContent() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredSales?.length === 0 ? (
+                                {sortedSales?.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="text-center text-gray-500">
+                                        <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
                                             No sales found
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    filteredSales?.map((sale) => (
+                                    sortedSales?.map((sale) => (
                                         <TableRow key={sale.id}>
                                             <TableCell className="font-medium">
                                                 {sale.sale_number}
@@ -235,11 +279,12 @@ function SalesHistoryContent() {
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <Button
-                                                    variant="ghost"
+                                                    variant="outline"
                                                     size="sm"
                                                     onClick={() => setSelectedSaleId(sale.id)}
                                                 >
-                                                    <Receipt className="h-4 w-4" />
+                                                    <Receipt className="mr-2 h-4 w-4" />
+                                                    Receipt
                                                 </Button>
                                             </TableCell>
                                         </TableRow>

@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Pencil, Trash2, MoreHorizontal } from 'lucide-react'
+import { Pencil, Trash2, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import {
@@ -25,17 +25,11 @@ import {
 } from '@/components/ui/alert-dialog'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { useRouter } from 'next/navigation'
+import { emitSoftRefresh } from '@/lib/soft-refresh'
 
 export function VendorsTable({ vendors, isLoading }: { vendors: any[], isLoading: boolean }) {
     const [deletingVendor, setDeletingVendor] = useState<any>(null)
     const supabase = createClient()
-    const router = useRouter()
-
-    if (isLoading) {
-        return <div className="p-8 text-center text-muted-foreground">Loading vendors...</div>
-    }
-
     const handleDelete = async () => {
         if (!deletingVendor) return
 
@@ -48,13 +42,13 @@ export function VendorsTable({ vendors, isLoading }: { vendors: any[], isLoading
             toast.error('Failed to delete vendor')
         } else {
             toast.success('Vendor deleted successfully')
-            router.refresh()
+            emitSoftRefresh()
         }
         setDeletingVendor(null)
     }
 
     return (
-        <div className="border rounded-md bg-white">
+        <>
             <Table>
                 <TableHeader>
                     <TableRow>
@@ -68,9 +62,15 @@ export function VendorsTable({ vendors, isLoading }: { vendors: any[], isLoading
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {vendors.length === 0 ? (
+                    {isLoading ? (
                         <TableRow>
-                            <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+                            <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
+                                Loading vendors...
+                            </TableCell>
+                        </TableRow>
+                    ) : vendors.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                 No vendors found. Add your first vendor!
                             </TableCell>
                         </TableRow>
@@ -88,25 +88,26 @@ export function VendorsTable({ vendors, isLoading }: { vendors: any[], isLoading
                                     </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                    <div className="flex justify-end gap-2">
-                                        <Link href={`/dashboard/vendors/${vendor.id}`}>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                title="Edit Vendor"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
-                                        </Link>
+                                    <div className="flex items-center justify-end gap-2">
+                                        <Button variant="outline" size="sm" asChild>
+                                            <Link href={`/dashboard/vendors/${vendor.id}`}>
+                                                <Eye className="mr-2 h-4 w-4" />
+                                                View
+                                            </Link>
+                                        </Button>
+                                        <Button variant="outline" size="sm" asChild>
+                                            <Link href={`/dashboard/vendors/${vendor.id}`}>
+                                                <Pencil className="mr-2 h-4 w-4" />
+                                                Edit
+                                            </Link>
+                                        </Button>
                                         <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            variant="destructive"
+                                            size="sm"
                                             onClick={() => setDeletingVendor(vendor)}
-                                            title="Delete Vendor"
                                         >
-                                            <Trash2 className="h-4 w-4" />
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete
                                         </Button>
                                     </div>
                                 </TableCell>
@@ -132,6 +133,6 @@ export function VendorsTable({ vendors, isLoading }: { vendors: any[], isLoading
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
-        </div>
+        </>
     )
 }

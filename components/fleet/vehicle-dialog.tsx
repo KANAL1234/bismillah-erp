@@ -31,6 +31,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { FleetVehicle } from "@/types/fleet"
+import { emitSoftRefresh } from "@/lib/soft-refresh"
 
 const formSchema = z.object({
     registration_number: z.string().min(1, "Registration number is required"),
@@ -119,6 +120,7 @@ export function VehicleDialog({ vehicle, trigger, open, onOpenChange, onSuccess 
                 toast.success("Vehicle created successfully")
             }
 
+            emitSoftRefresh()
             setIsOpen(false)
             onOpenChange?.(false)
             onSuccess?.()

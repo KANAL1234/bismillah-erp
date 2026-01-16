@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/providers/auth-provider';
 import { PermissionGuard } from '@/components/permission-guard';
-import { Role, PermissionCheck } from '@/lib/types/rbac';
+import { Role, PermissionCheck, PERMISSION_GROUPS, buildPermissionCode } from '@/lib/types/rbac';
+import { emitSoftRefresh } from '@/lib/soft-refresh';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,7 +34,7 @@ export default function RoleManagementPage() {
 }
 
 function RoleManagementContent() {
-    const { user: currentUser, logAction } = useAuth();
+    const { user: currentUser, logAction, isAdmin } = useAuth();
     const [roles, setRoles] = useState<Role[]>([]);
     const [permissions, setPermissions] = useState<PermissionCheck[]>([]);
     const [loading, setLoading] = useState(true);
@@ -41,6 +42,7 @@ function RoleManagementContent() {
     const [rolePermissions, setRolePermissions] = useState<string[]>([]);
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [newRole, setNewRole] = useState({ role_name: '', role_code: '', description: '' });
+    const [syncingPermissions, setSyncingPermissions] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -113,6 +115,7 @@ function RoleManagementContent() {
 
             // Background refresh to be safe
             loadData();
+            emitSoftRefresh();
         } catch (error: any) {
             toast.error(error.message);
         }
@@ -132,8 +135,29 @@ function RoleManagementContent() {
 
             toast.success('Permissions saved successfully');
             await logAction('update_role_permissions', 'settings', 'roles', selectedRole.id);
+            emitSoftRefresh();
         } catch (error: any) {
             toast.error(error.message);
+        }
+    };
+
+    const handleSyncPermissions = async () => {
+        setSyncingPermissions(true);
+        try {
+            const response = await fetch('/api/permissions/sync', { method: 'POST' });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result?.error || 'Failed to sync permissions');
+            }
+
+            toast.success(`Permissions synced (${result?.inserted || 0} added)`);
+            await logAction('sync_permissions', 'settings', 'roles');
+            await loadData();
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to sync permissions');
+        } finally {
+            setSyncingPermissions(false);
         }
     };
 
@@ -150,6 +174,20 @@ function RoleManagementContent() {
         return acc;
     }, {});
 
+    const normalizePermissionCode = (code: string) => code.replace(/:/g, '.');
+
+    const missingPermissionCount = (() => {
+        const existing = new Set(permissions.map((p) => normalizePermissionCode(p.permission_code)));
+        const desired = PERMISSION_GROUPS.flatMap((group) =>
+            group.permissions.flatMap((permission) =>
+                permission.actions.map((action) =>
+                    normalizePermissionCode(buildPermissionCode(group.module, permission.resource, action.action))
+                )
+            )
+        );
+        return desired.filter((code) => !existing.has(code)).length;
+    })();
+
     return (
         <div className="h-[calc(100vh-112px)] flex flex-col space-y-4 overflow-hidden">
             <div className="flex justify-between items-center">
@@ -157,12 +195,24 @@ function RoleManagementContent() {
                     <h1 className="text-3xl font-bold tracking-tight">Role Management</h1>
                     <p className="text-muted-foreground">Define roles and assign fine-grained allowances.</p>
                 </div>
-                <PermissionGuard permission="settings.roles.manage">
-                    <Button onClick={() => setShowCreateDialog(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        New Role
-                    </Button>
-                </PermissionGuard>
+                <div className="flex items-center gap-2">
+                    {isAdmin() && (
+                        <Button
+                            variant="outline"
+                            onClick={handleSyncPermissions}
+                            disabled={syncingPermissions || missingPermissionCount === 0}
+                        >
+                            <Shield className="mr-2 h-4 w-4" />
+                            {syncingPermissions ? 'Syncing...' : missingPermissionCount === 0 ? 'All Synced' : 'Sync Permissions'}
+                        </Button>
+                    )}
+                    <PermissionGuard permission="settings.roles.manage">
+                        <Button onClick={() => setShowCreateDialog(true)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            New Role
+                        </Button>
+                    </PermissionGuard>
+                </div>
             </div>
 
             <div className="grid grid-cols-12 gap-6 flex-1 min-h-0 overflow-hidden">

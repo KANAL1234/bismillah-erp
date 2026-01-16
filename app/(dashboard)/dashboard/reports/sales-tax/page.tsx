@@ -201,7 +201,7 @@ function SalesTaxReportContent() {
                         </CardHeader>
                         <CardContent>
                             <Table>
-                                <TableHeader className="bg-slate-50/50">
+                                <TableHeader>
                                     <TableRow>
                                         <TableHead>Tax Rate</TableHead>
                                         <TableHead className="text-right">Taxable Amount</TableHead>
@@ -212,7 +212,7 @@ function SalesTaxReportContent() {
                                 <TableBody>
                                     {report.sales_by_rate.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={4} className="text-center py-8 text-slate-500">
+                                            <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
                                                 No taxable sales in this period
                                             </TableCell>
                                         </TableRow>
@@ -252,13 +252,13 @@ function SalesTaxReportContent() {
                     </Card>
 
                     {/* FBR Compliance Note */}
-                    <Card className="border-blue-200 bg-blue-50/50">
+                    <Card className="border-primary/20 bg-primary/5">
                         <CardContent className="pt-6">
                             <div className="flex gap-3">
-                                <FileSpreadsheet className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                                <FileSpreadsheet className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
                                 <div className="space-y-1">
-                                    <p className="font-medium text-blue-900">FBR Compliance</p>
-                                    <p className="text-sm text-blue-700">
+                                    <p className="font-medium text-primary">FBR Compliance</p>
+                                    <p className="text-sm text-primary">
                                         This report is formatted according to Federal Board of Revenue (FBR) requirements for Pakistan.
                                         Export to Excel for submission or print for record-keeping. Ensure all sales invoices are properly
                                         recorded with correct tax rates before filing.

@@ -52,7 +52,7 @@ export function MobileNav() {
               className={cn(
                 "flex flex-col items-center justify-center py-2 px-1 min-h-[60px] transition-colors",
                 isActive 
-                  ? "text-blue-600" 
+                  ? "text-primary" 
                   : "text-gray-600 hover:text-gray-900"
               )}
             >
@@ -67,7 +67,7 @@ export function MobileNav() {
                 {item.label}
               </span>
               {isActive && (
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-t-full" />
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t-full" />
               )}
             </Link>
           )

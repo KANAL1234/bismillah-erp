@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Eye, Download, CheckCircle, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,7 @@ import { formatDate } from '@/lib/utils'
 import { SalesInvoice } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { generateInvoicePDF } from '@/lib/utils/export'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 export default function SalesInvoicesPage() {
     return (
@@ -37,6 +38,8 @@ function SalesInvoicesContent() {
     const { currentLocationId } = useLocation()
     const { data: invoices, isLoading } = useSalesInvoices()
     const [searchTerm, setSearchTerm] = useState('')
+    const [sortBy, setSortBy] = useState('created_at')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const supabase = createClient()
     const updateStatus = useUpdateInvoiceStatus()
 
@@ -171,10 +174,32 @@ function SalesInvoicesContent() {
         if (status === 'paid') return <Badge className="bg-green-500 hover:bg-green-600">Paid</Badge>
         if (status === 'void') return <Badge variant="destructive">Void</Badge>
         if (isOverdue) return <Badge variant="destructive">Overdue</Badge>
-        if (status === 'posted') return <Badge className="bg-blue-500 hover:bg-blue-600">Posted</Badge>
+        if (status === 'posted') return <Badge className="bg-primary/50 hover:bg-primary">Posted</Badge>
 
         return <Badge variant="secondary">Draft</Badge>
     }
+
+    const sortedInvoices = useMemo(() => {
+        const data = filteredInvoices ? [...filteredInvoices] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            created_at: (row) => new Date(row.created_at || row.invoice_date).getTime(),
+            invoice_date: (row) => new Date(row.invoice_date).getTime(),
+            due_date: (row) => new Date(row.due_date).getTime(),
+            invoice_number: (row) => String(row.invoice_number || ''),
+            total_amount: (row) => Number(row.total_amount || 0),
+            balance: (row) => Number(row.total_amount || 0) - Number(row.amount_paid || 0),
+            status: (row) => String(row.status || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.created_at
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [filteredInvoices, sortBy, sortOrder])
 
     if (isLoading) {
         return <div className="p-8 text-center">Loading invoices...</div>
@@ -184,7 +209,7 @@ function SalesInvoicesContent() {
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">Sales Invoices</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Sales Invoices</h1>
                     <p className="text-muted-foreground">
                         {currentLocationId
                             ? 'Showing invoices for selected location'
@@ -204,13 +229,30 @@ function SalesInvoicesContent() {
                     <CardTitle className="text-base font-medium">
                         Recent Invoices
                     </CardTitle>
-                    <div className="relative">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="Search invoices..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-8 w-[250px]"
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search invoices..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-8 w-[250px]"
+                            />
+                        </div>
+                        <ListSortControls
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortByChange={setSortBy}
+                            onSortOrderChange={setSortOrder}
+                            options={[
+                                { value: 'created_at', label: 'Date Added' },
+                                { value: 'invoice_date', label: 'Invoice Date' },
+                                { value: 'due_date', label: 'Due Date' },
+                                { value: 'invoice_number', label: 'Invoice #' },
+                                { value: 'total_amount', label: 'Total Amount' },
+                                { value: 'balance', label: 'Balance' },
+                                { value: 'status', label: 'Status' },
+                            ]}
                         />
                     </div>
                 </CardHeader>
@@ -230,14 +272,14 @@ function SalesInvoicesContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredInvoices?.length === 0 ? (
+                            {sortedInvoices?.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={9} className="text-center h-24 text-muted-foreground">
                                         No invoices found.
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredInvoices?.map((invoice) => (
+                                sortedInvoices?.map((invoice) => (
                                     <TableRow key={invoice.id}>
                                         <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                                         <TableCell>{formatDate(invoice.invoice_date)}</TableCell>

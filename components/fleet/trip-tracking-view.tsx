@@ -103,7 +103,7 @@ export function TripTrackingView({ tripId }: TripTrackingViewProps) {
                 <Card className="md:col-span-2 overflow-hidden border-slate-200">
                     <CardHeader className="pb-2 bg-slate-50/50 border-b">
                         <CardTitle className="text-sm font-medium flex items-center gap-2">
-                            <Navigation className="h-4 w-4 text-blue-500" />
+                            <Navigation className="h-4 w-4 text-primary" />
                             Live GPS Route
                         </CardTitle>
                     </CardHeader>
@@ -131,7 +131,7 @@ export function TripTrackingView({ tripId }: TripTrackingViewProps) {
                     <Card>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-sm font-medium flex items-center gap-2">
-                                <ShoppingBag className="h-4 w-4 text-purple-500" />
+                                <ShoppingBag className="h-4 w-4 text-primary" />
                                 Sales Performance
                             </CardTitle>
                         </CardHeader>

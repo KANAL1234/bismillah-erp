@@ -98,7 +98,7 @@ export default function MobileInventoryPage() {
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <span className="block text-2xl font-bold text-blue-600">
+                                    <span className="block text-2xl font-bold text-primary">
                                         {item.quantity_available}
                                     </span>
                                     <span className="text-xs text-gray-500">Available</span>

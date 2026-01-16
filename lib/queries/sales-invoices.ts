@@ -6,6 +6,8 @@ import { toast } from 'sonner'
 export type CreateInvoiceInput = {
     customer_id: string
     sales_order_id?: string
+    location_id?: string | null
+    warehouse_id?: string | null
     invoice_date: string
     due_date: string
     status: SalesInvoice['status']
@@ -102,14 +104,30 @@ export function useCreateSalesInvoice() {
                 .limit(1)
                 .single()
 
-            let nextNumber = 'INV-0001'
-            if (lastInvoice) {
-                const lastNum = parseInt(lastInvoice.invoice_number.split('-')[1])
-                nextNumber = `INV-${String(lastNum + 1).padStart(4, '0')}`
+            let nextNumber = 'INV-SALE-0001'
+            if (lastInvoice?.invoice_number) {
+                const match = lastInvoice.invoice_number.match(/(\d+)$/)
+                const lastNum = match ? parseInt(match[1], 10) : 0
+                nextNumber = `INV-SALE-${String(lastNum + 1).padStart(4, '0')}`
             }
 
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) throw new Error('User not authenticated')
+
+            let locationId = input.location_id || null
+            let warehouseId = input.warehouse_id || null
+
+            if (input.sales_order_id) {
+                const { data: salesOrder, error: salesOrderError } = await supabase
+                    .from('sales_orders')
+                    .select('location_id, warehouse_id')
+                    .eq('id', input.sales_order_id)
+                    .single()
+
+                if (salesOrderError) throw salesOrderError
+                locationId = salesOrder?.location_id || locationId
+                warehouseId = salesOrder?.warehouse_id || warehouseId
+            }
 
             // 2. Insert Invoice
             const { data: invoice, error: invoiceError } = await supabase
@@ -118,6 +136,8 @@ export function useCreateSalesInvoice() {
                     invoice_number: nextNumber,
                     customer_id: input.customer_id,
                     sales_order_id: input.sales_order_id,
+                    location_id: locationId,
+                    warehouse_id: warehouseId,
                     invoice_date: input.invoice_date,
                     due_date: input.due_date,
                     status: input.status,

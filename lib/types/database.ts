@@ -509,6 +509,8 @@ export type SalesInvoice = {
     invoice_number: string
     customer_id: string
     sales_order_id: string | null
+    location_id: string | null
+    warehouse_id: string | null
     invoice_date: string
     due_date: string
     status: 'draft' | 'posted' | 'paid' | 'void' | 'overdue'
@@ -734,6 +736,8 @@ export type CustomerInvoiceAccounting = {
     invoice_number: string
     customer_id: string
     sales_order_id: string | null
+    location_id: string | null
+    warehouse_id: string | null
     invoice_date: string
     due_date: string
     reference_number: string | null

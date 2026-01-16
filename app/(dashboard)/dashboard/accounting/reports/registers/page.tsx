@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { useLocation } from '@/components/providers/location-provider';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const supabase = createClient();
 
@@ -282,7 +283,7 @@ export default function TransactionRegisters() {
                             key={register.id}
                             onClick={() => setActiveRegister(register.id as RegisterType)}
                             className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors whitespace-nowrap ${activeRegister === register.id
-                                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                                ? 'text-primary border-b-2 border-primary bg-primary/5'
                                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                                 }`}
                         >
@@ -303,7 +304,7 @@ export default function TransactionRegisters() {
                                 type="date"
                                 value={dateFrom}
                                 onChange={(e) => setDateFrom(e.target.value)}
-                                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/40"
                             />
                         </div>
 
@@ -313,7 +314,7 @@ export default function TransactionRegisters() {
                                 type="date"
                                 value={dateTo}
                                 onChange={(e) => setDateTo(e.target.value)}
-                                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/40"
                             />
                         </div>
 
@@ -324,7 +325,7 @@ export default function TransactionRegisters() {
                                     <select
                                         value={customerFilter}
                                         onChange={(e) => setCustomerFilter(e.target.value)}
-                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/40"
                                     >
                                         <option value="">All Customers</option>
                                         {customers.map(c => (
@@ -343,7 +344,7 @@ export default function TransactionRegisters() {
                                 <select
                                     value={vendorFilter}
                                     onChange={(e) => setVendorFilter(e.target.value)}
-                                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/40"
                                 >
                                     <option value="">All Vendors</option>
                                     {vendors.map(v => (
@@ -356,7 +357,7 @@ export default function TransactionRegisters() {
                         <button
                             onClick={loadReport}
                             disabled={loading}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
                         >
                             {loading ? 'Loading...' : 'Generate'}
                         </button>
@@ -365,7 +366,7 @@ export default function TransactionRegisters() {
 
                 {/* Summary Cards */}
                 {summary && (activeRegister === 'sales' || activeRegister === 'purchase') && (
-                    <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+                    <div className="p-6 bg-gradient-to-r from-primary/10 to-primary/5 border-b">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             {activeRegister === 'sales' ? (
                                 <>
@@ -389,7 +390,7 @@ export default function TransactionRegisters() {
                                     </div>
                                     <div className="bg-white p-4 rounded-lg shadow-sm">
                                         <div className="text-sm text-gray-600">Transactions</div>
-                                        <div className="text-xl font-bold text-blue-600 mt-1">
+                                        <div className="text-xl font-bold text-primary mt-1">
                                             {summary.counts?.total_transactions || 0}
                                         </div>
                                     </div>
@@ -404,7 +405,7 @@ export default function TransactionRegisters() {
                                     </div>
                                     <div className="bg-white p-4 rounded-lg shadow-sm">
                                         <div className="text-sm text-gray-600">Input Tax</div>
-                                        <div className="text-xl font-bold text-blue-600 mt-1">
+                                        <div className="text-xl font-bold text-primary mt-1">
                                             {formatCurrency(summary.totals?.input_tax || 0)}
                                         </div>
                                     </div>
@@ -430,7 +431,7 @@ export default function TransactionRegisters() {
                 <div className="p-6">
                     {loading ? (
                         <div className="text-center py-12">
-                            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                             <p className="mt-4 text-gray-600">Loading report...</p>
                         </div>
                     ) : (
@@ -451,196 +452,226 @@ export default function TransactionRegisters() {
 // Sales Register Table
 function SalesRegisterTable({ data, formatCurrency }: any) {
     return (
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice #</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Subtotal</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Discount</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Tax</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                    {data.map((row: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.sale_date}</td>
-                            <td className="px-4 py-3 text-sm font-medium text-blue-600">{row.invoice_number}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.customer_name}</td>
-                            <td className="px-4 py-3 text-center">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${row.sale_type === 'POS' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Invoice #</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead className="text-center">Type</TableHead>
+                    <TableHead className="text-right">Subtotal</TableHead>
+                    <TableHead className="text-right">Discount</TableHead>
+                    <TableHead className="text-right">Tax</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {data.length === 0 ? (
+                    <TableRow>
+                        <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                            No sales register entries found.
+                        </TableCell>
+                    </TableRow>
+                ) : (
+                    data.map((row: any, idx: number) => (
+                        <TableRow key={idx}>
+                            <TableCell className="text-gray-900">{row.sale_date}</TableCell>
+                            <TableCell className="font-medium text-primary">{row.invoice_number}</TableCell>
+                            <TableCell className="text-gray-900">{row.customer_name}</TableCell>
+                            <TableCell className="text-center">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${row.sale_type === 'POS' ? 'bg-green-100 text-green-800' : 'bg-primary/10 text-primary'
                                     }`}>
                                     {row.sale_type}
                                 </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(row.subtotal)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-red-600">{formatCurrency(row.discount_amount)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(row.tax_amount)}</td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{formatCurrency(row.total_amount)}</td>
-                            <td className="px-4 py-3 text-center">
+                            </TableCell>
+                            <TableCell className="text-right text-gray-900">{formatCurrency(row.subtotal)}</TableCell>
+                            <TableCell className="text-right text-red-600">{formatCurrency(row.discount_amount)}</TableCell>
+                            <TableCell className="text-right text-gray-900">{formatCurrency(row.tax_amount)}</TableCell>
+                            <TableCell className="text-right font-medium text-gray-900">{formatCurrency(row.total_amount)}</TableCell>
+                            <TableCell className="text-center">
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${row.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
                                     row.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
                                         'bg-red-100 text-red-800'
                                     }`}>
                                     {row.payment_status}
                                 </span>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+                            </TableCell>
+                        </TableRow>
+                    ))
+                )}
+            </TableBody>
+        </Table>
     );
 }
 
 // Purchase Register Table
 function PurchaseRegisterTable({ data, formatCurrency }: any) {
     return (
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bill #</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">PO #</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Subtotal</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Tax</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">WHT</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                    {data.map((row: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.bill_date}</td>
-                            <td className="px-4 py-3 text-sm font-medium text-blue-600">{row.bill_number}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.vendor_name}</td>
-                            <td className="px-4 py-3 text-sm text-gray-500">{row.po_number}</td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(row.subtotal)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-blue-600">{formatCurrency(row.sales_tax_amount)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-green-600">{formatCurrency(row.wht_amount)}</td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{formatCurrency(row.total_amount)}</td>
-                            <td className="px-4 py-3 text-center">
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Bill #</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>PO #</TableHead>
+                    <TableHead className="text-right">Subtotal</TableHead>
+                    <TableHead className="text-right">Tax</TableHead>
+                    <TableHead className="text-right">WHT</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {data.length === 0 ? (
+                    <TableRow>
+                        <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                            No purchase register entries found.
+                        </TableCell>
+                    </TableRow>
+                ) : (
+                    data.map((row: any, idx: number) => (
+                        <TableRow key={idx}>
+                            <TableCell className="text-gray-900">{row.bill_date}</TableCell>
+                            <TableCell className="font-medium text-primary">{row.bill_number}</TableCell>
+                            <TableCell className="text-gray-900">{row.vendor_name}</TableCell>
+                            <TableCell className="text-gray-500">{row.po_number}</TableCell>
+                            <TableCell className="text-right text-gray-900">{formatCurrency(row.subtotal)}</TableCell>
+                            <TableCell className="text-right text-primary">{formatCurrency(row.sales_tax_amount)}</TableCell>
+                            <TableCell className="text-right text-green-600">{formatCurrency(row.wht_amount)}</TableCell>
+                            <TableCell className="text-right font-medium text-gray-900">{formatCurrency(row.total_amount)}</TableCell>
+                            <TableCell className="text-center">
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${row.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
                                     row.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
                                         'bg-red-100 text-red-800'
                                     }`}>
                                     {row.payment_status}
                                 </span>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+                            </TableCell>
+                        </TableRow>
+                    ))
+                )}
+            </TableBody>
+        </Table>
     );
 }
 
 // Sales by Product Table
 function SalesByProductTable({ data, formatCurrency }: any) {
     return (
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Sales</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Avg Price</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Transactions</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                    {data.map((row: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">#{idx + 1}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{row.product_sku}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.product_name}</td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">{row.total_quantity}</td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-green-600">{formatCurrency(row.total_sales)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(row.avg_price)}</td>
-                            <td className="px-4 py-3 text-sm text-center text-blue-600">{row.transaction_count}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>Rank</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Total Sales</TableHead>
+                    <TableHead className="text-right">Avg Price</TableHead>
+                    <TableHead className="text-center">Transactions</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {data.length === 0 ? (
+                    <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                            No product sales found.
+                        </TableCell>
+                    </TableRow>
+                ) : (
+                    data.map((row: any, idx: number) => (
+                        <TableRow key={idx}>
+                            <TableCell className="font-medium text-gray-900">#{idx + 1}</TableCell>
+                            <TableCell className="text-gray-600">{row.product_sku}</TableCell>
+                            <TableCell className="text-gray-900">{row.product_name}</TableCell>
+                            <TableCell className="text-right text-gray-900">{row.total_quantity}</TableCell>
+                            <TableCell className="text-right font-medium text-green-600">{formatCurrency(row.total_sales)}</TableCell>
+                            <TableCell className="text-right text-gray-900">{formatCurrency(row.avg_price)}</TableCell>
+                            <TableCell className="text-center text-primary">{row.transaction_count}</TableCell>
+                        </TableRow>
+                    ))
+                )}
+            </TableBody>
+        </Table>
     );
 }
 
 // Sales by Customer Table
 function SalesByCustomerTable({ data, formatCurrency }: any) {
     return (
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Sales</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outstanding</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Transactions</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                    {data.map((row: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">#{idx + 1}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{row.customer_code}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.customer_name}</td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-green-600">{formatCurrency(row.total_sales)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(row.total_paid)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-orange-600">{formatCurrency(row.outstanding)}</td>
-                            <td className="px-4 py-3 text-sm text-center text-blue-600">{row.transaction_count}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>Rank</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead className="text-right">Total Sales</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead className="text-center">Transactions</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {data.length === 0 ? (
+                    <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                            No customer sales found.
+                        </TableCell>
+                    </TableRow>
+                ) : (
+                    data.map((row: any, idx: number) => (
+                        <TableRow key={idx}>
+                            <TableCell className="font-medium text-gray-900">#{idx + 1}</TableCell>
+                            <TableCell className="text-gray-600">{row.customer_code}</TableCell>
+                            <TableCell className="text-gray-900">{row.customer_name}</TableCell>
+                            <TableCell className="text-right font-medium text-green-600">{formatCurrency(row.total_sales)}</TableCell>
+                            <TableCell className="text-right text-gray-900">{formatCurrency(row.total_paid)}</TableCell>
+                            <TableCell className="text-right text-orange-600">{formatCurrency(row.outstanding)}</TableCell>
+                            <TableCell className="text-center text-primary">{row.transaction_count}</TableCell>
+                        </TableRow>
+                    ))
+                )}
+            </TableBody>
+        </Table>
     );
 }
 
 // Purchase by Vendor Table
 function PurchaseByVendorTable({ data, formatCurrency }: any) {
     return (
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Purchases</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outstanding</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Bills</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                    {data.map((row: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">#{idx + 1}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{row.vendor_code}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{row.vendor_name}</td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-purple-600">{formatCurrency(row.total_purchases)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">{formatCurrency(row.total_paid)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-orange-600">{formatCurrency(row.outstanding)}</td>
-                            <td className="px-4 py-3 text-sm text-center text-blue-600">{row.bill_count}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>Rank</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead className="text-right">Total Purchases</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead className="text-center">Bills</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {data.length === 0 ? (
+                    <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                            No vendor purchases found.
+                        </TableCell>
+                    </TableRow>
+                ) : (
+                    data.map((row: any, idx: number) => (
+                        <TableRow key={idx}>
+                            <TableCell className="font-medium text-gray-900">#{idx + 1}</TableCell>
+                            <TableCell className="text-gray-600">{row.vendor_code}</TableCell>
+                            <TableCell className="text-gray-900">{row.vendor_name}</TableCell>
+                            <TableCell className="text-right font-medium text-primary">{formatCurrency(row.total_purchases)}</TableCell>
+                            <TableCell className="text-right text-gray-900">{formatCurrency(row.total_paid)}</TableCell>
+                            <TableCell className="text-right text-orange-600">{formatCurrency(row.outstanding)}</TableCell>
+                            <TableCell className="text-center text-primary">{row.bill_count}</TableCell>
+                        </TableRow>
+                    ))
+                )}
+            </TableBody>
+        </Table>
     );
 }

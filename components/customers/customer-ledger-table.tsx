@@ -96,7 +96,7 @@ export function CustomerLedgerTable({ transactions }: CustomerLedgerTableProps) 
                                     variant="outline"
                                     className={cn(
                                         "text-[10px] uppercase",
-                                        tx.status === 'posted' ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                        tx.status === 'posted' ? "bg-primary/5 text-primary border-primary/20" :
                                             tx.status === 'draft' ? "bg-slate-100 text-slate-600" :
                                                 "bg-slate-50"
                                     )}

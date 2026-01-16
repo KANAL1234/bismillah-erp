@@ -248,9 +248,9 @@ export default function NewStockTransferPage() {
 
                 {/* Add Items */}
                 {fromLocationId && (
-                    <Card className="border-blue-100 bg-blue-50/10">
-                        <CardHeader className="bg-blue-50/30 border-b border-blue-100">
-                            <CardTitle className="text-lg text-blue-900">Add Items to Transfer</CardTitle>
+                    <Card className="border-primary/10 bg-primary/5">
+                        <CardHeader className="bg-primary/5 border-b border-primary/10">
+                            <CardTitle className="text-lg text-primary">Add Items to Transfer</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4 pt-6">
                             {!availableProducts || availableProducts.length === 0 ? (
@@ -292,7 +292,7 @@ export default function NewStockTransferPage() {
                                     </div>
 
                                     <div className="md:col-span-1">
-                                        <Button type="button" onClick={handleAddItem} className="h-11 w-full bg-blue-600 hover:bg-blue-700">
+                                        <Button type="button" onClick={handleAddItem} className="h-11 w-full bg-primary hover:bg-primary/90">
                                             <Plus className="h-4 w-4" />
                                         </Button>
                                     </div>
@@ -329,7 +329,7 @@ export default function NewStockTransferPage() {
                                             <TableRow key={item.id} className="hover:bg-slate-50/50 animate-in fade-in slide-in-from-left-2 duration-300">
                                                 <TableCell className="font-bold text-slate-900">{item.product_name}</TableCell>
                                                 <TableCell className="font-mono text-xs">{item.product_sku}</TableCell>
-                                                <TableCell className="text-right font-bold text-blue-700">
+                                                <TableCell className="text-right font-bold text-primary">
                                                     {item.quantity_requested.toLocaleString()}
                                                 </TableCell>
                                                 <TableCell className="text-right text-slate-500">

@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { CheckCircle2, Building2, Calendar, Banknote, DollarSign, FileText, ArrowRight, ArrowLeft, Users2 } from 'lucide-react'
+import { emitSoftRefresh } from '@/lib/soft-refresh'
 
 type SetupStep = 1 | 2 | 3 | 4 | 5 | 6 | 7
 
@@ -133,6 +134,7 @@ export default function SetupWizardPage() {
                 .eq('account_code', '3010')
 
             toast.success('Setup completed successfully!')
+            emitSoftRefresh()
             router.push('/dashboard')
         } catch (error: any) {
             console.error('Setup error:', error)
@@ -230,8 +232,8 @@ export default function SetupWizardPage() {
                         {/* Step 2: Fiscal Year */}
                         {currentStep === 2 && (
                             <div className="space-y-4">
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                                    <p className="text-sm text-blue-800">
+                                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
+                                    <p className="text-sm text-primary">
                                         <strong>Pakistan Fiscal Year:</strong> July 1 to June 30
                                     </p>
                                 </div>
@@ -434,8 +436,8 @@ export default function SetupWizardPage() {
                         {/* Step 7: Review & Confirm */}
                         {currentStep === 7 && (
                             <div className="space-y-4">
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                                    <p className="text-sm text-blue-800">
+                                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
+                                    <p className="text-sm text-primary">
                                         Please review your settings. You can update these later from the settings page.
                                     </p>
                                 </div>

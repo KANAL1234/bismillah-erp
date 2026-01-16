@@ -189,8 +189,8 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
 
                         {/* Fleet Driver License Fields */}
                         {designation === 'Fleet Driver' && (
-                            <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                                <div className="col-span-2 flex items-center gap-2 text-blue-700 font-medium">
+                            <div className="grid grid-cols-2 gap-4 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                                <div className="col-span-2 flex items-center gap-2 text-primary font-medium">
                                     <Truck className="w-4 h-4" />
                                     Driver Information
                                 </div>
@@ -212,7 +212,7 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
                                         defaultValue={(employee as any)?.license_expiry?.split('T')[0] || ''}
                                     />
                                 </div>
-                                <p className="col-span-2 text-xs text-blue-600">
+                                <p className="col-span-2 text-xs text-primary">
                                     This employee will be automatically registered as a Fleet Driver and can use the mobile app.
                                 </p>
                             </div>

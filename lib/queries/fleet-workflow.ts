@@ -208,6 +208,63 @@ export function useUpdateFuelAllowance() {
     })
 }
 
+export function useIssueFuelAllowance() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (allowanceId: string) => {
+            const { data, error } = await supabase.rpc('issue_fuel_allowance', {
+                p_allowance_id: allowanceId,
+            })
+
+            if (error) throw error
+            if (!data?.success) throw new Error(data?.message || 'Failed to issue allowance')
+            return data
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['fleet-fuel-allowances'] })
+            queryClient.invalidateQueries({ queryKey: ['journal-entries'] })
+            toast.success(`Cash issued - ${data.journal_number}`, {
+                description: `PKR ${data.amount?.toLocaleString()} given to driver`,
+            })
+        },
+        onError: (error: Error) => {
+            toast.error('Failed to issue fuel allowance', {
+                description: error.message,
+            })
+        },
+    })
+}
+
+export function useReturnFuelAllowanceCash() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ allowanceId, returnAmount }: { allowanceId: string; returnAmount: number }) => {
+            const { data, error } = await supabase.rpc('return_fuel_allowance_cash', {
+                p_allowance_id: allowanceId,
+                p_return_amount: returnAmount,
+            })
+
+            if (error) throw error
+            if (!data?.success) throw new Error(data?.message || 'Failed to record cash return')
+            return data
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['fleet-fuel-allowances'] })
+            queryClient.invalidateQueries({ queryKey: ['journal-entries'] })
+            toast.success(`Cash returned - ${data.journal_number}`, {
+                description: `PKR ${data.amount?.toLocaleString()} received from driver`,
+            })
+        },
+        onError: (error: Error) => {
+            toast.error('Failed to record cash return', {
+                description: error.message,
+            })
+        },
+    })
+}
+
 // ============================================================================
 // EXPENSE VARIANCES
 // ============================================================================

@@ -135,8 +135,9 @@ export default function PayrollPage() {
                                                         </TableCell>
                                                         <TableCell className="text-right font-bold">{formatCurrency(Number(slip.net_salary))}</TableCell>
                                                         <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon">
-                                                                <FileText className="h-4 w-4" />
+                                                            <Button variant="outline" size="sm">
+                                                                <FileText className="mr-2 h-4 w-4" />
+                                                                View
                                                             </Button>
                                                         </TableCell>
                                                     </TableRow>

@@ -1,179 +1,375 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { MapPin, Navigation, StopCircle, CheckCircle, XCircle } from 'lucide-react'
-import { useLocationTracker } from '@/lib/hooks/use-location-tracker'
+import {
+    MapPin, Navigation, StopCircle, CheckCircle, XCircle,
+    Fuel, Banknote, ArrowDownLeft, Clock, Truck
+} from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
-import { getFormattedAddress } from '@/lib/utils'
+import { addToQueue } from '@/lib/offline/queue'
 
 export default function TripPage() {
     const supabase = createClient()
+    const queryClient = useQueryClient()
     const { user } = useAuth()
     const router = useRouter()
-    const { isTracking, startTracking, stopTracking } = useLocationTracker()
+    const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
     const [vehicleId, setVehicleId] = useState('')
     const [odometer, setOdometer] = useState('')
-
-    // End Trip State
+    const [fuelBudget, setFuelBudget] = useState('')
     const [isEnding, setIsEnding] = useState(false)
     const [endOdometer, setEndOdometer] = useState('')
-    const [loading, setLoading] = useState(false)
+    const [returnAmount, setReturnAmount] = useState('')
 
-    // Get Vehicles (using fleet_vehicles table which matches the trips module)
+    // Get driver's active trip status
+    const { data: tripStatus, isLoading: statusLoading } = useQuery({
+        queryKey: ['driver-active-trip', user?.id],
+        queryFn: async () => {
+            if (!user?.id) return null
+            const { data, error } = await supabase.rpc('get_driver_active_trip', {
+                p_employee_id: user.id
+            })
+            if (error) throw error
+            return data
+        },
+        enabled: !!user?.id,
+        refetchInterval: 30000, // Refresh every 30 seconds
+    })
+
+    // Get vehicles list
     const { data: vehicles } = useQuery({
-        queryKey: ['vehicles-list'],
+        queryKey: ['fleet-vehicles'],
         queryFn: async () => {
             const { data } = await supabase
                 .from('fleet_vehicles')
-                .select('id, registration_number, current_mileage, location_id')
+                .select('id, registration_number, current_mileage, default_fuel_budget')
                 .eq('status', 'ACTIVE')
             return data || []
         }
     })
 
-    // Auto-select vehicle based on login selection (cookie)
+    // Auto-fill odometer when vehicle selected
     useEffect(() => {
-        const match = document.cookie.match(/driver_vehicle_id=([^;]+)/)
-        if (match && vehicles && vehicles.length > 0 && !vehicleId) {
-            const selectedLocationId = match[1]
-            const foundVehicle = vehicles.find((v: any) => v.location_id === selectedLocationId)
-            if (foundVehicle) {
-                setVehicleId(foundVehicle.id)
-                setOdometer(foundVehicle.current_mileage?.toString() || '')
-            }
-        }
-    }, [vehicles, vehicleId])
-
-    // Auto-fill odometer when vehicle selected manually
-    useEffect(() => {
-        if (vehicleId && vehicles && !isTracking) {
+        if (vehicleId && vehicles) {
             const v = vehicles.find((v: any) => v.id === vehicleId)
-            if (v) setOdometer(v.current_mileage?.toString() || '')
+            if (v) {
+                setOdometer(v.current_mileage?.toString() || '')
+                if (v.default_fuel_budget > 0) {
+                    setFuelBudget(v.default_fuel_budget.toString())
+                }
+            }
         }
-    }, [vehicleId, vehicles, isTracking])
+    }, [vehicleId, vehicles])
 
-    const handleStart = async () => {
+    // GPS Tracking - capture location every 30 seconds during active trip
+    useEffect(() => {
+        const captureLocation = (tripId: string) => {
+            if (!navigator.geolocation) return
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const locData = {
+                        trip_id: tripId,
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        speed: position.coords.speed || 0,
+                        heading: position.coords.heading || 0,
+                        accuracy: position.coords.accuracy,
+                        recorded_at: new Date().toISOString()
+                    }
+                    await addToQueue('SAVE_LOCATION', locData)
+                },
+                (err) => console.error("GPS Error:", err),
+                { enableHighAccuracy: true }
+            )
+        }
+
+        // Start tracking if trip is active
+        if (tripStatus?.has_trip && tripStatus?.trip?.id) {
+            const tripId = tripStatus.trip.id
+
+            // Capture immediately
+            captureLocation(tripId)
+
+            // Then every 30 seconds
+            gpsIntervalRef.current = setInterval(() => {
+                captureLocation(tripId)
+            }, 30000)
+        }
+
+        // Cleanup
+        return () => {
+            if (gpsIntervalRef.current) {
+                clearInterval(gpsIntervalRef.current)
+                gpsIntervalRef.current = null
+            }
+        }
+    }, [tripStatus?.has_trip, tripStatus?.trip?.id])
+
+    // Start trip mutation
+    const startTrip = useMutation({
+        mutationFn: async () => {
+            const { data, error } = await supabase.rpc('start_driver_trip', {
+                p_vehicle_id: vehicleId,
+                p_driver_id: user?.id,
+                p_start_mileage: parseFloat(odometer),
+                p_fuel_budget: fuelBudget ? parseFloat(fuelBudget) : null
+            })
+            if (error) throw error
+            if (!data?.success) throw new Error(data?.message || 'Failed to start trip')
+            return data
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['driver-active-trip'] })
+            toast.success('Trip started!')
+        },
+        onError: (error: Error) => {
+            toast.error(error.message)
+        }
+    })
+
+    // End trip mutation
+    const endTrip = useMutation({
+        mutationFn: async () => {
+            const { data, error } = await supabase.rpc('end_driver_trip', {
+                p_trip_id: tripStatus?.trip?.id,
+                p_end_mileage: parseFloat(endOdometer)
+            })
+            if (error) throw error
+            if (!data?.success) throw new Error(data?.message || 'Failed to end trip')
+            return data
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['driver-active-trip'] })
+            toast.success(`Trip completed! Distance: ${data.distance} km`)
+            router.push('/mobile')
+        },
+        onError: (error: Error) => {
+            toast.error(error.message)
+        }
+    })
+
+    // Issue cash mutation
+    const issueCash = useMutation({
+        mutationFn: async () => {
+            const { data, error } = await supabase.rpc('issue_fuel_allowance', {
+                p_allowance_id: tripStatus?.fuel_allowance?.id
+            })
+            if (error) throw error
+            if (!data?.success) throw new Error(data?.message || 'Failed to issue cash')
+            return data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['driver-active-trip'] })
+            toast.success('Cash issued successfully')
+        },
+        onError: (error: Error) => {
+            toast.error(error.message)
+        }
+    })
+
+    // Return cash mutation
+    const returnCash = useMutation({
+        mutationFn: async () => {
+            const { data, error } = await supabase.rpc('return_fuel_allowance_cash', {
+                p_allowance_id: tripStatus?.fuel_allowance?.id,
+                p_return_amount: parseFloat(returnAmount)
+            })
+            if (error) throw error
+            if (!data?.success) throw new Error(data?.message || 'Failed to record return')
+            return data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['driver-active-trip'] })
+            setReturnAmount('')
+            toast.success('Cash return recorded')
+        },
+        onError: (error: Error) => {
+            toast.error(error.message)
+        }
+    })
+
+    const handleStart = () => {
         if (!vehicleId || !odometer) {
-            toast.error('Please fill all fields')
+            toast.error('Please select vehicle and enter odometer')
             return
         }
-
-        // Check permission or valid user
-        const driverId = user?.id
-        if (!driverId) {
-            toast.error('User not identified')
-            return
-        }
-
-        setLoading(true)
-
-        // Pre-check: Verify driver is registered in fleet_drivers
-        const { data: driver } = await supabase
-            .from('fleet_drivers')
-            .select('id')
-            .eq('employee_id', driverId)
-            .maybeSingle()
-
-        if (!driver) {
-            toast.error('You are not registered as a driver. Please contact your admin.')
-            setLoading(false)
-            return
-        }
-
-        if (!navigator.geolocation) {
-            toast.error('Geolocation is not supported by your browser')
-            setLoading(false)
-            return
-        }
-
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            try {
-                const address = await getFormattedAddress(position.coords.latitude, position.coords.longitude)
-                await startTracking(vehicleId, driverId, address, parseFloat(odometer))
-                toast.success('Trip started! Tracking enabled.')
-            } catch (error) {
-                toast.error('Failed to start trip')
-            } finally {
-                setLoading(false)
-            }
-        }, (error) => {
-            console.error(error)
-            toast.error('Location access denied. Please enable GPS.')
-            setLoading(false)
-        }, { enableHighAccuracy: true })
+        startTrip.mutate()
     }
 
-    const handleStopClick = () => {
-        // Pre-fill end odometer with vehicle's current odometer if available
-        // Note: If page was reloaded, we might not know the exact start odometer of THIS trip in this component state easily without fetching.
-        // But we can just leave it empty or user enters it.
-        // If we still have `odometer` state from vehicle selection (if not reloaded), use it.
-        setEndOdometer(odometer)
-        setIsEnding(true)
-    }
-
-    const confirmStop = async () => {
+    const handleEnd = () => {
         if (!endOdometer) {
-            toast.error("Please enter closing odometer")
+            toast.error('Please enter closing odometer')
             return
         }
-
-        setLoading(true)
-
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            try {
-                const address = await getFormattedAddress(position.coords.latitude, position.coords.longitude)
-                await stopTracking(address, parseFloat(endOdometer))
-                toast.success('Trip ended successfully.')
-                router.push('/mobile')
-            } catch (error) {
-                toast.error('Failed to end trip')
-                setLoading(false)
-            }
-        }, (error) => {
-            // Fallback if location fails
-            stopTracking("Unknown Location", parseFloat(endOdometer))
-                .then(() => {
-                    toast.success('Trip ended (Location unavailable)')
-                    router.push('/mobile')
-                })
-        }, { enableHighAccuracy: true })
+        endTrip.mutate()
     }
 
-    if (isTracking) {
+    // Loading state
+    if (statusLoading) {
         return (
-            <div className="p-6 h-screen flex flex-col items-center justify-center space-y-6">
-                <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center animate-pulse">
-                    <Navigation className="w-12 h-12 text-green-600" />
-                </div>
+            <div className="p-6 h-screen flex items-center justify-center">
                 <div className="text-center">
+                    <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-gray-500">Loading...</p>
+                </div>
+            </div>
+        )
+    }
+
+    // Not registered as driver
+    if (tripStatus && !tripStatus.is_driver) {
+        return (
+            <div className="p-6 h-screen flex items-center justify-center">
+                <Card className="p-6 text-center max-w-sm">
+                    <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold mb-2">Not Registered</h2>
+                    <p className="text-gray-500">You are not registered as a driver. Please contact your admin.</p>
+                </Card>
+            </div>
+        )
+    }
+
+    // Active trip view
+    if (tripStatus?.has_trip) {
+        const trip = tripStatus.trip
+        const allowance = tripStatus.fuel_allowance
+        const hasAllowance = allowance !== null
+        const cashIssued = allowance?.cash_issued || 0
+        const outstanding = allowance?.outstanding || 0
+
+        return (
+            <div className="p-4 space-y-4 pb-24">
+                {/* Trip Status Header */}
+                <div className="text-center py-6">
+                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                        <Navigation className="w-10 h-10 text-green-600" />
+                    </div>
                     <h1 className="text-2xl font-bold text-green-700">Trip in Progress</h1>
-                    <p className="text-gray-500">Tracking your location...</p>
-                    <p className="text-xs text-gray-400 mt-2">Updates every 30s</p>
+                    <p className="text-gray-500">{trip.vehicle_number}</p>
                 </div>
 
-                {!isEnding ? (
-                    <Button size="lg" variant="destructive" className="w-full max-w-xs" onClick={handleStopClick} disabled={loading}>
-                        <StopCircle className="mr-2 h-5 w-5" />
-                        {loading ? 'Processing...' : 'End Trip'}
-                    </Button>
-                ) : (
-                    <Card className="w-full max-w-xs p-4 space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                        <div className="text-center">
-                            <h3 className="font-semibold text-lg">Finish Trip</h3>
-                            <p className="text-sm text-gray-500">Enter final odometer reading</p>
+                {/* Trip Info */}
+                <Card className="p-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <p className="text-gray-500">Started</p>
+                            <p className="font-medium">{new Date(trip.start_time).toLocaleTimeString()}</p>
+                        </div>
+                        <div>
+                            <p className="text-gray-500">Start Odometer</p>
+                            <p className="font-medium">{trip.start_mileage} km</p>
+                        </div>
+                        <div className="col-span-2">
+                            <p className="text-gray-500">From</p>
+                            <p className="font-medium">{trip.start_location}</p>
+                        </div>
+                    </div>
+                </Card>
+
+                {/* Fuel Allowance Section */}
+                {hasAllowance && (
+                    <Card className="p-4 space-y-4">
+                        <div className="flex items-center gap-2">
+                            <Fuel className="w-5 h-5 text-orange-500" />
+                            <h3 className="font-semibold">Fuel Allowance</h3>
                         </div>
 
+                        <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                            <div className="bg-blue-50 rounded-lg p-2">
+                                <p className="text-xs text-gray-500">Budget</p>
+                                <p className="font-bold text-blue-600">Rs. {allowance.budgeted_cost?.toLocaleString()}</p>
+                            </div>
+                            <div className="bg-green-50 rounded-lg p-2">
+                                <p className="text-xs text-gray-500">Issued</p>
+                                <p className="font-bold text-green-600">Rs. {cashIssued.toLocaleString()}</p>
+                            </div>
+                            <div className={`rounded-lg p-2 ${outstanding > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                                <p className="text-xs text-gray-500">Outstanding</p>
+                                <p className={`font-bold ${outstanding > 0 ? 'text-amber-600' : 'text-gray-600'}`}>
+                                    Rs. {outstanding.toLocaleString()}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Issue Cash Button */}
+                        {cashIssued === 0 && (
+                            <Button
+                                className="w-full bg-blue-600 hover:bg-blue-700"
+                                onClick={() => issueCash.mutate()}
+                                disabled={issueCash.isPending}
+                            >
+                                <Banknote className="w-4 h-4 mr-2" />
+                                {issueCash.isPending ? 'Issuing...' : `Issue Cash (Rs. ${allowance.budgeted_cost?.toLocaleString()})`}
+                            </Button>
+                        )}
+
+                        {/* Return Cash Section */}
+                        {cashIssued > 0 && outstanding > 0 && (
+                            <div className="space-y-2">
+                                <p className="text-sm text-amber-700">Return remaining cash:</p>
+                                <div className="flex gap-2">
+                                    <Input
+                                        type="number"
+                                        placeholder="Amount"
+                                        value={returnAmount}
+                                        onChange={(e) => setReturnAmount(e.target.value)}
+                                        className="flex-1"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => setReturnAmount(outstanding.toString())}
+                                        size="sm"
+                                    >
+                                        Full
+                                    </Button>
+                                    <Button
+                                        onClick={() => returnCash.mutate()}
+                                        disabled={returnCash.isPending || !returnAmount}
+                                        size="sm"
+                                    >
+                                        <ArrowDownLeft className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        {cashIssued > 0 && outstanding <= 0 && (
+                            <div className="flex items-center gap-2 text-green-600 text-sm">
+                                <CheckCircle className="w-4 h-4" />
+                                <span>All cash accounted for</span>
+                            </div>
+                        )}
+                    </Card>
+                )}
+
+                {/* End Trip Section */}
+                {!isEnding ? (
+                    <Button
+                        size="lg"
+                        variant="destructive"
+                        className="w-full"
+                        onClick={() => {
+                            setEndOdometer(trip.start_mileage.toString())
+                            setIsEnding(true)
+                        }}
+                    >
+                        <StopCircle className="mr-2 h-5 w-5" />
+                        End Trip
+                    </Button>
+                ) : (
+                    <Card className="p-4 space-y-4 border-red-200 bg-red-50">
+                        <h3 className="font-semibold text-center">Finish Trip</h3>
                         <div>
                             <Label>End Odometer</Label>
                             <Input
@@ -184,15 +380,17 @@ export default function TripPage() {
                                 autoFocus
                             />
                         </div>
-
                         <div className="flex gap-2">
                             <Button variant="outline" className="flex-1" onClick={() => setIsEnding(false)}>
-                                <XCircle className="w-4 h-4 mr-2" />
                                 Cancel
                             </Button>
-                            <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={confirmStop} disabled={loading}>
+                            <Button
+                                className="flex-1 bg-green-600 hover:bg-green-700"
+                                onClick={handleEnd}
+                                disabled={endTrip.isPending}
+                            >
                                 <CheckCircle className="w-4 h-4 mr-2" />
-                                Confirm
+                                {endTrip.isPending ? 'Ending...' : 'Confirm'}
                             </Button>
                         </div>
                     </Card>
@@ -201,9 +399,16 @@ export default function TripPage() {
         )
     }
 
+    // Start Trip View
     return (
         <div className="p-4 space-y-6">
-            <h1 className="text-2xl font-bold">Start New Trip</h1>
+            <div className="text-center pt-4">
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Truck className="w-8 h-8 text-primary" />
+                </div>
+                <h1 className="text-2xl font-bold">Start Your Trip</h1>
+                <p className="text-gray-500">Select vehicle and begin</p>
+            </div>
 
             <Card className="p-6 space-y-4">
                 <div>
@@ -223,17 +428,34 @@ export default function TripPage() {
                 </div>
 
                 <div>
-                    <Label>Start Odometer</Label>
+                    <Label>Start Odometer (km)</Label>
                     <Input
                         type="number"
                         value={odometer}
                         onChange={e => setOdometer(e.target.value)}
+                        placeholder="Current odometer reading"
                     />
                 </div>
 
-                <Button size="lg" className="w-full" onClick={handleStart} disabled={loading}>
+                <div>
+                    <Label>Fuel Budget (Optional)</Label>
+                    <Input
+                        type="number"
+                        value={fuelBudget}
+                        onChange={e => setFuelBudget(e.target.value)}
+                        placeholder="Rs. 0 (leave empty if no allowance today)"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter if you're receiving cash for fuel</p>
+                </div>
+
+                <Button
+                    size="lg"
+                    className="w-full"
+                    onClick={handleStart}
+                    disabled={startTrip.isPending}
+                >
                     <MapPin className="mr-2 h-4 w-4" />
-                    {loading ? 'Getting Location...' : 'Start Journey'}
+                    {startTrip.isPending ? 'Starting...' : 'Start Trip'}
                 </Button>
             </Card>
         </div>

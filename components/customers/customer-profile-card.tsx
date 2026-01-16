@@ -27,7 +27,7 @@ export function CustomerProfileCard({ customer }: CustomerProfileCardProps) {
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-white rounded-full border shadow-sm">
                             {customer.customer_type === 'BUSINESS' ? (
-                                <Building2 className="h-5 w-5 text-blue-600" />
+                                <Building2 className="h-5 w-5 text-primary" />
                             ) : (
                                 <User className="h-5 w-5 text-emerald-600" />
                             )}

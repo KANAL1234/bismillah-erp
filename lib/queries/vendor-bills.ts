@@ -12,7 +12,8 @@ export function useVendorBills() {
                 .from('vendor_bills')
                 .select(`
                     *,
-                    vendors (id, name, vendor_code)
+                    vendors (id, name, vendor_code),
+                    goods_receipts (id, grn_number)
                 `)
                 .order('bill_date', { ascending: false })
 
@@ -84,8 +85,12 @@ export function useVendorBill(id: string) {
                 .select(`
                     *,
                     vendors (id, name, vendor_code),
-                    goods_receipt_notes (id, grn_number),
-                    purchase_orders (id, order_number),
+                    goods_receipts (
+                        id,
+                        grn_number,
+                        po_id,
+                        purchase_orders (id, po_number)
+                    ),
                     vendor_bill_items (
                         id,
                         description,

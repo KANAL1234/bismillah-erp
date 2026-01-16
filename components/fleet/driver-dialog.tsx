@@ -31,6 +31,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { FleetDriver } from "@/types/fleet"
+import { emitSoftRefresh } from "@/lib/soft-refresh"
 
 const formSchema = z.object({
     employee_id: z.string().min(1, "Employee is required"),
@@ -129,6 +130,7 @@ export function DriverDialog({ driver, trigger, open, onOpenChange, onSuccess }:
                 toast.success("Driver added successfully")
             }
 
+            emitSoftRefresh()
             setIsOpen(false)
             onOpenChange?.(false)
             onSuccess?.()

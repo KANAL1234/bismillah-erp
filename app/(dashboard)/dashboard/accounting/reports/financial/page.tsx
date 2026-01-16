@@ -315,7 +315,7 @@ export default function FinancialReports() {
               key={report.id}
               onClick={() => setActiveReport(report.id as ReportType)}
               className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 font-medium transition-colors ${activeReport === report.id
-                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                ? 'text-primary border-b-2 border-primary bg-primary/5'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
             >
@@ -336,7 +336,7 @@ export default function FinancialReports() {
                   type="date"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/40"
                 />
               </div>
             ) : (
@@ -347,7 +347,7 @@ export default function FinancialReports() {
                     type="date"
                     value={dateFrom}
                     onChange={(e) => setDateFrom(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -356,7 +356,7 @@ export default function FinancialReports() {
                     type="date"
                     value={dateTo}
                     onChange={(e) => setDateTo(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
               </>
@@ -364,7 +364,7 @@ export default function FinancialReports() {
             <button
               onClick={loadReport}
               disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               {loading ? 'Loading...' : 'Generate'}
             </button>
@@ -375,7 +375,7 @@ export default function FinancialReports() {
         <div className="p-6">
           {loading ? (
             <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <p className="mt-4 text-gray-600">Loading report...</p>
             </div>
           ) : (
@@ -460,7 +460,7 @@ function ProfitLossReport({ data, formatCurrency }: { data: ProfitLossData; form
       </section>
 
       {/* Gross Profit */}
-      <div className="bg-blue-50 p-4 rounded-lg">
+      <div className="bg-primary/5 p-4 rounded-lg">
         <div className="flex justify-between items-center">
           <div>
             <span className="text-lg font-bold text-gray-900">GROSS PROFIT</span>
@@ -583,10 +583,10 @@ function BalanceSheetReport({ data, formatCurrency }: { data: BalanceSheetData; 
         </section>
 
         {/* Total Assets */}
-        <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
+        <div className="bg-primary/5 p-4 rounded-lg border-2 border-primary/20">
           <div className="flex justify-between">
             <span className="text-xl font-bold text-gray-900">TOTAL ASSETS</span>
-            <span className="text-xl font-bold text-blue-600">
+            <span className="text-xl font-bold text-primary">
               {formatCurrency(data.assets.totalAssets)}
             </span>
           </div>
@@ -656,10 +656,10 @@ function BalanceSheetReport({ data, formatCurrency }: { data: BalanceSheetData; 
         </section>
 
         {/* Total Liabilities & Equity */}
-        <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
+        <div className="bg-primary/5 p-4 rounded-lg border-2 border-primary/20">
           <div className="flex justify-between">
             <span className="text-xl font-bold text-gray-900">TOTAL LIABILITIES + EQUITY</span>
-            <span className="text-xl font-bold text-blue-600">
+            <span className="text-xl font-bold text-primary">
               {formatCurrency(data.totalLiabilitiesEquity)}
             </span>
           </div>
@@ -713,7 +713,7 @@ function VendorAgingReport({ data, formatCurrency }: { data: VendorAgingRow[]; f
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">61-90<br />Days</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">91-120<br />Days</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase bg-red-50">Over 120<br />Days</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase bg-blue-50">Total</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase bg-primary/5">Total</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -728,7 +728,7 @@ function VendorAgingReport({ data, formatCurrency }: { data: VendorAgingRow[]; f
                 <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(row.buckets.days_61_90)}</td>
                 <td className="px-4 py-3 text-right text-red-600">{formatCurrency(row.buckets.days_91_120)}</td>
                 <td className="px-4 py-3 text-right text-red-700 font-medium bg-red-50">{formatCurrency(row.buckets.over_120)}</td>
-                <td className="px-4 py-3 text-right font-bold text-blue-600 bg-blue-50">{formatCurrency(row.buckets.total)}</td>
+                <td className="px-4 py-3 text-right font-bold text-primary bg-primary/5">{formatCurrency(row.buckets.total)}</td>
               </tr>
             ))}
             <tr className="bg-gray-100 font-bold">
@@ -738,7 +738,7 @@ function VendorAgingReport({ data, formatCurrency }: { data: VendorAgingRow[]; f
               <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(totals.days_61_90)}</td>
               <td className="px-4 py-3 text-right text-red-600">{formatCurrency(totals.days_91_120)}</td>
               <td className="px-4 py-3 text-right text-red-700 bg-red-100">{formatCurrency(totals.over_120)}</td>
-              <td className="px-4 py-3 text-right text-blue-700 bg-blue-100">{formatCurrency(totals.total)}</td>
+              <td className="px-4 py-3 text-right text-primary bg-primary/10">{formatCurrency(totals.total)}</td>
             </tr>
           </tbody>
         </table>
@@ -778,7 +778,7 @@ function CustomerAgingReport({ data, formatCurrency }: { data: CustomerAgingRow[
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">61-90<br />Days</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">91-120<br />Days</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase bg-red-50">Over 120<br />Days</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase bg-blue-50">Total</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase bg-primary/5">Total</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -793,7 +793,7 @@ function CustomerAgingReport({ data, formatCurrency }: { data: CustomerAgingRow[
                 <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(row.buckets.days_61_90)}</td>
                 <td className="px-4 py-3 text-right text-red-600">{formatCurrency(row.buckets.days_91_120)}</td>
                 <td className="px-4 py-3 text-right text-red-700 font-medium bg-red-50">{formatCurrency(row.buckets.over_120)}</td>
-                <td className="px-4 py-3 text-right font-bold text-blue-600 bg-blue-50">{formatCurrency(row.buckets.total)}</td>
+                <td className="px-4 py-3 text-right font-bold text-primary bg-primary/5">{formatCurrency(row.buckets.total)}</td>
               </tr>
             ))}
             <tr className="bg-gray-100 font-bold">
@@ -803,7 +803,7 @@ function CustomerAgingReport({ data, formatCurrency }: { data: CustomerAgingRow[
               <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(totals.days_61_90)}</td>
               <td className="px-4 py-3 text-right text-red-600">{formatCurrency(totals.days_91_120)}</td>
               <td className="px-4 py-3 text-right text-red-700 bg-red-100">{formatCurrency(totals.over_120)}</td>
-              <td className="px-4 py-3 text-right text-blue-700 bg-blue-100">{formatCurrency(totals.total)}</td>
+              <td className="px-4 py-3 text-right text-primary bg-primary/10">{formatCurrency(totals.total)}</td>
             </tr>
           </tbody>
         </table>

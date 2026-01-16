@@ -520,7 +520,7 @@ export default function SystemHealthPage() {
             })
 
             // 4. Create Credit Sale
-            saleNumber = `TEST-SALE-${Date.now()}`
+            saleNumber = `TEST-INV-POS-${Date.now()}`
             const qty = 5
             const subtotal = qty * 100 // 500
             const taxAmount = subtotal * 0.18
@@ -547,10 +547,21 @@ export default function SystemHealthPage() {
                 p_product_id: product.id, p_location_id: loc.id, p_quantity_change: -qty
             })
 
-            // Update Customer Balance
-            await supabase.rpc('update_customer_balance', {
-                p_customer_id: customer.id, p_amount_change: total
-            })
+            // Update Customer Balance if not already updated by workflow
+            const { data: customerBalancePre } = await supabase
+                .from('customers')
+                .select('current_balance')
+                .eq('id', customer.id)
+                .single()
+
+            const preBalance = Number(customerBalancePre?.current_balance || 0)
+            if (preBalance === 0) {
+                await supabase.rpc('update_customer_balance', {
+                    p_customer_id: customer.id, p_amount_change: total
+                })
+            } else if (preBalance !== total) {
+                throw new Error(`Balance pre-check mismatch: Expected 0 or ${total}, got ${preBalance}`)
+            }
 
             // 5. Verify Stock (50 - 5 = 45)
             log(id, 'Verifying stock deduction...')
@@ -1080,6 +1091,10 @@ export default function SystemHealthPage() {
         let accountingInvoiceId: string | null = null
         let deliveryJournalId: string | null = null
         let invoiceJournalId: string | null = null
+        let invNum: string | null = null
+        let quoteNum: string | null = null
+        let orderNum: string | null = null
+        let delNum: string | null = null
 
         try {
             // 1. Dependencies
@@ -1118,7 +1133,7 @@ export default function SystemHealthPage() {
             })
 
             // 4. Create Quotation
-            const quoteNum = `QT-${Date.now()}`
+            quoteNum = `TEST-QT-${Date.now()}`
             log(id, `Creating Quotation: ${quoteNum}`)
             const { data: quote, error: qtErr } = await supabase.from('sales_quotations').insert({
                 quotation_number: quoteNum, customer_id: cust.id, quotation_date: new Date().toISOString(),
@@ -1136,7 +1151,7 @@ export default function SystemHealthPage() {
             log(id, 'Converting to Sales Order...')
             await supabase.from('sales_quotations').update({ status: 'converted' }).eq('id', quote.id)
 
-            const orderNum = `SO-${Date.now()}`
+            orderNum = `TEST-SO-${Date.now()}`
             const { data: order, error: ordErr } = await supabase.from('sales_orders').insert({
                 order_number: orderNum, customer_id: cust.id, quotation_id: quote.id,
                 order_date: new Date().toISOString(), status: 'confirmed', total_amount: 2000, location_id: loc.id
@@ -1151,7 +1166,7 @@ export default function SystemHealthPage() {
             if (orderItemErr || !orderItem) throw orderItemErr || new Error('Order item not created')
 
             // 6. Create Delivery Note
-            const delNum = `DN-${Date.now()}`
+            delNum = `TEST-DN-${Date.now()}`
             log(id, `Creating Delivery Note: ${delNum}`)
             const { data: del, error: delErr } = await supabase.from('delivery_notes').insert({
                 delivery_note_number: delNum, sales_order_id: order.id, customer_id: cust.id,
@@ -1247,7 +1262,7 @@ export default function SystemHealthPage() {
             log(id, 'Delivery accounting entries verified', 'success')
 
             // 7. Create Invoice
-            const invNum = `INV-${Date.now()}`
+            invNum = `TEST-INV-SALE-${Date.now()}`
             log(id, `Generating Invoice: ${invNum}`)
             const { data: inv, error: invErr } = await supabase.from('sales_invoices').insert({
                 invoice_number: invNum, sales_order_id: order.id, customer_id: cust.id,
@@ -1269,21 +1284,32 @@ export default function SystemHealthPage() {
 
             // 7b. Verify Invoice accounting entries
             log(id, 'Verifying invoice accounting entries...')
-            const { data: accInv, error: accInvErr } = await supabase.from('customer_invoices_accounting').insert({
-                customer_id: cust.id,
-                sales_order_id: order.id,
-                invoice_number: invNum,
-                invoice_date: new Date().toISOString().split('T')[0],
-                due_date: new Date().toISOString().split('T')[0],
-                subtotal: 2000,
-                tax_amount: 0,
-                discount_amount: 0,
-                total_amount: 2000,
-                status: 'posted',
-                created_by: user.id
-            }).select().single()
-            if (accInvErr) throw accInvErr
-            accountingInvoiceId = accInv.id
+            const { data: existingAccInv, error: existingAccInvErr } = await supabase
+                .from('customer_invoices_accounting')
+                .select('id')
+                .eq('invoice_number', invNum)
+                .maybeSingle()
+            if (existingAccInvErr) throw existingAccInvErr
+
+            if (existingAccInv) {
+                accountingInvoiceId = existingAccInv.id
+            } else {
+                const { data: accInv, error: accInvErr } = await supabase.from('customer_invoices_accounting').insert({
+                    customer_id: cust.id,
+                    sales_order_id: order.id,
+                    invoice_number: invNum,
+                    invoice_date: new Date().toISOString().split('T')[0],
+                    due_date: new Date().toISOString().split('T')[0],
+                    subtotal: 2000,
+                    tax_amount: 0,
+                    discount_amount: 0,
+                    total_amount: 2000,
+                    status: 'posted',
+                    created_by: user.id
+                }).select().single()
+                if (accInvErr) throw accInvErr
+                accountingInvoiceId = accInv.id
+            }
 
             const { data: invPost, error: invPostError } = await supabase.rpc('post_customer_invoice', { p_invoice_id: accInv.id })
             if (invPostError) throw invPostError
@@ -1335,7 +1361,7 @@ export default function SystemHealthPage() {
             log(id, 'Invoice accounting entries verified', 'success')
 
             // 8. Create Return
-            const retNum = `RTN-${Date.now()}`
+            const retNum = `TEST-RTN-${Date.now()}`
             log(id, `Processing Return: ${retNum}`)
             const { data: ret, error: retErr } = await supabase.from('sales_returns').insert({
                 return_number: retNum, sales_invoice_id: inv.id, customer_id: cust.id,
@@ -1363,6 +1389,8 @@ export default function SystemHealthPage() {
                 }
                 if (accountingInvoiceId) {
                     await supabase.from('customer_invoices_accounting').delete().eq('id', accountingInvoiceId)
+                } else if (invNum) {
+                    await supabase.from('customer_invoices_accounting').delete().eq('invoice_number', invNum)
                 }
                 if (retId) {
                     await supabase.from('sales_return_items').delete().eq('return_id', retId)
@@ -1371,18 +1399,26 @@ export default function SystemHealthPage() {
                 if (invId) {
                     await supabase.from('sales_invoice_items').delete().eq('invoice_id', invId)
                     await supabase.from('sales_invoices').delete().eq('id', invId)
+                } else if (invNum) {
+                    await supabase.from('sales_invoices').delete().eq('invoice_number', invNum)
                 }
                 if (delId) {
                     await supabase.from('delivery_note_items').delete().eq('delivery_note_id', delId)
                     await supabase.from('delivery_notes').delete().eq('id', delId)
+                } else if (delNum) {
+                    await supabase.from('delivery_notes').delete().eq('delivery_note_number', delNum)
                 }
                 if (orderId) {
                     await supabase.from('sales_order_items').delete().eq('order_id', orderId)
                     await supabase.from('sales_orders').delete().eq('id', orderId)
+                } else if (orderNum) {
+                    await supabase.from('sales_orders').delete().eq('order_number', orderNum)
                 }
                 if (quoteId) {
                     await supabase.from('sales_quotation_items').delete().eq('quotation_id', quoteId)
                     await supabase.from('sales_quotations').delete().eq('id', quoteId)
+                } else if (quoteNum) {
+                    await supabase.from('sales_quotations').delete().eq('quotation_number', quoteNum)
                 }
                 if (prodId) {
                     await supabase.from('inventory_stock').delete().eq('product_id', prodId)
@@ -1535,6 +1571,7 @@ export default function SystemHealthPage() {
         log(id, 'Starting Location-Based Access Control (LBAC) Logic Validation...')
 
         let targetLocId: string | null = null
+        let assignedForTest = false
 
         try {
             // 1. Verify table exists
@@ -1554,14 +1591,27 @@ export default function SystemHealthPage() {
             const targetLoc = locs[0]
             targetLocId = targetLoc.id
 
-            // Toggle On
-            const { error: toggleOnErr } = await supabase.rpc('toggle_user_location_access', {
-                p_user_id: user.id,
-                p_location_id: targetLoc.id,
-                p_assigned_by: user.id
-            })
-            if (toggleOnErr) throw toggleOnErr
-            log(id, `✅ Assigned access to ${targetLoc.name}`, 'success')
+            const { data: existingAssignment, error: existingAssignmentErr } = await supabase
+                .from('user_allowed_locations')
+                .select('id')
+                .eq('user_id', user.id)
+                .eq('location_id', targetLoc.id)
+                .maybeSingle()
+            if (existingAssignmentErr) throw existingAssignmentErr
+
+            if (existingAssignment) {
+                log(id, `✅ Access already assigned to ${targetLoc.name}`, 'success')
+            } else {
+                // Toggle On
+                const { error: toggleOnErr } = await supabase.rpc('toggle_user_location_access', {
+                    p_user_id: user.id,
+                    p_location_id: targetLoc.id,
+                    p_assigned_by: user.id
+                })
+                if (toggleOnErr) throw toggleOnErr
+                assignedForTest = true
+                log(id, `✅ Assigned access to ${targetLoc.name}`, 'success')
+            }
 
             // Verify Assignment
             const { data: assignment, error: verifyErr } = await supabase
@@ -1569,7 +1619,7 @@ export default function SystemHealthPage() {
                 .select('*')
                 .eq('user_id', user.id)
                 .eq('location_id', targetLoc.id)
-                .single()
+                .maybeSingle()
 
             if (verifyErr || !assignment) throw new Error('Assignment verification failed in DB')
             log(id, '✅ Assignment verified in database', 'success')
@@ -1585,22 +1635,13 @@ export default function SystemHealthPage() {
         } finally {
             try {
                 const { data: { user } } = await supabase.auth.getUser()
-                if (user && targetLocId) {
-                    // Check if record exists before toggling off (to ensure we leave it clean)
-                    const { data } = await supabase.from('user_allowed_locations')
-                        .select('id')
-                        .eq('user_id', user.id)
-                        .eq('location_id', targetLocId)
-                        .single()
-
-                    if (data) {
-                        // Toggle Off (Cleanup)
-                        await supabase.rpc('toggle_user_location_access', {
-                            p_user_id: user.id,
-                            p_location_id: targetLocId,
-                            p_assigned_by: user.id
-                        })
-                    }
+                if (user && targetLocId && assignedForTest) {
+                    // Toggle Off (Cleanup) only if test granted access
+                    await supabase.rpc('toggle_user_location_access', {
+                        p_user_id: user.id,
+                        p_location_id: targetLocId,
+                        p_assigned_by: user.id
+                    })
                 }
                 log(id, 'Cleanup complete', 'success')
             } catch (e) {
@@ -2125,8 +2166,8 @@ export default function SystemHealthPage() {
 
             {/* Compact Stats */}
             <div className="grid grid-cols-4 gap-3">
-                <div className="flex items-center gap-2 p-2 border-l-4 border-l-blue-500 bg-blue-50 rounded">
-                    <ShieldCheck className="h-4 w-4 text-blue-600" />
+                <div className="flex items-center gap-2 p-2 border-l-4 border-l-primary bg-primary/5 rounded">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
                     <div>
                         <p className="text-xs text-slate-600">Total</p>
                         <p className="text-lg font-bold text-slate-900">{totalTests}</p>
@@ -2146,11 +2187,11 @@ export default function SystemHealthPage() {
                         <p className="text-lg font-bold text-red-600">{failedTests}</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 p-2 border-l-4 border-l-purple-500 bg-purple-50 rounded">
-                    <RefreshCw className={`h-4 w-4 text-purple-600 ${isRunning ? 'animate-spin' : ''}`} />
+                <div className="flex items-center gap-2 p-2 border-l-4 border-l-primary bg-primary/5 rounded">
+                    <RefreshCw className={`h-4 w-4 text-primary ${isRunning ? 'animate-spin' : ''}`} />
                     <div>
                         <p className="text-xs text-slate-600">Progress</p>
-                        <p className="text-lg font-bold text-purple-600">{Math.round(progressPercent)}%</p>
+                        <p className="text-lg font-bold text-primary">{Math.round(progressPercent)}%</p>
                     </div>
                 </div>
             </div>
@@ -2194,7 +2235,7 @@ export default function SystemHealthPage() {
                                 {modules.map((module, idx) => (
                                     <tr
                                         key={module.id}
-                                        className={`border-b hover:bg-slate-50 transition-colors ${currentTestId === module.id ? 'bg-blue-50 ring-1 ring-blue-200' : ''
+                                        className={`border-b hover:bg-slate-50 transition-colors ${currentTestId === module.id ? 'bg-primary/5 ring-1 ring-primary/20' : ''
                                             }`}
                                     >
                                         <td className="p-2 text-slate-500 font-mono">{idx + 1}</td>
@@ -2205,13 +2246,13 @@ export default function SystemHealthPage() {
                                         <td className="p-2">
                                             <div className="flex items-center justify-center gap-1.5">
                                                 {module.status === 'pending' && <Circle className="h-3.5 w-3.5 text-slate-300" />}
-                                                {module.status === 'running' && <RefreshCw className="h-3.5 w-3.5 text-blue-500 animate-spin" />}
+                                                {module.status === 'running' && <RefreshCw className="h-3.5 w-3.5 text-primary animate-spin" />}
                                                 {module.status === 'success' && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
                                                 {module.status === 'failure' && <AlertCircle className="h-3.5 w-3.5 text-red-500" />}
                                                 {module.status !== 'pending' && (
                                                     <span className={`text-[10px] font-semibold uppercase ${module.status === 'success' ? 'text-green-600' :
                                                         module.status === 'failure' ? 'text-red-600' :
-                                                            module.status === 'running' ? 'text-blue-600' : 'text-slate-600'
+                                                            module.status === 'running' ? 'text-primary' : 'text-slate-600'
                                                         }`}>
                                                         {module.status}
                                                     </span>
@@ -2249,8 +2290,8 @@ export default function SystemHealthPage() {
                             <div key={i} className={`leading-tight ${log.includes('❌') ? 'text-red-400 font-semibold bg-red-950/30 py-0.5 px-1.5 rounded border-l-2 border-red-500' : ''
                                 } ${log.includes('✅') ? 'text-green-400' : ''
                                 } ${log.includes('⚠️') ? 'text-amber-400' : ''
-                                } ${log.includes('🚀') || log.includes('Starting') ? 'text-blue-400 mt-2 border-t border-slate-800 pt-2 font-semibold' : ''
-                                } ${log.includes('AUTONOMOUS') ? 'text-purple-400 font-semibold bg-purple-950/20 py-0.5 px-1.5 rounded' : ''
+                                } ${log.includes('🚀') || log.includes('Starting') ? 'text-primary/70 mt-2 border-t border-slate-800 pt-2 font-semibold' : ''
+                                } ${log.includes('AUTONOMOUS') ? 'text-primary/70 font-semibold bg-primary/20 py-0.5 px-1.5 rounded' : ''
                                 }`}>
                                 {log}
                             </div>
@@ -2279,7 +2320,7 @@ export default function SystemHealthPage() {
                                 <li>Database connectivity & authentication</li>
                                 <li>CRUD operations (Products, Inventory)</li>
                                 <li>Workflow validations (POS, Purchases, B2B)</li>
-                                <li>Autonomous integrations & <span className="font-semibold text-purple-600">LBAC Security</span></li>
+                                <li>Autonomous integrations & <span className="font-semibold text-primary">LBAC Security</span></li>
                             </ul>
                             <p className="text-xs text-slate-500 bg-slate-50 p-2 rounded border">
                                 ⚠️ Temporary test data will be created (prefixed with 'TEST-') and cleaned up automatically.

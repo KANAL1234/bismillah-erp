@@ -80,11 +80,11 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             case 'PENDING_APPROVAL':
                 return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
             case 'APPROVED':
-                return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>
+                return <Badge className="bg-primary/50 hover:bg-primary">Approved</Badge>
             case 'SENT_TO_VENDOR':
-                return <Badge className="bg-purple-500 hover:bg-purple-600">Sent</Badge>
+                return <Badge className="bg-primary/50 hover:bg-primary">Sent</Badge>
             case 'PARTIALLY_RECEIVED':
-                return <Badge className="bg-indigo-500 hover:bg-indigo-600">Partial</Badge>
+                return <Badge className="bg-primary/50 hover:bg-primary">Partial</Badge>
             case 'RECEIVED':
                 return <Badge className="bg-green-500 hover:bg-green-600">Received</Badge>
             case 'CANCELLED':

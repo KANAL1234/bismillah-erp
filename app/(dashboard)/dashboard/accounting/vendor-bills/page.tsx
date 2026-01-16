@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -33,32 +33,19 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { useVendorBills, useApproveVendorBill, useDeleteVendorBill, useCancelVendorBill } from '@/lib/queries/vendor-bills'
+import { useVendorBills, useApproveVendorBill, useCancelVendorBill } from '@/lib/queries/vendor-bills'
 import { useCreatePaymentVoucher } from '@/lib/queries/payment-vouchers'
 import { useBankAccounts } from '@/lib/queries/bank-accounts'
 import { PermissionGuard } from '@/components/permission-guard'
+import { ListSortControls } from '@/components/list-sort-controls'
 import {
     FileText,
     Plus,
     CheckCircle,
-    MoreHorizontal,
     Pencil,
-    Trash2,
     CreditCard,
-    BookOpen,
     XCircle,
     Eye,
-    History,
-    Package,
-    ClipboardList,
-    AlertTriangle,
     Banknote
 } from 'lucide-react'
 import Link from 'next/link'
@@ -77,7 +64,6 @@ function VendorBillsContent() {
     const { data: bills, isLoading } = useVendorBills()
     const { data: bankAccounts } = useBankAccounts()
     const approveBill = useApproveVendorBill()
-    const deleteBill = useDeleteVendorBill()
     const cancelBill = useCancelVendorBill()
     const createPayment = useCreatePaymentVoucher()
 
@@ -91,6 +77,8 @@ function VendorBillsContent() {
         referenceNumber: '',
         paymentDate: new Date().toISOString().split('T')[0]
     })
+    const [sortBy, setSortBy] = useState('created_at')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
     const openPaymentDialog = (bill: any) => {
         setSelectedBill(bill)
@@ -124,11 +112,34 @@ function VendorBillsContent() {
         setSelectedBill(null)
     }
 
+    const sortedBills = useMemo(() => {
+        const data = bills ? [...bills] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            created_at: (row) => new Date(row.created_at || row.bill_date).getTime(),
+            bill_date: (row) => new Date(row.bill_date).getTime(),
+            due_date: (row) => new Date(row.due_date).getTime(),
+            bill_number: (row) => String(row.bill_number || ''),
+            total_amount: (row) => Number(row.total_amount || 0),
+            amount_due: (row) => Number(row.amount_due || 0),
+            payment_status: (row) => String(row.payment_status || ''),
+            status: (row) => String(row.status || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.created_at
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [bills, sortBy, sortOrder])
+
     const getStatusBadge = (status: string) => {
         const colors: Record<string, string> = {
             'draft': 'bg-yellow-100 text-yellow-800',
-            'approved': 'bg-blue-100 text-blue-800',
-            'posted': 'bg-blue-100 text-blue-800',
+            'approved': 'bg-primary/10 text-primary',
+            'posted': 'bg-primary/10 text-primary',
             'goods_received': 'bg-green-100 text-green-800',
             'cancelled': 'bg-red-100 text-red-800'
         }
@@ -157,10 +168,10 @@ function VendorBillsContent() {
     }
 
     return (
-        <div className="p-6 space-y-6">
-            <div className="flex justify-between items-center">
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold">Vendor Bills</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Vendor Bills</h1>
                     <p className="text-muted-foreground">Manage accounts payable</p>
                 </div>
                 <Button asChild>
@@ -220,9 +231,27 @@ function VendorBillsContent() {
             </div>
 
             <Card>
-                <CardHeader>
-                    <CardTitle>All Vendor Bills</CardTitle>
-                    <CardDescription>View and manage vendor bills</CardDescription>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardTitle className="text-base font-medium">All Vendor Bills</CardTitle>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <CardDescription>View and manage vendor bills</CardDescription>
+                        <ListSortControls
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortByChange={setSortBy}
+                            onSortOrderChange={setSortOrder}
+                            options={[
+                                { value: 'created_at', label: 'Date Added' },
+                                { value: 'bill_date', label: 'Bill Date' },
+                                { value: 'due_date', label: 'Due Date' },
+                                { value: 'bill_number', label: 'Bill #' },
+                                { value: 'total_amount', label: 'Total Amount' },
+                                { value: 'amount_due', label: 'Amount Due' },
+                                { value: 'payment_status', label: 'Payment Status' },
+                                { value: 'status', label: 'Status' },
+                            ]}
+                        />
+                    </div>
                 </CardHeader>
                 <CardContent>
                     {isLoading ? (
@@ -239,12 +268,18 @@ function VendorBillsContent() {
                                     <TableHead className="text-right">Amount Due</TableHead>
                                     <TableHead>Payment Status</TableHead>
                                     <TableHead>Status</TableHead>
-                                    <TableHead>Actions</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {bills?.map((bill) => (
-                                    <TableRow key={bill.id}>
+                                {sortedBills?.map((bill) => {
+                                    const isPayable = ['approved', 'posted', 'goods_received'].includes(bill.status)
+                                    const canMakePayment = isPayable && bill.amount_due > 0
+                                    const canEdit = bill.status === 'draft'
+                                    const canCancel = bill.status !== 'draft' && bill.status !== 'cancelled'
+
+                                    return (
+                                        <TableRow key={bill.id}>
                                         <TableCell className="font-mono font-medium">{bill.bill_number}</TableCell>
                                         <TableCell>{(bill as any).vendors?.name}</TableCell>
                                         <TableCell>{formatDate(bill.bill_date)}</TableCell>
@@ -265,8 +300,8 @@ function VendorBillsContent() {
                                                 {getStatusLabel(bill.status)}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center gap-1">
+                                        <TableCell className="text-right">
+                                            <div className="flex flex-wrap items-center justify-end gap-2">
                                                 {/* Status-based primary actions */}
                                                 {bill.status === 'draft' && (
                                                     <Button
@@ -280,182 +315,65 @@ function VendorBillsContent() {
                                                     </Button>
                                                 )}
 
-                                                {(bill.status === 'approved' || bill.status === 'posted' || bill.status === 'goods_received') && (
-                                                    <>
-                                                        {(bill.payment_status === 'unpaid' || bill.payment_status === 'partial') && (
-                                                            <Button
-                                                                size="sm"
-                                                                variant={bill.payment_status === 'overdue' ? 'destructive' : 'default'}
-                                                                onClick={() => openPaymentDialog(bill)}
-                                                            >
-                                                                <CreditCard className="mr-1 h-3 w-3" />
-                                                                Make Payment
-                                                            </Button>
-                                                        )}
-                                                        {bill.payment_status === 'paid' && (
-                                                            <Badge className="bg-green-100 text-green-800">
-                                                                <CheckCircle className="mr-1 h-3 w-3" />
-                                                                Fully Paid
-                                                            </Badge>
-                                                        )}
-                                                    </>
-                                                )}
+                                                <Button asChild size="sm" variant="outline">
+                                                    <Link href={`/dashboard/accounting/vendor-bills/${bill.id}`}>
+                                                        <Eye className="mr-1 h-3 w-3" />
+                                                        View Details
+                                                    </Link>
+                                                </Button>
 
-                                                {bill.payment_status === 'overdue' && bill.status !== 'draft' && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="destructive"
-                                                        onClick={() => openPaymentDialog(bill)}
-                                                    >
-                                                        <AlertTriangle className="mr-1 h-3 w-3" />
-                                                        Pay Now
+                                                <Button
+                                                    size="sm"
+                                                    variant={bill.payment_status === 'overdue' ? 'destructive' : 'default'}
+                                                    onClick={() => openPaymentDialog(bill)}
+                                                    disabled={!canMakePayment}
+                                                >
+                                                    <CreditCard className="mr-1 h-3 w-3" />
+                                                    Make Payment
+                                                </Button>
+
+                                                {canEdit && (
+                                                    <Button asChild size="sm" variant="outline">
+                                                        <Link href={`/dashboard/accounting/vendor-bills/${bill.id}/edit`}>
+                                                            <Pencil className="mr-1 h-3 w-3" />
+                                                            Edit
+                                                        </Link>
                                                     </Button>
                                                 )}
 
-                                                {/* Dropdown menu for more actions */}
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <Button variant="ghost" size="sm">
-                                                            <MoreHorizontal className="h-4 w-4" />
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        {/* View Details - Always available */}
-                                                        <DropdownMenuItem asChild>
-                                                            <Link href={`/dashboard/accounting/vendor-bills/${bill.id}`}>
-                                                                <Eye className="mr-2 h-4 w-4" />
-                                                                View Details
-                                                            </Link>
-                                                        </DropdownMenuItem>
-
-                                                        {/* Draft status actions */}
-                                                        {bill.status === 'draft' && (
-                                                            <>
-                                                                <DropdownMenuItem asChild>
-                                                                    <Link href={`/dashboard/accounting/vendor-bills/${bill.id}/edit`}>
-                                                                        <Pencil className="mr-2 h-4 w-4" />
-                                                                        Edit
-                                                                    </Link>
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuSeparator />
-                                                                <AlertDialog>
-                                                                    <AlertDialogTrigger asChild>
-                                                                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-red-600">
-                                                                            <Trash2 className="mr-2 h-4 w-4" />
-                                                                            Delete
-                                                                        </DropdownMenuItem>
-                                                                    </AlertDialogTrigger>
-                                                                    <AlertDialogContent>
-                                                                        <AlertDialogHeader>
-                                                                            <AlertDialogTitle>Delete Vendor Bill?</AlertDialogTitle>
-                                                                            <AlertDialogDescription>
-                                                                                Are you sure you want to delete bill <strong>{bill.bill_number}</strong>?
-                                                                                This action cannot be undone.
-                                                                            </AlertDialogDescription>
-                                                                        </AlertDialogHeader>
-                                                                        <AlertDialogFooter>
-                                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                            <AlertDialogAction
-                                                                                onClick={() => deleteBill.mutate(bill.id)}
-                                                                                className="bg-red-600 hover:bg-red-700"
-                                                                            >
-                                                                                Delete
-                                                                            </AlertDialogAction>
-                                                                        </AlertDialogFooter>
-                                                                    </AlertDialogContent>
-                                                                </AlertDialog>
-                                                            </>
-                                                        )}
-
-                                                        {/* Posted/Approved status actions */}
-                                                        {(bill.status === 'approved' || bill.status === 'posted' || bill.status === 'goods_received') && (
-                                                            <>
-                                                                {(bill as any).journal_entry_id && (
-                                                                    <DropdownMenuItem asChild>
-                                                                        <Link href={`/dashboard/accounting/journal-entries/${(bill as any).journal_entry_id}`}>
-                                                                            <BookOpen className="mr-2 h-4 w-4" />
-                                                                            View Journal Entry
-                                                                        </Link>
-                                                                    </DropdownMenuItem>
-                                                                )}
-                                                                <DropdownMenuSeparator />
-                                                                <AlertDialog>
-                                                                    <AlertDialogTrigger asChild>
-                                                                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-red-600">
-                                                                            <XCircle className="mr-2 h-4 w-4" />
-                                                                            Cancel Bill
-                                                                        </DropdownMenuItem>
-                                                                    </AlertDialogTrigger>
-                                                                    <AlertDialogContent>
-                                                                        <AlertDialogHeader>
-                                                                            <AlertDialogTitle>Cancel Vendor Bill?</AlertDialogTitle>
-                                                                            <AlertDialogDescription>
-                                                                                This will cancel bill <strong>{bill.bill_number}</strong> and create
-                                                                                a reversing journal entry. This action cannot be undone.
-                                                                            </AlertDialogDescription>
-                                                                        </AlertDialogHeader>
-                                                                        <AlertDialogFooter>
-                                                                            <AlertDialogCancel>Keep Bill</AlertDialogCancel>
-                                                                            <AlertDialogAction
-                                                                                onClick={() => cancelBill.mutate(bill.id)}
-                                                                                className="bg-red-600 hover:bg-red-700"
-                                                                            >
-                                                                                Cancel Bill
-                                                                            </AlertDialogAction>
-                                                                        </AlertDialogFooter>
-                                                                    </AlertDialogContent>
-                                                                </AlertDialog>
-                                                            </>
-                                                        )}
-
-                                                        {/* Payment history - when has payments */}
-                                                        {bill.total_amount > bill.amount_due && (
-                                                            <>
-                                                                <DropdownMenuSeparator />
-                                                                <DropdownMenuItem asChild>
-                                                                    <Link href={`/dashboard/accounting/payment-vouchers?vendor_bill_id=${bill.id}&view=history`}>
-                                                                        <History className="mr-2 h-4 w-4" />
-                                                                        Payment History
-                                                                    </Link>
-                                                                </DropdownMenuItem>
-                                                            </>
-                                                        )}
-
-                                                        {/* Linked documents */}
-                                                        {(bill as any).grn_id && (
-                                                            <>
-                                                                <DropdownMenuSeparator />
-                                                                <DropdownMenuItem asChild>
-                                                                    <Link href={`/dashboard/purchases/grn/${(bill as any).grn_id}`}>
-                                                                        <Package className="mr-2 h-4 w-4" />
-                                                                        View GRN
-                                                                    </Link>
-                                                                </DropdownMenuItem>
-                                                            </>
-                                                        )}
-
-                                                        {(bill as any).purchase_order_id && (
-                                                            <DropdownMenuItem asChild>
-                                                                <Link href={`/dashboard/purchases/orders/${(bill as any).purchase_order_id}`}>
-                                                                    <ClipboardList className="mr-2 h-4 w-4" />
-                                                                    View Purchase Order
-                                                                </Link>
-                                                            </DropdownMenuItem>
-                                                        )}
-
-                                                        {/* Cancelled status - view only */}
-                                                        {bill.status === 'cancelled' && (
-                                                            <DropdownMenuItem disabled className="text-slate-400">
-                                                                <XCircle className="mr-2 h-4 w-4" />
-                                                                Bill Cancelled
-                                                            </DropdownMenuItem>
-                                                        )}
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
+                                                {canCancel && (
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button size="sm" variant="destructive">
+                                                                <XCircle className="mr-1 h-3 w-3" />
+                                                                Cancel Bill
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Cancel Vendor Bill?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    This will cancel bill <strong>{bill.bill_number}</strong> and create
+                                                                    a reversing journal entry. This action cannot be undone.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Keep Bill</AlertDialogCancel>
+                                                                <AlertDialogAction
+                                                                    onClick={() => cancelBill.mutate(bill.id)}
+                                                                    className="bg-red-600 hover:bg-red-700"
+                                                                >
+                                                                    Cancel Bill
+                                                                </AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                )}
                                             </div>
                                         </TableCell>
                                     </TableRow>
-                                ))}
+                                    )
+                                })}
                             </TableBody>
                         </Table>
                     )}

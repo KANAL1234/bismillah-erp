@@ -52,6 +52,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    const handleSoftRefresh = () => {
+      loadUserData();
+    };
+
+    window.addEventListener('soft-refresh', handleSoftRefresh);
+    return () => {
+      window.removeEventListener('soft-refresh', handleSoftRefresh);
+    };
+  }, []);
+
   const loadPermissions = async (userId: string, currentId: number) => {
     try {
       const { data: userPermissions, error } = await supabase.rpc('get_user_permissions', {
@@ -173,9 +184,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
 
+  const normalizePermissionCode = (permissionCode: string): string => {
+    return permissionCode.replace(/:/g, '.');
+  };
+
   const hasPermission = (permissionCode: string): boolean => {
     if (isAdmin()) return true;
-    return permissions.some(p => p.permission_code === permissionCode);
+    const normalized = normalizePermissionCode(permissionCode);
+    return permissions.some(p => normalizePermissionCode(p.permission_code) === normalized);
   };
 
   const hasLocationAccess = (locationId: string): boolean => {

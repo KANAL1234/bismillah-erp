@@ -33,6 +33,7 @@ import { toast } from "sonner"
 import { FleetTrip, FleetVehicle, FleetDriver } from "@/types/fleet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TripTrackingView } from "./trip-tracking-view"
+import { emitSoftRefresh } from "@/lib/soft-refresh"
 
 const formSchema = z.object({
     vehicle_id: z.string().min(1, "Vehicle is required"),
@@ -174,6 +175,7 @@ export function TripDialog({ trip, trigger, open, onOpenChange, onSuccess }: Tri
                 toast.success("Trip created successfully")
             }
 
+            emitSoftRefresh()
             setIsOpen(false)
             onOpenChange?.(false)
             onSuccess?.()

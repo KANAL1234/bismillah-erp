@@ -5,7 +5,8 @@ import { PermissionGuard } from "@/components/permission-guard"
 import { createClient } from "@/lib/supabase/client"
 import { FleetVehicle } from "@/types/fleet"
 import { Button } from "@/components/ui/button"
-import { Plus, Search, MoreHorizontal, Pencil, Trash } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Plus, Search, Pencil, Trash } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import {
     Table,
@@ -15,16 +16,10 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { VehicleDialog } from "@/components/fleet/vehicle-dialog"
 import { toast } from "sonner"
+import { emitSoftRefresh } from "@/lib/soft-refresh"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -85,6 +80,7 @@ function VehiclesContent() {
         } else {
             toast.success("Vehicle deleted successfully")
             fetchVehicles()
+            emitSoftRefresh()
         }
         setDeletingVehicle(null)
     }
@@ -106,86 +102,89 @@ function VehiclesContent() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-bold tracking-tight">Vehicles</h1>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Vehicles</h1>
+                    <p className="text-muted-foreground">Manage fleet vehicles and status</p>
+                </div>
                 <Button onClick={() => setIsAddOpen(true)}>
                     <Plus className="mr-2 h-4 w-4" /> Add Vehicle
                 </Button>
             </div>
 
-            <div className="flex items-center space-x-2">
-                <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search vehicles..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pl-8"
-                    />
-                </div>
-            </div>
-
-            <div className="border rounded-md">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Registration</TableHead>
-                            <TableHead>Make / Model</TableHead>
-                            <TableHead>Year</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Mileage</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {loading ? (
+            <Card>
+                <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 pb-4">
+                    <CardTitle className="text-base font-medium">Vehicle List</CardTitle>
+                    <div className="relative w-full sm:w-[250px]">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search vehicles..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-9"
+                        />
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
                             <TableRow>
-                                <TableCell colSpan={6} className="text-center py-10">Loading...</TableCell>
+                                <TableHead>Registration</TableHead>
+                                <TableHead>Make / Model</TableHead>
+                                <TableHead>Year</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Mileage</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
-                        ) : filteredVehicles.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={6} className="text-center py-10">No vehicles found</TableCell>
-                            </TableRow>
-                        ) : (
-                            filteredVehicles.map((vehicle) => (
-                                <TableRow key={vehicle.id}>
-                                    <TableCell className="font-medium">{vehicle.registration_number}</TableCell>
-                                    <TableCell>{vehicle.make} {vehicle.model}</TableCell>
-                                    <TableCell>{vehicle.year}</TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline" className={getStatusColor(vehicle.status)}>
-                                            {vehicle.status}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>{vehicle.current_mileage.toLocaleString()} km</TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                onClick={() => setEditingVehicle(vehicle)}
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                                <span className="sr-only">Edit</span>
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                onClick={() => setDeletingVehicle(vehicle)}
-                                            >
-                                                <Trash className="h-4 w-4" />
-                                                <span className="sr-only">Delete</span>
-                                            </Button>
-                                        </div>
-                                    </TableCell>
+                        </TableHeader>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Loading...</TableCell>
                                 </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
-            </div>
+                            ) : filteredVehicles.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">No vehicles found</TableCell>
+                                </TableRow>
+                            ) : (
+                                filteredVehicles.map((vehicle) => (
+                                    <TableRow key={vehicle.id}>
+                                        <TableCell className="font-medium">{vehicle.registration_number}</TableCell>
+                                        <TableCell>{vehicle.make} {vehicle.model}</TableCell>
+                                        <TableCell>{vehicle.year}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className={getStatusColor(vehicle.status)}>
+                                                {vehicle.status}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>{vehicle.current_mileage.toLocaleString()} km</TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setEditingVehicle(vehicle)}
+                                                >
+                                                    <Pencil className="mr-2 h-4 w-4" />
+                                                    Edit
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    onClick={() => setDeletingVehicle(vehicle)}
+                                                >
+                                                    <Trash className="mr-2 h-4 w-4" />
+                                                    Delete
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
 
             <VehicleDialog
                 open={isAddOpen}

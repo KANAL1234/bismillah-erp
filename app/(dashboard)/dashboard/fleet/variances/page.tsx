@@ -85,7 +85,7 @@ function VarianceDashboardContent() {
     const getStatusBadge = (status: string) => {
         const colors: Record<string, string> = {
             OPEN: 'bg-yellow-100 text-yellow-800',
-            INVESTIGATING: 'bg-blue-100 text-blue-800',
+            INVESTIGATING: 'bg-primary/10 text-primary',
             RESOLVED: 'bg-green-100 text-green-800',
             ESCALATED: 'bg-red-100 text-red-800',
         }
@@ -115,8 +115,8 @@ function VarianceDashboardContent() {
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Fleet Variance Dashboard</h1>
-                <p className="text-slate-500">Monitor and manage expense variances across fleet operations</p>
+                <h1 className="text-3xl font-bold tracking-tight">Fleet Variance Dashboard</h1>
+                <p className="text-muted-foreground">Monitor and manage expense variances across fleet operations</p>
             </div>
 
             {/* Summary Cards */}
@@ -205,7 +205,7 @@ function VarianceDashboardContent() {
                             <Card>
                                 <CardContent className="p-0">
                                     <Table>
-                                        <TableHeader className="bg-slate-50/50">
+                                        <TableHeader>
                                             <TableRow>
                                                 <TableHead>Date</TableHead>
                                                 <TableHead>Trip</TableHead>
@@ -221,7 +221,7 @@ function VarianceDashboardContent() {
                                         <TableBody>
                                             {variances?.length === 0 ? (
                                                 <TableRow>
-                                                    <TableCell colSpan={9} className="text-center py-8 text-slate-500">
+                                                    <TableCell colSpan={9} className="text-center h-24 text-muted-foreground">
                                                         No variances found
                                                     </TableCell>
                                                 </TableRow>
@@ -272,22 +272,20 @@ function VarianceDashboardContent() {
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell className="text-right">
-                                                            <div className="flex justify-end gap-2">
+                                                            <div className="flex items-center justify-end gap-2">
                                                                 {variance.status === 'OPEN' && (
                                                                     <>
                                                                         <Button
-                                                                            variant="ghost"
+                                                                            variant="outline"
                                                                             size="sm"
-                                                                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
                                                                             onClick={() => setSelectedVariance(variance)}
                                                                         >
                                                                             <CheckCircle className="h-4 w-4 mr-1" />
                                                                             Resolve
                                                                         </Button>
                                                                         <Button
-                                                                            variant="ghost"
+                                                                            variant="destructive"
                                                                             size="sm"
-                                                                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                                                             onClick={() => handleEscalate(variance.id)}
                                                                         >
                                                                             <AlertTriangle className="h-4 w-4 mr-1" />

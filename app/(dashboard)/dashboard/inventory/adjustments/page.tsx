@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStockAdjustments, useSubmitAdjustment, useApproveAdjustment, useDeleteAdjustment } from '@/lib/queries/stock-adjustments'
 import { PermissionGuard } from '@/components/permission-guard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,6 +29,7 @@ import { Plus, Check, X, Trash2, Settings2, Send, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 import { useLocation } from '@/components/providers/location-provider'
 
@@ -48,6 +49,8 @@ function StockAdjustmentsContent() {
     const submitAdjustment = useSubmitAdjustment()
     const approveAdjustment = useApproveAdjustment()
     const deleteAdjustment = useDeleteAdjustment()
+    const [sortBy, setSortBy] = useState('adjustment_date')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
     // Filter adjustments based on location selection
     const allAdjustments = allAdjustmentsData?.filter(adjustment => {
@@ -150,9 +153,31 @@ function StockAdjustmentsContent() {
         )
     }
 
-    const draftAdjustments = allAdjustments?.filter(a => a.status === 'DRAFT')
-    const pendingAdjustments = allAdjustments?.filter(a => a.status === 'PENDING_APPROVAL')
-    const approvedAdjustments = allAdjustments?.filter(a => a.status === 'APPROVED')
+    const sortAdjustments = useMemo(() => {
+        const sorters: Record<string, (row: any) => string | number> = {
+            adjustment_date: (row) => new Date(row.adjustment_date || row.created_at).getTime(),
+            adjustment_number: (row) => String(row.adjustment_number || ''),
+            status: (row) => String(row.status || ''),
+            type: (row) => String(row.adjustment_type || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.adjustment_date
+        return (list?: any[]) => {
+            const data = list ? [...list] : []
+            data.sort((a, b) => {
+                const av = getValue(a)
+                const bv = getValue(b)
+                if (av < bv) return sortOrder === 'asc' ? -1 : 1
+                if (av > bv) return sortOrder === 'asc' ? 1 : -1
+                return 0
+            })
+            return data
+        }
+    }, [sortBy, sortOrder])
+
+    const draftAdjustments = sortAdjustments(allAdjustments?.filter(a => a.status === 'DRAFT'))
+    const pendingAdjustments = sortAdjustments(allAdjustments?.filter(a => a.status === 'PENDING_APPROVAL'))
+    const approvedAdjustments = sortAdjustments(allAdjustments?.filter(a => a.status === 'APPROVED'))
+    const sortedAllAdjustments = sortAdjustments(allAdjustments)
 
     return (
         <div className="space-y-6">
@@ -174,6 +199,20 @@ function StockAdjustmentsContent() {
             </div>
 
             <Tabs defaultValue="all" className="space-y-4">
+                <div className="flex justify-end">
+                    <ListSortControls
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSortByChange={setSortBy}
+                        onSortOrderChange={setSortOrder}
+                        options={[
+                            { value: 'adjustment_date', label: 'Date Added' },
+                            { value: 'adjustment_number', label: 'Adjustment #' },
+                            { value: 'type', label: 'Type' },
+                            { value: 'status', label: 'Status' },
+                        ]}
+                    />
+                </div>
                 <div className="flex justify-between items-center bg-white p-1 rounded-lg border">
                     <TabsList className="bg-transparent">
                         <TabsTrigger value="all" className="data-[state=active]:bg-slate-100">All ({allAdjustments?.length || 0})</TabsTrigger>
@@ -185,7 +224,7 @@ function StockAdjustmentsContent() {
 
                 {['all', 'draft', 'pending', 'approved'].map(tab => {
                     const adjustments =
-                        tab === 'all' ? allAdjustments :
+                        tab === 'all' ? sortedAllAdjustments :
                             tab === 'draft' ? draftAdjustments :
                                 tab === 'pending' ? pendingAdjustments :
                                     approvedAdjustments
@@ -196,21 +235,21 @@ function StockAdjustmentsContent() {
                                 <CardContent className="p-0">
                                     <div className="overflow-x-auto">
                                         <Table>
-                                            <TableHeader className="bg-slate-50/50">
+                                            <TableHeader>
                                                 <TableRow>
-                                                    <TableHead className="font-bold">Adjustment #</TableHead>
-                                                    <TableHead className="font-bold">Location</TableHead>
-                                                    <TableHead className="font-bold">Type</TableHead>
-                                                    <TableHead className="font-bold">Date</TableHead>
-                                                    <TableHead className="font-bold text-right">Impact</TableHead>
-                                                    <TableHead className="font-bold">Status</TableHead>
-                                                    <TableHead className="text-right font-bold">Actions</TableHead>
+                                                    <TableHead>Adjustment #</TableHead>
+                                                    <TableHead>Location</TableHead>
+                                                    <TableHead>Type</TableHead>
+                                                    <TableHead>Date</TableHead>
+                                                    <TableHead className="text-right">Impact</TableHead>
+                                                    <TableHead>Status</TableHead>
+                                                    <TableHead className="text-right">Actions</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                                 {adjustments?.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={7} className="text-center py-12 text-slate-500">
+                                                        <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                                             <p className="font-medium">No adjustments found in this category</p>
                                                         </TableCell>
                                                     </TableRow>
@@ -240,50 +279,43 @@ function StockAdjustmentsContent() {
                                                                 </Badge>
                                                             </TableCell>
                                                             <TableCell className="text-right">
-                                                                <div className="flex justify-end gap-2">
-                                                                    <Link href={`/dashboard/inventory/adjustments/${adjustment.id}`}>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                                            title="View Details"
-                                                                        >
-                                                                            <Eye className="h-4 w-4" />
-                                                                        </Button>
-                                                                    </Link>
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <Button asChild variant="outline" size="sm">
+                                                                        <Link href={`/dashboard/inventory/adjustments/${adjustment.id}`}>
+                                                                            <Eye className="mr-2 h-4 w-4" />
+                                                                            View
+                                                                        </Link>
+                                                                    </Button>
 
                                                                     {adjustment.status === 'DRAFT' && (
                                                                         <>
                                                                             <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                                                variant="outline"
+                                                                                size="sm"
                                                                                 onClick={() => handleSubmit(adjustment.id, adjustment.adjustment_number)}
-                                                                                title="Submit for Approval"
                                                                             >
-                                                                                <Send className="h-4 w-4" />
+                                                                                <Send className="mr-2 h-4 w-4" />
+                                                                                Submit
                                                                             </Button>
                                                                             <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                                                variant="destructive"
+                                                                                size="sm"
                                                                                 onClick={() => handleDelete(adjustment.id, adjustment.adjustment_number)}
-                                                                                title="Delete Adjustment"
                                                                             >
-                                                                                <Trash2 className="h-4 w-4" />
+                                                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                                                Delete
                                                                             </Button>
                                                                         </>
                                                                     )}
 
                                                                     {adjustment.status === 'PENDING_APPROVAL' && (
                                                                         <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                            variant="outline"
+                                                                            size="sm"
                                                                             onClick={() => handleApprove(adjustment.id, adjustment.adjustment_number)}
-                                                                            title="Approve Adjustment"
                                                                         >
-                                                                            <Check className="h-4 w-4" />
+                                                                            <Check className="mr-2 h-4 w-4" />
+                                                                            Approve
                                                                         </Button>
                                                                     )}
                                                                 </div>

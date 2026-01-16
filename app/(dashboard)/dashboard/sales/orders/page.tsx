@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Search, FileText, Download, Truck, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,7 @@ import { createSalesOrderPDF } from '@/lib/utils/export'
 import { useGenerateInvoiceFromOrder } from '@/lib/queries/sales-invoices'
 import { useDeliveryNotes } from '@/lib/queries/delivery-notes'
 import { useSalesInvoices } from '@/lib/queries/sales-invoices'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 export default function SalesOrdersPage() {
     return (
@@ -41,6 +42,8 @@ function SalesOrdersContent() {
     const { data: deliveryNotes } = useDeliveryNotes()
     const { data: invoices } = useSalesInvoices()
     const [searchQuery, setSearchQuery] = useState('')
+    const [sortBy, setSortBy] = useState('created_at')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const supabase = createClient()
     const generateInvoice = useGenerateInvoiceFromOrder()
     const deliveredOrderIds = new Set((deliveryNotes || []).map(note => note.sales_order_id).filter(Boolean))
@@ -151,13 +154,35 @@ function SalesOrdersContent() {
         return true
     })
 
+    const sortedOrders = useMemo(() => {
+        const data = filteredOrders ? [...filteredOrders] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            created_at: (row) => new Date(row.created_at || row.order_date).getTime(),
+            order_date: (row) => new Date(row.order_date).getTime(),
+            delivery_date: (row) => row.delivery_date ? new Date(row.delivery_date).getTime() : 0,
+            order_number: (row) => String(row.order_number || ''),
+            total_amount: (row) => Number(row.total_amount || 0),
+            status: (row) => String(row.status || ''),
+            payment_status: (row) => String(row.payment_status || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.created_at
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [filteredOrders, sortBy, sortOrder])
+
     const getStatusBadge = (status: SalesOrder['status']) => {
         switch (status) {
             case 'draft': return <Badge variant="secondary">Draft</Badge>
             case 'pending': return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
-            case 'confirmed': return <Badge className="bg-blue-500 hover:bg-blue-600">Confirmed</Badge>
-            case 'processing': return <Badge className="bg-indigo-500 hover:bg-indigo-600">Processing</Badge>
-            case 'shipped': return <Badge className="bg-purple-500 hover:bg-purple-600">Shipped</Badge>
+            case 'confirmed': return <Badge className="bg-primary/50 hover:bg-primary">Confirmed</Badge>
+            case 'processing': return <Badge className="bg-primary/50 hover:bg-primary">Processing</Badge>
+            case 'shipped': return <Badge className="bg-primary/50 hover:bg-primary">Shipped</Badge>
             case 'delivered': return <Badge className="bg-green-500 hover:bg-green-600">Delivered</Badge>
             case 'completed': return <Badge className="bg-green-700 hover:bg-green-800">Completed</Badge>
             case 'cancelled': return <Badge variant="destructive">Cancelled</Badge>
@@ -202,13 +227,30 @@ function SalesOrdersContent() {
                     <CardTitle className="text-base font-medium">
                         Recent Orders
                     </CardTitle>
-                    <div className="relative">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="Search by order number or customer..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-8 w-[250px]"
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search by order number or customer..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-8 w-[250px]"
+                            />
+                        </div>
+                        <ListSortControls
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortByChange={setSortBy}
+                            onSortOrderChange={setSortOrder}
+                            options={[
+                                { value: 'created_at', label: 'Date Added' },
+                                { value: 'order_date', label: 'Order Date' },
+                                { value: 'delivery_date', label: 'Delivery Date' },
+                                { value: 'order_number', label: 'Order #' },
+                                { value: 'total_amount', label: 'Total Amount' },
+                                { value: 'status', label: 'Status' },
+                                { value: 'payment_status', label: 'Payment Status' },
+                            ]}
                         />
                     </div>
                 </CardHeader>
@@ -226,14 +268,14 @@ function SalesOrdersContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredOrders?.length === 0 ? (
+                            {sortedOrders?.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                         No orders found.
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredOrders?.map((order) => (
+                                sortedOrders?.map((order) => (
                                     <TableRow key={order.id}>
                                         <TableCell className="font-medium">{order.order_number}</TableCell>
                                         <TableCell>{formatDate(order.order_date)}</TableCell>

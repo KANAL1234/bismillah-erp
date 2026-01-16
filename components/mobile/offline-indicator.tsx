@@ -29,7 +29,7 @@ export function OfflineIndicator() {
 
         {/* Syncing Banner */}
         {isOnline && isSyncing && (
-          <div className="bg-blue-500 text-white px-4 py-2 text-center text-sm font-medium animate-in slide-in-from-top">
+          <div className="bg-primary/50 text-white px-4 py-2 text-center text-sm font-medium animate-in slide-in-from-top">
             <div className="flex items-center justify-center gap-2">
               <RefreshCw className="w-4 h-4 animate-spin" />
               <span>Syncing data...</span>
@@ -117,7 +117,7 @@ export function SyncStatus() {
       )}
 
       {isOnline && isSyncing && (
-        <div className="flex items-center gap-1 text-blue-600">
+        <div className="flex items-center gap-1 text-primary">
           <RefreshCw className="w-4 h-4 animate-spin" />
           <span className="text-xs font-medium">Syncing...</span>
         </div>

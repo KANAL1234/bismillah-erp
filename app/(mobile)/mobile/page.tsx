@@ -15,9 +15,9 @@ export default function MobileHomePage() {
             label: isTracking ? 'Trip in Progress' : 'Start Trip',
             href: '/mobile/trip',
             icon: isTracking ? Navigation : MapPin,
-            color: isTracking ? 'bg-green-600 animate-pulse' : 'bg-purple-600'
+            color: isTracking ? 'bg-green-600 animate-pulse' : 'bg-primary'
         },
-        { label: 'New Sale', href: '/mobile/pos', icon: ShoppingCart, color: 'bg-blue-500' },
+        { label: 'New Sale', href: '/mobile/pos', icon: ShoppingCart, color: 'bg-primary/50' },
         { label: 'View Stock', href: '/mobile/inventory', icon: Package, color: 'bg-green-500' },
         { label: 'Log Fuel', href: '/mobile/fuel', icon: Fuel, color: 'bg-orange-500' },
     ]

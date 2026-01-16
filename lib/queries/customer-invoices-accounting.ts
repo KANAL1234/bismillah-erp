@@ -8,16 +8,81 @@ export function useCustomerInvoices() {
         queryKey: ['customer-invoices-accounting'],
         queryFn: async () => {
             const supabase = createClient()
+            try {
+                await supabase.rpc('sync_sales_invoices_to_accounting')
+            } catch {
+                // best-effort sync; list should still load
+            }
             const { data, error } = await supabase
                 .from('customer_invoices_accounting')
                 .select(`
                     *,
-                    customers (id, name, customer_code)
+                    customers (id, name, customer_code),
+                    locations (name, code),
+                    inventory_locations (location_name, location_code),
+                    sales_orders (
+                        id,
+                        location_id,
+                        warehouse_id,
+                        locations (name, code),
+                        inventory_locations (location_name, location_code)
+                    )
                 `)
                 .order('invoice_date', { ascending: false })
 
+            const formatStoreName = (name: string) => {
+                return name
+                    .replace(/^Store\s*\d*\s*-\s*/i, '')
+                    .replace(/^Store\s*-\s*/i, '')
+                    .replace(/^Mobile Store\s*-\s*/i, '')
+                    .trim()
+            }
+
+            const formatSalesSource = (invoice: any) => {
+                const directWarehouse = invoice?.inventory_locations
+                if (directWarehouse?.location_name) {
+                    const code = directWarehouse.location_code ? ` (${directWarehouse.location_code})` : ''
+                    return `Warehouse ${directWarehouse.location_name}${code}`
+                }
+
+                const directLocation = invoice?.locations
+                if (directLocation?.name) {
+                    const code = directLocation.code ? ` ${directLocation.code}` : ''
+                    return `${formatStoreName(directLocation.name)}${code}`
+                }
+
+                const warehouse = invoice?.sales_orders?.inventory_locations
+                if (warehouse?.location_name) {
+                    const code = warehouse.location_code ? ` (${warehouse.location_code})` : ''
+                    return `Warehouse ${warehouse.location_name}${code}`
+                }
+
+                const location = invoice?.sales_orders?.locations
+                if (location?.name) {
+                    const code = location.code ? ` ${location.code}` : ''
+                    return `${formatStoreName(location.name)}${code}`
+                }
+
+                return 'No Location'
+            }
+
             if (error) throw error
-            return data
+
+            return (data || []).map((invoice: any) => {
+                const totalAmount = Number(invoice.total_amount || 0)
+                const amountReceived = Number(invoice.amount_received || 0)
+                const amountDue = Number(invoice.amount_due ?? (totalAmount - amountReceived))
+                const paymentStatus = invoice.payment_status || (amountDue <= 0 ? 'paid' : amountReceived > 0 ? 'partial' : 'unpaid')
+
+                return {
+                    ...invoice,
+                    total_amount: totalAmount,
+                    amount_received: amountReceived,
+                    amount_due: amountDue,
+                    payment_status: paymentStatus,
+                    sales_source: formatSalesSource(invoice),
+                }
+            })
         }
     })
 }
@@ -45,11 +110,28 @@ export function useCreateCustomerInvoice() {
                 nextNumber = `CI-${String(lastNum + 1).padStart(4, '0')}`
             }
 
+            let locationId = invoice.location_id || null
+            let warehouseId = invoice.warehouse_id || null
+
+            if (invoice.sales_order_id) {
+                const { data: salesOrder, error: salesOrderError } = await supabase
+                    .from('sales_orders')
+                    .select('location_id, warehouse_id')
+                    .eq('id', invoice.sales_order_id)
+                    .single()
+
+                if (salesOrderError) throw salesOrderError
+                locationId = salesOrder?.location_id || locationId
+                warehouseId = salesOrder?.warehouse_id || warehouseId
+            }
+
             const { data, error } = await supabase
                 .from('customer_invoices_accounting')
                 .insert({
                     ...invoice,
                     invoice_number: nextNumber,
+                    location_id: locationId,
+                    warehouse_id: warehouseId,
                     created_by: user.id
                 })
                 .select()

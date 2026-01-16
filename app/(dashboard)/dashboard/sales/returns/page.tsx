@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Search, RotateCcw, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ import { formatDate } from '@/lib/utils'
 import { SalesReturn } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { createSalesReturnPDF } from '@/lib/utils/export'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 export default function SalesReturnsPage() {
     return (
@@ -36,6 +37,8 @@ function SalesReturnsContent() {
     const { currentLocationId } = useLocation()
     const { data: returns, isLoading } = useSalesReturns()
     const [searchTerm, setSearchTerm] = useState('')
+    const [sortBy, setSortBy] = useState('created_at')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const supabase = createClient()
 
     const handleDownload = async (returnId: string) => {
@@ -110,12 +113,32 @@ function SalesReturnsContent() {
         return true
     })
 
+    const sortedReturns = useMemo(() => {
+        const data = filteredReturns ? [...filteredReturns] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            created_at: (row) => new Date(row.created_at || row.return_date).getTime(),
+            return_date: (row) => new Date(row.return_date).getTime(),
+            return_number: (row) => String(row.return_number || ''),
+            status: (row) => String(row.status || ''),
+            refund_amount: (row) => Number(row.refund_amount || 0),
+        }
+        const getValue = sorters[sortBy] || sorters.created_at
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [filteredReturns, sortBy, sortOrder])
+
     const getStatusBadge = (status: SalesReturn['status']) => {
         switch (status) {
             case 'draft': return <Badge variant="secondary">Draft</Badge>
-            case 'approved': return <Badge className="bg-blue-500">Approved</Badge>
+            case 'approved': return <Badge className="bg-primary/50">Approved</Badge>
             case 'completed': return <Badge className="bg-green-600">Completed</Badge>
-            case 'refunded': return <Badge className="bg-purple-600">Refunded</Badge>
+            case 'refunded': return <Badge className="bg-primary">Refunded</Badge>
             default: return <Badge variant="outline">{status}</Badge>
         }
     }
@@ -148,13 +171,28 @@ function SalesReturnsContent() {
                     <CardTitle className="text-base font-medium">
                         Recent Returns
                     </CardTitle>
-                    <div className="relative">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="Search returns..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-8 w-[250px]"
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search returns..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-8 w-[250px]"
+                            />
+                        </div>
+                        <ListSortControls
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortByChange={setSortBy}
+                            onSortOrderChange={setSortOrder}
+                            options={[
+                                { value: 'created_at', label: 'Date Added' },
+                                { value: 'return_date', label: 'Return Date' },
+                                { value: 'return_number', label: 'Return #' },
+                                { value: 'refund_amount', label: 'Refund Amount' },
+                                { value: 'status', label: 'Status' },
+                            ]}
                         />
                     </div>
                 </CardHeader>
@@ -172,14 +210,14 @@ function SalesReturnsContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredReturns?.length === 0 ? (
+                            {sortedReturns?.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                         No returns found.
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredReturns?.map((ret) => (
+                                sortedReturns?.map((ret) => (
                                     <TableRow key={ret.id}>
                                         <TableCell className="font-medium">{ret.return_number}</TableCell>
                                         <TableCell>{formatDate(ret.return_date)}</TableCell>

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Truck, Download, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ import { formatDate } from '@/lib/utils'
 import { DeliveryNote } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { createDeliveryNotePDF } from '@/lib/utils/export'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 export default function DeliveryNotesPage() {
     return (
@@ -36,6 +37,8 @@ function DeliveryNotesContent() {
     const { currentLocationId } = useLocation()
     const { data: notes, isLoading } = useDeliveryNotes()
     const [searchTerm, setSearchTerm] = useState('')
+    const [sortBy, setSortBy] = useState('created_at')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const supabase = createClient()
 
     const handleDownload = async (noteId: string) => {
@@ -165,10 +168,30 @@ function DeliveryNotesContent() {
         return true
     })
 
+    const sortedNotes = useMemo(() => {
+        const data = filteredNotes ? [...filteredNotes] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            created_at: (row) => new Date(row.created_at || row.delivery_date).getTime(),
+            delivery_date: (row) => new Date(row.delivery_date).getTime(),
+            delivery_note_number: (row) => String(row.delivery_note_number || ''),
+            status: (row) => String(row.status || ''),
+            customer: (row) => String(row.customers?.name || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.created_at
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [filteredNotes, sortBy, sortOrder])
+
     const getStatusBadge = (status: DeliveryNote['status']) => {
         switch (status) {
             case 'draft': return <Badge variant="secondary">Draft</Badge>
-            case 'shipped': return <Badge className="bg-purple-500 hover:bg-purple-600">Shipped</Badge>
+            case 'shipped': return <Badge className="bg-primary/50 hover:bg-primary">Shipped</Badge>
             case 'delivered': return <Badge className="bg-green-500 hover:bg-green-600">Delivered</Badge>
             case 'cancelled': return <Badge variant="destructive">Cancelled</Badge>
             default: return <Badge variant="outline">{status}</Badge>
@@ -209,13 +232,28 @@ function DeliveryNotesContent() {
                     <CardTitle className="text-base font-medium">
                         Recent Deliveries
                     </CardTitle>
-                    <div className="relative">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="Search deliveries..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-8 w-[250px]"
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search deliveries..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-8 w-[250px]"
+                            />
+                        </div>
+                        <ListSortControls
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortByChange={setSortBy}
+                            onSortOrderChange={setSortOrder}
+                            options={[
+                                { value: 'created_at', label: 'Date Added' },
+                                { value: 'delivery_date', label: 'Delivery Date' },
+                                { value: 'delivery_note_number', label: 'DN Number' },
+                                { value: 'customer', label: 'Customer' },
+                                { value: 'status', label: 'Status' },
+                            ]}
                         />
                     </div>
                 </CardHeader>
@@ -233,14 +271,14 @@ function DeliveryNotesContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredNotes?.length === 0 ? (
+                            {sortedNotes?.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                         No delivery notes found.
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredNotes?.map((note) => (
+                                sortedNotes?.map((note) => (
                                     <TableRow key={note.id}>
                                         <TableCell className="font-medium">{note.delivery_note_number}</TableCell>
                                         <TableCell>{formatDate(note.delivery_date)}</TableCell>

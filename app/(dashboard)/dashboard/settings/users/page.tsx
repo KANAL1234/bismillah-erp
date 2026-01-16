@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/providers/auth-provider';
 import { PermissionGuard } from '@/components/permission-guard';
+import { emitSoftRefresh } from '@/lib/soft-refresh';
 import { UserWithRoles, Role } from '@/lib/types/rbac';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,7 @@ function UserManagementContent() {
                 setTimeout(() => {
                     loadData();
                 }, 1000);
+                emitSoftRefresh();
             } else {
                 toast.error(result.message);
             }
@@ -136,6 +138,7 @@ function UserManagementContent() {
 
             toast.success(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
             await loadData();
+            emitSoftRefresh();
             await logAction(
                 !currentStatus ? 'activate_user' : 'deactivate_user',
                 'settings',
@@ -169,27 +172,27 @@ function UserManagementContent() {
                 </CardHeader>
                 <CardContent className="flex-1 overflow-auto p-0 border-t">
                     <Table>
-                        <TableHeader className="bg-slate-50 sticky top-0 z-30 shadow-sm">
+                        <TableHeader className="sticky top-0 z-30 bg-white shadow-sm">
                             <TableRow>
-                                <TableHead className="w-[180px] font-bold bg-slate-50 sticky top-0 z-30">User</TableHead>
-                                <TableHead className="font-bold bg-slate-50 sticky top-0 z-30">Employee Code</TableHead>
-                                <TableHead className="font-bold bg-slate-50 sticky top-0 z-30">Roles</TableHead>
-                                <TableHead className="font-bold bg-slate-50 sticky top-0 z-30">Allowed Locations</TableHead>
-                                <TableHead className="font-bold bg-slate-50 sticky top-0 z-30">Status</TableHead>
-                                <TableHead className="font-bold bg-slate-50 sticky top-0 z-30">Last Login</TableHead>
-                                <TableHead className="text-right font-bold sticky top-0 right-0 bg-slate-50 border-l z-40 shadow-[-2px_0_5px_rgba(0,0,0,0.05)]">Actions</TableHead>
+                                <TableHead className="w-[180px]">User</TableHead>
+                                <TableHead>Employee Code</TableHead>
+                                <TableHead>Roles</TableHead>
+                                <TableHead>Allowed Locations</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Last Login</TableHead>
+                                <TableHead className="text-right sticky top-0 right-0 bg-white border-l z-40 shadow-[-2px_0_5px_rgba(0,0,0,0.05)]">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-10">
+                                    <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                         Loading users...
                                     </TableCell>
                                 </TableRow>
                             ) : users.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+                                    <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                         No users found.
                                     </TableCell>
                                 </TableRow>
@@ -220,7 +223,7 @@ function UserManagementContent() {
                                             <div className="flex flex-wrap gap-1">
                                                 {user.allowed_locations && user.allowed_locations.length > 0 ? (
                                                     user.allowed_locations.map((loc) => (
-                                                        <Badge key={loc.location_id} variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                                                        <Badge key={loc.location_id} variant="outline" className="text-[10px] bg-primary/5 text-primary border-primary/20">
                                                             {loc.location_name}
                                                         </Badge>
                                                     ))
@@ -245,41 +248,41 @@ function UserManagementContent() {
                                             )}
                                         </TableCell>
                                         <TableCell className="text-right sticky right-0 bg-white group-hover:bg-slate-50 border-l z-20 shadow-[-2px_0_5px_rgba(0,0,0,0.05)] transition-colors">
-                                            <div className="flex justify-end gap-2 pr-2">
+                                            <div className="flex items-center justify-end gap-2 pr-2">
                                                 <PermissionGuard permission="settings.roles.manage">
                                                     <Button
-                                                        variant="ghost"
-                                                        size="icon"
+                                                        variant="outline"
+                                                        size="sm"
                                                         onClick={() => {
                                                             setSelectedUser(user);
                                                             setShowRolesDialog(true);
                                                         }}
-                                                        title="Manage Roles"
                                                     >
-                                                        <Shield className="h-4 w-4" />
+                                                        <Shield className="mr-2 h-4 w-4" />
+                                                        Roles
                                                     </Button>
                                                 </PermissionGuard>
                                                 <PermissionGuard permission="settings.users.update">
                                                     <Button
-                                                        variant="ghost"
-                                                        size="icon"
+                                                        variant="outline"
+                                                        size="sm"
                                                         onClick={() => {
                                                             setSelectedUser(user);
                                                             setShowLocationsDialog(true);
                                                         }}
-                                                        title="Manage Locations"
                                                     >
-                                                        <MapPin className="h-4 w-4" />
+                                                        <MapPin className="mr-2 h-4 w-4" />
+                                                        Locations
                                                     </Button>
                                                 </PermissionGuard>
                                                 <PermissionGuard permission="settings.users.update">
                                                     <Button
-                                                        variant="ghost"
-                                                        size="icon"
+                                                        variant={user.is_active ? "destructive" : "outline"}
+                                                        size="sm"
                                                         onClick={() => handleToggleStatus(user.user_id, user.is_active)}
-                                                        title={user.is_active ? 'Deactivate' : 'Activate'}
                                                     >
-                                                        <Key className={`h-4 w-4 ${user.is_active ? 'text-destructive' : 'text-green-600'}`} />
+                                                        <Key className="mr-2 h-4 w-4" />
+                                                        {user.is_active ? 'Deactivate' : 'Activate'}
                                                     </Button>
                                                 </PermissionGuard>
                                             </div>
@@ -417,6 +420,7 @@ function UserManagementContent() {
                                                 const updatedUsers = await loadData();
                                                 const updatedUser = updatedUsers.find(u => u.user_id === selectedUser?.user_id);
                                                 if (updatedUser) setSelectedUser(updatedUser);
+                                                emitSoftRefresh();
                                             }}
                                         >
                                             {isAssigned ? "Remove" : "Assign"}
@@ -465,6 +469,7 @@ function UserManagementContent() {
                                                     const updatedUsers = await loadData();
                                                     const updatedUser = updatedUsers.find(u => u.user_id === selectedUser?.user_id);
                                                     if (updatedUser) setSelectedUser(updatedUser);
+                                                    emitSoftRefresh();
                                                 }
                                             }}
                                         >

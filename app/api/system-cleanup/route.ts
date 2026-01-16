@@ -44,9 +44,41 @@ export async function POST() {
             .or('name.ilike.TEST-%,customer_code.ilike.TEST-%,name.ilike.HEALTH-TEST-%,customer_code.ilike.HEALTH-TEST-%')
         if (staleCust?.length) {
             const ids = staleCust.map(c => c.id)
+            const { data: orders } = await adminSupabase.from('sales_orders').select('id').in('customer_id', ids)
+            const { data: quotes } = await adminSupabase.from('sales_quotations').select('id').in('customer_id', ids)
+            const { data: deliveries } = await adminSupabase.from('delivery_notes').select('id').in('customer_id', ids)
+            const { data: invoices } = await adminSupabase.from('sales_invoices').select('id').in('customer_id', ids)
+            const { data: returns } = await adminSupabase.from('sales_returns').select('id').in('customer_id', ids)
+
+            const orderIds = orders?.map(o => o.id) || []
+            const quoteIds = quotes?.map(q => q.id) || []
+            const deliveryIds = deliveries?.map(d => d.id) || []
+            const invoiceIds = invoices?.map(i => i.id) || []
+            const returnIds = returns?.map(r => r.id) || []
+
+            if (returnIds.length) {
+                await adminSupabase.from('sales_return_items').delete().in('return_id', returnIds)
+                await adminSupabase.from('sales_returns').delete().in('id', returnIds)
+            }
+            if (invoiceIds.length) {
+                await adminSupabase.from('sales_invoice_items').delete().in('invoice_id', invoiceIds)
+                await adminSupabase.from('sales_invoices').delete().in('id', invoiceIds)
+            }
+            if (deliveryIds.length) {
+                await adminSupabase.from('delivery_note_items').delete().in('delivery_note_id', deliveryIds)
+                await adminSupabase.from('delivery_notes').delete().in('id', deliveryIds)
+            }
+            if (orderIds.length) {
+                await adminSupabase.from('sales_order_items').delete().in('order_id', orderIds)
+                await adminSupabase.from('sales_orders').delete().in('id', orderIds)
+            }
+            if (quoteIds.length) {
+                await adminSupabase.from('sales_quotation_items').delete().in('quotation_id', quoteIds)
+                await adminSupabase.from('sales_quotations').delete().in('id', quoteIds)
+            }
+
             await adminSupabase.from('pos_sales').delete().in('customer_id', ids)
             await adminSupabase.from('customer_invoices_accounting').delete().in('customer_id', ids)
-            await adminSupabase.from('sales_orders').delete().in('customer_id', ids)
             await adminSupabase.from('receipt_vouchers').delete().in('customer_id', ids)
             const { error } = await adminSupabase.from('customers').delete().in('id', ids)
             if (!error) logs.push(`✅ Deleted ${ids.length} stale customers`)

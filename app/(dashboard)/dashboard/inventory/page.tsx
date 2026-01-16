@@ -169,7 +169,7 @@ function InventoryContent() {
                         <CardContent className="p-0">
                             <div className="overflow-x-auto">
                                 <Table>
-                                    <TableHeader className="bg-slate-50/50">
+                                    <TableHeader>
                                         <TableRow>
                                             <TableHead>Product</TableHead>
                                             <TableHead>SKU</TableHead>
@@ -182,7 +182,7 @@ function InventoryContent() {
                                     <TableBody>
                                         {filteredStock?.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={6} className="text-center py-12 text-slate-500">
+                                                <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
                                                     <Package className="h-8 w-8 mx-auto mb-2 opacity-20" />
                                                     <p>No inventory records found</p>
                                                 </TableCell>
@@ -237,7 +237,7 @@ function InventoryContent() {
                         </CardHeader>
                         <CardContent className="p-0">
                             <Table>
-                                <TableHeader className="bg-red-50/30">
+                                <TableHeader>
                                     <TableRow>
                                         <TableHead>Product</TableHead>
                                         <TableHead>Location</TableHead>
@@ -249,8 +249,8 @@ function InventoryContent() {
                                 <TableBody>
                                     {lowStock?.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="text-center py-12 text-slate-500">
-                                                <p className="font-medium text-green-600">All inventory levels are above thresholds! 🎉</p>
+                                            <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
+                                                <p className="font-medium text-green-600">All inventory levels are above thresholds!</p>
                                             </TableCell>
                                         </TableRow>
                                     ) : (

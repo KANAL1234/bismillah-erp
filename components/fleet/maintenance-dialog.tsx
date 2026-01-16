@@ -32,6 +32,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { FleetMaintenance, FleetVehicle } from "@/types/fleet"
+import { emitSoftRefresh } from "@/lib/soft-refresh"
 
 const formSchema = z.object({
     vehicle_id: z.string().min(1, "Vehicle is required"),
@@ -153,6 +154,7 @@ export function MaintenanceDialog({ maintenance, trigger, open, onOpenChange, on
                 }
             }
 
+            emitSoftRefresh()
             setIsOpen(false)
             onOpenChange?.(false)
             onSuccess?.()

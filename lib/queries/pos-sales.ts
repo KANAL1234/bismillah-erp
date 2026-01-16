@@ -84,8 +84,35 @@ export function usePOSSales(locationId?: string, startDate?: string, endDate?: s
                     console.error('❌ POS Sales Fallback Error:', formatPostgrestError(fallbackError))
                     throw fallbackError
                 }
-                console.warn('⚠️ POS Sales loaded without related data (fallback mode)')
-                return fallbackData
+                const saleIds = (fallbackData || []).map((sale) => sale.id).filter(Boolean)
+                if (saleIds.length === 0) {
+                    console.warn('⚠️ POS Sales loaded without related data (fallback mode)')
+                    return fallbackData
+                }
+
+                const { data: items, error: itemsError } = await supabase
+                    .from('pos_sale_items')
+                    .select('id, sale_id, product_id, quantity, unit_price, discount_percentage, line_total')
+                    .in('sale_id', saleIds)
+
+                if (itemsError) {
+                    console.warn('⚠️ POS Sales items fallback failed:', formatPostgrestError(itemsError))
+                    console.warn('⚠️ POS Sales loaded without related data (fallback mode)')
+                    return fallbackData
+                }
+
+                const itemsBySale = (items || []).reduce((acc, item) => {
+                    const key = item.sale_id
+                    if (!acc[key]) acc[key] = []
+                    acc[key].push(item)
+                    return acc
+                }, {} as Record<string, any[]>)
+
+                console.warn('⚠️ POS Sales loaded via fallback (items fetched separately)')
+                return (fallbackData || []).map((sale) => ({
+                    ...sale,
+                    pos_sale_items: itemsBySale[sale.id] || []
+                }))
             }
 
             console.log('✅ POS Sales fetched:', data?.length || 0, 'sales')
@@ -254,7 +281,7 @@ export function useCreatePOSSale() {
             const amountDue = total - amountPaid
 
             // Generate sale number
-            const saleNumber = `SALE-${Date.now()}`
+            const saleNumber = `INV-POS-${Date.now()}`
 
             // Create sale
             const { data: sale, error: saleError } = await supabase

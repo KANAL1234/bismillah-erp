@@ -7,6 +7,7 @@ import { useLocation } from '@/components/providers/location-provider'
 import { useAuth } from '@/components/providers/auth-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 import {
     Package,
     Users,
@@ -50,7 +51,11 @@ function DashboardContent() {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        if (allowedLocationIds.length === 0) return
+        if (allowedLocationIds.length === 0) {
+            setMetrics({})
+            setLoading(false)
+            return
+        }
         loadDashboardData()
     }, [allowedLocationIds, currentLocationId])
 
@@ -67,162 +72,202 @@ function DashboardContent() {
         weekFromNow.setDate(weekFromNow.getDate() + 7)
 
         // Run ALL queries in parallel using Promise.all for much faster loading
-        const [
-            // Inventory metrics
-            productCountResult,
-            stockDataResult,
-            // Sales metrics
-            customerCountResult,
-            todaySalesResult,
-            monthSalesResult,
-            pendingOrdersResult,
-            // Purchase metrics
-            vendorCountResult,
-            pendingPOResult,
-            approvedPOResult,
-            // Accounting metrics
-            bankAccountsResult,
-            unpaidInvoicesResult,
-            // Analytics
-            creditRiskResult,
-            topProductsResult,
-            // HR metrics
-            activeEmployeeResult,
-            todayAttendanceResult,
-            pendingLeavesResult,
-            // Fleet metrics
-            vehicleCountResult,
-            activeDriverResult,
-            activeTripResult,
-            maintenanceCountResult,
-            fuelLogsResult,
-            maintenanceLogsResult,
-            totalTripResult,
-            // Location info
-            userLocationsResult
-        ] = await Promise.all([
-            // Inventory
-            supabase.from('products').select('*', { count: 'exact', head: true }),
-            supabase.from('inventory_stock').select('quantity_on_hand, location_id, products(cost_price)').in('location_id', locationsToQuery),
-            // Sales
-            supabase.from('customers').select('*', { count: 'exact', head: true }),
-            supabase.from('pos_sales').select('total_amount, location_id').gte('sale_date', today).in('location_id', locationsToQuery),
-            supabase.from('pos_sales').select('total_amount, location_id').gte('sale_date', firstDayOfMonth).in('location_id', locationsToQuery),
-            supabase.from('sales_orders').select('*', { count: 'exact', head: true }).in('status', ['confirmed', 'processing']),
-            // Purchase
-            supabase.from('vendors').select('*', { count: 'exact', head: true }),
-            supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).in('status', ['DRAFT', 'PENDING_APPROVAL']),
-            supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).eq('status', 'APPROVED'),
-            // Accounting
-            supabase.from('bank_accounts').select('current_balance'),
-            supabase.from('customer_invoices_accounting').select('*', { count: 'exact', head: true }).in('status', ['draft', 'posted']),
-            // Analytics
-            supabase.rpc('get_customers_near_credit_limit', { p_threshold_pct: 0.7 }),
-            supabase.rpc('get_sales_by_product', { p_start_date: firstDayOfMonth, p_end_date: today }),
-            // HR
-            supabase.from('employees').select('*', { count: 'exact', head: true }).eq('employment_status', 'ACTIVE'),
-            supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('attendance_date', today).eq('status', 'PRESENT').in('location_id', locationsToQuery),
-            supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
-            // Fleet
-            supabase.from('fleet_vehicles').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
-            supabase.from('fleet_drivers').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
-            supabase.from('fleet_trips').select('*', { count: 'exact', head: true }).eq('status', 'IN_PROGRESS'),
-            supabase.from('fleet_maintenance').select('*', { count: 'exact', head: true }).lte('next_service_due_date', weekFromNow.toISOString().split('T')[0]),
-            supabase.from('fleet_fuel_logs').select('total_cost'),
-            supabase.from('fleet_maintenance').select('cost'),
-            supabase.from('fleet_trips').select('*', { count: 'exact', head: true }),
-            // Locations
-            supabase.from('locations').select('id, name, code').in('id', allowedLocationIds)
-        ])
+        try {
+            const [
+                // Inventory metrics
+                productCountResult,
+                stockDataResult,
+                // Sales metrics
+                customerCountResult,
+                todaySalesResult,
+                monthSalesResult,
+                pendingOrdersResult,
+                // Purchase metrics
+                vendorCountResult,
+                pendingPOResult,
+                approvedPOResult,
+                // Accounting metrics
+                bankAccountsResult,
+                unpaidInvoicesResult,
+                // Analytics
+                creditRiskResult,
+                topProductsResult,
+                // HR metrics
+                activeEmployeeResult,
+                todayAttendanceResult,
+                pendingLeavesResult,
+                // Fleet metrics
+                vehicleCountResult,
+                activeDriverResult,
+                activeTripResult,
+                maintenanceCountResult,
+                fuelLogsResult,
+                maintenanceLogsResult,
+                totalTripResult,
+                // Location info
+                userLocationsResult
+            ] = await Promise.all([
+                // Inventory
+                supabase.from('products').select('*', { count: 'exact', head: true }),
+                supabase.from('inventory_stock').select('quantity_on_hand, location_id, products(cost_price)').in('location_id', locationsToQuery),
+                // Sales
+                supabase.from('customers').select('*', { count: 'exact', head: true }),
+                supabase.from('pos_sales').select('total_amount, location_id').gte('sale_date', today).in('location_id', locationsToQuery),
+                supabase.from('pos_sales').select('total_amount, location_id').gte('sale_date', firstDayOfMonth).in('location_id', locationsToQuery),
+                supabase.from('sales_orders').select('*', { count: 'exact', head: true }).in('status', ['confirmed', 'processing']).in('location_id', locationsToQuery),
+                // Purchase
+                supabase.from('vendors').select('*', { count: 'exact', head: true }),
+                supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).in('status', ['DRAFT', 'PENDING_APPROVAL']).in('location_id', locationsToQuery),
+                supabase.from('purchase_orders').select('*', { count: 'exact', head: true }).eq('status', 'APPROVED').in('location_id', locationsToQuery),
+                // Accounting
+                supabase.from('bank_accounts').select('current_balance'),
+                supabase.from('customer_invoices_accounting')
+                    .select('*', { count: 'exact', head: true })
+                    .in('status', ['approved', 'posted'])
+                    .in('payment_status', ['unpaid', 'partial', 'overdue']),
+                // Analytics
+                supabase.rpc('get_customers_near_credit_limit', { p_threshold_pct: 70 }),
+                supabase.rpc('get_sales_by_product', { p_date_from: firstDayOfMonth, p_date_to: today, p_limit: 20 }),
+                // HR
+                supabase.from('employees').select('*', { count: 'exact', head: true }).eq('employment_status', 'ACTIVE'),
+                supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('attendance_date', today).eq('status', 'PRESENT').in('location_id', locationsToQuery),
+                supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
+                // Fleet
+                supabase.from('fleet_vehicles').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
+                supabase.from('fleet_drivers').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
+                supabase.from('fleet_trips').select('*', { count: 'exact', head: true }).eq('status', 'IN_PROGRESS'),
+                supabase.from('fleet_maintenance').select('*', { count: 'exact', head: true }).lte('next_service_due_date', weekFromNow.toISOString().split('T')[0]),
+                supabase.from('fleet_fuel_logs').select('total_cost'),
+                supabase.from('fleet_maintenance').select('cost'),
+                supabase.from('fleet_trips').select('*', { count: 'exact', head: true }),
+                // Locations
+                supabase.from('locations').select('id, name, code').in('id', allowedLocationIds)
+            ])
 
-        // Extract results
-        const { count: productCount } = productCountResult
-        const { data: stockData } = stockDataResult
-        const lowStockCount = stockData?.filter(s => s.quantity_on_hand < 10).length || 0
-        const inventoryValue = stockData?.reduce((sum, item: any) => {
-            return sum + (item.quantity_on_hand * (item.products?.cost_price || 0))
-        }, 0) || 0
+            const errors = [
+                productCountResult.error,
+                stockDataResult.error,
+                customerCountResult.error,
+                todaySalesResult.error,
+                monthSalesResult.error,
+                pendingOrdersResult.error,
+                vendorCountResult.error,
+                pendingPOResult.error,
+                approvedPOResult.error,
+                bankAccountsResult.error,
+                unpaidInvoicesResult.error,
+                creditRiskResult.error,
+                topProductsResult.error,
+                activeEmployeeResult.error,
+                todayAttendanceResult.error,
+                pendingLeavesResult.error,
+                vehicleCountResult.error,
+                activeDriverResult.error,
+                activeTripResult.error,
+                maintenanceCountResult.error,
+                fuelLogsResult.error,
+                maintenanceLogsResult.error,
+                totalTripResult.error,
+                userLocationsResult.error
+            ].filter(Boolean)
 
-        const { count: customerCount } = customerCountResult
-        const { data: todaySales } = todaySalesResult
-        const todaySalesTotal = todaySales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
-        const { data: monthSales } = monthSalesResult
-        const monthSalesTotal = monthSales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
-        const { count: pendingOrdersCount } = pendingOrdersResult
+            if (errors.length > 0) {
+                console.error('Dashboard query errors:', errors)
+                toast.error('Some dashboard metrics failed to load.')
+            }
 
-        const { count: vendorCount } = vendorCountResult
-        const { count: pendingPOCount } = pendingPOResult
-        const { count: approvedPOCount } = approvedPOResult
+            // Extract results
+            const { count: productCount } = productCountResult
+            const { data: stockData } = stockDataResult
+            const lowStockCount = stockData?.filter(s => s.quantity_on_hand < 10).length || 0
+            const inventoryValue = stockData?.reduce((sum, item: any) => {
+                return sum + (item.quantity_on_hand * (item.products?.cost_price || 0))
+            }, 0) || 0
 
-        const { data: bankAccounts } = bankAccountsResult
-        const totalBankBalance = bankAccounts?.reduce((sum, acc) => sum + acc.current_balance, 0) || 0
-        const { count: unpaidInvoicesCount } = unpaidInvoicesResult
+            const { count: customerCount } = customerCountResult
+            const { data: todaySales } = todaySalesResult
+            const todaySalesTotal = todaySales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
+            const { data: monthSales } = monthSalesResult
+            const monthSalesTotal = monthSales?.reduce((sum, sale) => sum + sale.total_amount, 0) || 0
+            const { count: pendingOrdersCount } = pendingOrdersResult
 
-        const { data: creditRiskData } = creditRiskResult
-        const { data: topProducts } = topProductsResult
+            const { count: vendorCount } = vendorCountResult
+            const { count: pendingPOCount } = pendingPOResult
+            const { count: approvedPOCount } = approvedPOResult
 
-        const { count: activeEmployeeCount } = activeEmployeeResult
-        const { count: todayAttendanceCount } = todayAttendanceResult
-        const { count: pendingLeavesCount } = pendingLeavesResult
+            const { data: bankAccounts } = bankAccountsResult
+            const totalBankBalance = bankAccounts?.reduce((sum, acc) => sum + acc.current_balance, 0) || 0
+            const { count: unpaidInvoicesCount } = unpaidInvoicesResult
 
-        const { count: vehicleCount } = vehicleCountResult
-        const { count: activeDriverCount } = activeDriverResult
-        const { count: activeTripCount } = activeTripResult
-        const { count: maintenanceCount } = maintenanceCountResult
+            const { data: creditRiskData } = creditRiskResult
+            const { data: topProducts } = topProductsResult
 
-        const { data: fuelLogs } = fuelLogsResult
-        const { data: maintenanceLogs } = maintenanceLogsResult
-        const { count: totalTripCount } = totalTripResult
+            const { count: activeEmployeeCount } = activeEmployeeResult
+            const { count: todayAttendanceCount } = todayAttendanceResult
+            const { count: pendingLeavesCount } = pendingLeavesResult
 
-        const fuelTotal = fuelLogs?.reduce((sum, log) => sum + (Number(log.total_cost) || 0), 0) || 0
-        const maintenanceTotal = maintenanceLogs?.reduce((sum, log) => sum + (Number(log.cost) || 0), 0) || 0
-        const fleetExpenses = fuelTotal + maintenanceTotal
+            const { count: vehicleCount } = vehicleCountResult
+            const { count: activeDriverCount } = activeDriverResult
+            const { count: activeTripCount } = activeTripResult
+            const { count: maintenanceCount } = maintenanceCountResult
 
-        const displayProducts = (topProducts || [])
-            .sort((a: any, b: any) => b.total_sales - a.total_sales)
-            .slice(0, 5)
+            const { data: fuelLogs } = fuelLogsResult
+            const { data: maintenanceLogs } = maintenanceLogsResult
+            const { count: totalTripCount } = totalTripResult
 
-        const { data: userLocations } = userLocationsResult
+            const fuelTotal = fuelLogs?.reduce((sum, log) => sum + (Number(log.total_cost) || 0), 0) || 0
+            const maintenanceTotal = maintenanceLogs?.reduce((sum, log) => sum + (Number(log.cost) || 0), 0) || 0
+            const fleetExpenses = fuelTotal + maintenanceTotal
 
-        setMetrics({
-            productCount,
-            lowStockCount,
-            inventoryValue,
-            customerCount,
-            todaySalesTotal,
-            todaySalesCount: todaySales?.length || 0,
-            monthSalesTotal,
-            monthSalesCount: monthSales?.length || 0,
-            pendingOrdersCount,
-            vendorCount,
-            pendingPOCount,
-            approvedPOCount,
-            totalBankBalance,
-            bankAccountsCount: bankAccounts?.length || 0,
-            unpaidInvoicesCount,
-            creditRiskData,
-            displayProducts,
-            userLocations,
-            locationsCount: userLocations?.length || 0,
-            activeEmployeeCount: activeEmployeeCount || 0,
-            todayAttendanceCount: todayAttendanceCount || 0,
-            pendingLeavesCount: pendingLeavesCount || 0,
-            vehicleCount: vehicleCount || 0,
-            activeDriverCount: activeDriverCount || 0,
-            activeTripCount: activeTripCount || 0,
-            maintenanceCount: maintenanceCount || 0,
-            totalTripCount: totalTripCount || 0,
-            fleetExpenses: fleetExpenses || 0
-        })
+            const displayProducts = (topProducts || [])
+                .sort((a: any, b: any) => b.total_sales - a.total_sales)
+                .slice(0, 5)
 
-        setLoading(false)
+            const { data: userLocations } = userLocationsResult
+
+            setMetrics({
+                productCount,
+                lowStockCount,
+                inventoryValue,
+                customerCount,
+                todaySalesTotal,
+                todaySalesCount: todaySales?.length || 0,
+                monthSalesTotal,
+                monthSalesCount: monthSales?.length || 0,
+                pendingOrdersCount,
+                vendorCount,
+                pendingPOCount,
+                approvedPOCount,
+                totalBankBalance,
+                bankAccountsCount: bankAccounts?.length || 0,
+                unpaidInvoicesCount,
+                creditRiskData,
+                displayProducts,
+                userLocations,
+                locationsCount: userLocations?.length || 0,
+                activeEmployeeCount: activeEmployeeCount || 0,
+                todayAttendanceCount: todayAttendanceCount || 0,
+                pendingLeavesCount: pendingLeavesCount || 0,
+                vehicleCount: vehicleCount || 0,
+                activeDriverCount: activeDriverCount || 0,
+                activeTripCount: activeTripCount || 0,
+                maintenanceCount: maintenanceCount || 0,
+                totalTripCount: totalTripCount || 0,
+                fleetExpenses: fleetExpenses || 0
+            })
+        } catch (error) {
+            console.error('Failed to load dashboard data:', error)
+            toast.error('Failed to load dashboard data.')
+        } finally {
+            setLoading(false)
+        }
     }
 
     if (loading) {
         return (
             <div className="flex items-center justify-center h-96">
                 <div className="text-center">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
                     <p className="text-slate-600">Loading dashboard...</p>
                 </div>
             </div>
@@ -241,11 +286,11 @@ function DashboardContent() {
                     <h2 className="text-3xl font-bold text-slate-900">Dashboard Overview</h2>
                     <p className="text-slate-600 mt-1 flex items-center gap-2">
                         <MapPin className="h-4 w-4" />
-                        Showing data for: <span className="font-semibold text-blue-600">{locationContext}</span>
+                        Showing data for: <span className="font-semibold text-primary">{locationContext}</span>
                     </p>
                 </div>
                 <Link href="/dashboard/accounting/reports/financial">
-                    <Badge variant="outline" className="gap-2 px-4 py-2 cursor-pointer hover:bg-blue-50">
+                    <Badge variant="outline" className="gap-2 px-4 py-2 cursor-pointer hover:bg-primary/5">
                         <BarChart3 className="h-4 w-4" />
                         Financial Reports
                     </Badge>
@@ -267,25 +312,25 @@ function DashboardContent() {
                 </Card>
 
                 {/* Month's Sales */}
-                <Card className="hover:shadow-lg transition-shadow border-l-4 border-l-blue-500">
+                <Card className="hover:shadow-lg transition-shadow border-l-4 border-l-primary">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">This Month</CardTitle>
-                        <ShoppingCart className="h-4 w-4 text-blue-600" />
+                        <ShoppingCart className="h-4 w-4 text-primary" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">PKR {metrics.monthSalesTotal?.toLocaleString()}</div>
+                        <div className="text-2xl font-bold text-primary">PKR {metrics.monthSalesTotal?.toLocaleString()}</div>
                         <p className="text-xs text-slate-500 mt-1">{metrics.monthSalesCount} sales</p>
                     </CardContent>
                 </Card>
 
                 {/* Inventory Value */}
-                <Card className="hover:shadow-lg transition-shadow border-l-4 border-l-purple-500">
+                <Card className="hover:shadow-lg transition-shadow border-l-4 border-l-primary">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Inventory Value</CardTitle>
-                        <Package className="h-4 w-4 text-purple-600" />
+                        <Package className="h-4 w-4 text-primary" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-purple-600">PKR {metrics.inventoryValue?.toLocaleString()}</div>
+                        <div className="text-2xl font-bold text-primary">PKR {metrics.inventoryValue?.toLocaleString()}</div>
                         <p className="text-xs text-slate-500 mt-1">{metrics.productCount || 0} products</p>
                     </CardContent>
                 </Card>
@@ -401,7 +446,7 @@ function DashboardContent() {
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium">Active Trips</CardTitle>
                                         <div className="relative">
-                                            <MapPin className="h-4 w-4 text-blue-500" />
+                                            <MapPin className="h-4 w-4 text-primary" />
                                             {metrics.activeTripCount > 0 && <span className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-red-500 animate-pulse" />}
                                         </div>
                                     </CardHeader>
@@ -475,7 +520,7 @@ function DashboardContent() {
                                         All vehicles are healthy and serviced.
                                     </div>
                                 )}
-                                <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-100/50 p-2 rounded border border-blue-200">
+                                <div className="flex items-center gap-2 text-xs text-primary bg-primary/10 p-2 rounded border border-primary/20">
                                     <TrendingUp className="h-3 w-3" />
                                     Current utilization: {Math.round((metrics.activeTripCount / (metrics.vehicleCount || 1)) * 100)}% of mobile stores.
                                 </div>
@@ -525,7 +570,7 @@ function DashboardContent() {
                                 No customers currently in high-risk credit zone
                             </div>
                         )}
-                        <Link href="/dashboard/customers" className="block text-center text-xs text-blue-600 hover:underline mt-2">
+                        <Link href="/dashboard/customers" className="block text-center text-xs text-primary hover:underline mt-2">
                             Manage All Customers
                         </Link>
                     </CardContent>
@@ -535,7 +580,7 @@ function DashboardContent() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <TrendingUp className="h-5 w-5 text-blue-600" />
+                            <TrendingUp className="h-5 w-5 text-primary" />
                             Top Performing Products
                         </CardTitle>
                         <CardDescription>Highest revenue generators this month</CardDescription>
@@ -555,7 +600,7 @@ function DashboardContent() {
                                             </div>
                                             <div className="flex justify-between items-center text-xs text-slate-500">
                                                 <span>{p.total_quantity} units sold</span>
-                                                <span className="text-blue-600 font-medium">{p.transaction_count} sales</span>
+                                                <span className="text-primary font-medium">{p.transaction_count} sales</span>
                                             </div>
                                         </div>
                                     </div>
@@ -566,7 +611,7 @@ function DashboardContent() {
                                 </div>
                             )}
                         </div>
-                        <Link href="/dashboard/accounting/reports/registers" className="block text-center text-xs text-blue-600 hover:underline mt-6">
+                        <Link href="/dashboard/accounting/reports/registers" className="block text-center text-xs text-primary hover:underline mt-6">
                             View Full Transaction Register
                         </Link>
                     </CardContent>
@@ -603,7 +648,7 @@ function DashboardContent() {
                                     <p className="font-medium text-slate-900">Approved POs</p>
                                     <p className="text-sm text-slate-500">Ready to send to vendor</p>
                                 </div>
-                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
                                     {metrics.approvedPOCount || 0}
                                 </Badge>
                             </div>
@@ -639,7 +684,7 @@ function DashboardContent() {
                                     <p className="font-medium text-slate-900">Leave Requests</p>
                                     <p className="text-sm text-slate-500">Pending approval</p>
                                 </div>
-                                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
                                     {metrics.pendingLeavesCount || 0}
                                 </Badge>
                             </div>
@@ -669,10 +714,10 @@ function DashboardContent() {
                             </div>
                         </Link>
 
-                        <Link href="/dashboard/inventory" className="block p-3 rounded-lg hover:bg-purple-50 transition-colors border border-purple-200">
+                        <Link href="/dashboard/inventory" className="block p-3 rounded-lg hover:bg-primary/5 transition-colors border border-primary/20">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-100 rounded-lg">
-                                    <Package className="h-5 w-5 text-purple-700" />
+                                <div className="p-2 bg-primary/10 rounded-lg">
+                                    <Package className="h-5 w-5 text-primary" />
                                 </div>
                                 <div>
                                     <p className="font-medium text-slate-900">Stock Overview</p>
@@ -681,10 +726,10 @@ function DashboardContent() {
                             </div>
                         </Link>
 
-                        <Link href="/dashboard/accounting/reports/registers" className="block p-3 rounded-lg hover:bg-blue-50 transition-colors border border-blue-200">
+                        <Link href="/dashboard/accounting/reports/registers" className="block p-3 rounded-lg hover:bg-primary/5 transition-colors border border-primary/20">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-100 rounded-lg">
-                                    <Calculator className="h-5 w-5 text-blue-700" />
+                                <div className="p-2 bg-primary/10 rounded-lg">
+                                    <Calculator className="h-5 w-5 text-primary" />
                                 </div>
                                 <div>
                                     <p className="font-medium text-slate-900">Transaction Registers</p>

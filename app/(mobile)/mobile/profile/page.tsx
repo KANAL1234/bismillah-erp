@@ -45,7 +45,7 @@ export default function MobileProfilePage() {
             {/* User Info Card */}
             <Card className="p-6">
                 <div className="flex items-center gap-4 mb-4">
-                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center text-primary">
                         <User className="w-8 h-8" />
                     </div>
                     <div>
@@ -79,7 +79,7 @@ export default function MobileProfilePage() {
 
                     <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-600">Pending Items</span>
-                        <span className="font-medium text-blue-600">{stats.pending}</span>
+                        <span className="font-medium text-primary">{stats.pending}</span>
                     </div>
 
                     <div className="flex justify-between items-center text-sm">
@@ -107,7 +107,7 @@ export default function MobileProfilePage() {
                                 Retry Failed
                             </Button>
                             <Button
-                                className="bg-blue-600 hover:bg-blue-700 text-xs"
+                                className="bg-primary hover:bg-primary/90 text-xs"
                                 onClick={syncNow}
                                 disabled={!isOnline || isSyncing || stats.total === 0}
                             >

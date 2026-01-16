@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Pencil, Trash2, MoreHorizontal } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useDeleteProduct } from '@/lib/queries/products'
 import { toast } from 'sonner'
@@ -25,12 +25,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 export function ProductsTable({
     products,
@@ -45,10 +39,6 @@ export function ProductsTable({
 }) {
     const [deletingId, setDeletingId] = useState<string | null>(null)
     const deleteProduct = useDeleteProduct()
-
-    if (isLoading) {
-        return <div className="p-8 text-center text-muted-foreground">Loading products...</div>
-    }
 
     const handleDelete = async () => {
         if (!deletingId) return
@@ -93,7 +83,7 @@ export function ProductsTable({
 
 
     return (
-        <div className="border rounded-md bg-white">
+        <>
             <Table>
                 <TableHeader>
                     <TableRow>
@@ -110,9 +100,15 @@ export function ProductsTable({
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {products.length === 0 ? (
+                    {isLoading ? (
                         <TableRow>
-                            <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                            <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
+                                Loading products...
+                            </TableCell>
+                        </TableRow>
+                    ) : products.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
                                 No products found. Add your first product!
                             </TableCell>
                         </TableRow>
@@ -131,25 +127,20 @@ export function ProductsTable({
                                     </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                    <div className="flex justify-end gap-2">
-                                        <Link href={`/dashboard/products/${product.id}/edit`}>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                title="Edit Product"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
-                                        </Link>
+                                    <div className="flex items-center justify-end gap-2">
+                                        <Button variant="outline" size="sm" asChild>
+                                            <Link href={`/dashboard/products/${product.id}/edit`}>
+                                                <Pencil className="mr-2 h-4 w-4" />
+                                                Edit
+                                            </Link>
+                                        </Button>
                                         <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            variant="destructive"
+                                            size="sm"
                                             onClick={() => setDeletingId(product.id)}
-                                            title="Delete Product"
                                         >
-                                            <Trash2 className="h-4 w-4" />
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete
                                         </Button>
                                     </div>
                                 </TableCell>
@@ -179,6 +170,6 @@ export function ProductsTable({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
-        </div>
+        </>
     )
 }

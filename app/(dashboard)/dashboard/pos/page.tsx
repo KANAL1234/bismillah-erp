@@ -284,7 +284,7 @@ function POSContent() {
                                             key={product.id}
                                             onClick={() => handleAddToCart(product)}
                                             disabled={available <= 0}
-                                            className="p-4 border rounded-lg hover:border-blue-500 hover:shadow-md transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                                            className="p-4 border rounded-lg hover:border-primary hover:shadow-md transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <div className="font-semibold text-sm mb-1">{product.name}</div>
                                             <div className="text-xs text-gray-500 mb-2">{product.sku}</div>
@@ -319,7 +319,7 @@ function POSContent() {
                         </CardHeader>
                         <CardContent>
                             {selectedCustomer ? (
-                                <div className="flex items-center justify-between p-2 bg-blue-50 rounded">
+                                <div className="flex items-center justify-between p-2 bg-primary/5 rounded">
                                     <div>
                                         <div className="font-semibold">{selectedCustomer.name}</div>
                                         <div className="text-sm text-gray-600">{selectedCustomer.phone}</div>

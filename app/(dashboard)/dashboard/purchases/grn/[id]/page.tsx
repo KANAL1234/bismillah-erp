@@ -82,7 +82,7 @@ function GoodsReceiptDetailContent({ id }: { id: string }) {
                             {grn.purchase_orders?.po_number ? (
                                 <Link
                                     href={`/dashboard/purchases/orders/${grn.po_id}`}
-                                    className="font-medium text-blue-600 hover:underline"
+                                    className="font-medium text-primary hover:underline"
                                 >
                                     {grn.purchase_orders.po_number}
                                 </Link>

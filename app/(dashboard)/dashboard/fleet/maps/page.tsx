@@ -23,8 +23,8 @@ export default function FleetMapPage() {
             <Card className="border-slate-200 shadow-sm">
                 <CardHeader className="bg-slate-50/50 border-b">
                     <div className="flex items-center gap-2">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                            <Navigation className="h-5 w-5 text-blue-600" />
+                        <div className="p-2 bg-primary/10 rounded-lg">
+                            <Navigation className="h-5 w-5 text-primary" />
                         </div>
                         <div>
                             <CardTitle>Global Fleet Map</CardTitle>

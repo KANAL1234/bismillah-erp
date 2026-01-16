@@ -63,8 +63,8 @@ export default function SelectVehiclePage() {
         <div className="min-h-screen bg-gray-50 p-4">
             <div className="max-w-md mx-auto space-y-6 pt-10">
                 <div className="text-center space-y-2">
-                    <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Truck className="w-8 h-8 text-blue-600" />
+                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Truck className="w-8 h-8 text-primary" />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900">Select Vehicle</h1>
                     <p className="text-gray-500">Which vehicle are you driving today?</p>
@@ -91,15 +91,15 @@ export default function SelectVehiclePage() {
                                         "relative group cursor-pointer transition-all duration-200",
                                         "bg-white border rounded-xl p-4 shadow-sm hover:shadow-md",
                                         selectedId === vehicle.id
-                                            ? "border-blue-500 ring-1 ring-blue-500 bg-blue-50/50"
-                                            : "border-gray-200 hover:border-blue-200"
+                                            ? "border-primary ring-1 ring-primary/40 bg-primary/5"
+                                            : "border-gray-200 hover:border-primary/20"
                                     )}
                                 >
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className={cn(
                                                 "w-10 h-10 rounded-full flex items-center justify-center",
-                                                selectedId === vehicle.id ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"
+                                                selectedId === vehicle.id ? "bg-primary/10 text-primary" : "bg-gray-100 text-gray-500"
                                             )}>
                                                 <Truck className="w-5 h-5" />
                                             </div>
@@ -109,7 +109,7 @@ export default function SelectVehiclePage() {
                                             </div>
                                         </div>
                                         {selectedId === vehicle.id && (
-                                            <div className="bg-blue-500 text-white p-1 rounded-full animate-in zoom-in duration-200">
+                                            <div className="bg-primary/50 text-white p-1 rounded-full animate-in zoom-in duration-200">
                                                 <Check className="w-4 h-4" />
                                             </div>
                                         )}

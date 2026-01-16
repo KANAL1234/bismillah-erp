@@ -1,7 +1,7 @@
 export type VehicleStatus = 'ACTIVE' | 'MAINTENANCE' | 'RETIRED'
 export type DriverStatus = 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE'
 export type TripStatus = 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
-export type PaymentMethod = 'CASH' | 'CREDIT'
+export type PaymentMethod = 'CASH' | 'CREDIT' | 'ADVANCE'
 
 export interface FleetVehicle {
     id: string
@@ -169,6 +169,14 @@ export interface FleetFuelAllowance {
     // Actual Consumption
     actual_fuel_liters: number
     actual_fuel_cost: number
+
+    // Cash Tracking
+    cash_issued: number
+    cash_issued_date: string | null
+    cash_returned: number
+    cash_returned_date: string | null
+    issue_journal_entry_id: string | null
+    return_journal_entry_id: string | null
 
     // Variance Tracking
     fuel_variance_liters: number

@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
+import { emitSoftRefresh } from '@/lib/soft-refresh'
 import Link from 'next/link'
 import {
     Dialog,
@@ -205,7 +206,7 @@ export default function MobilePOSPage() {
         const tripId = activeTrip?.id || localStorage.getItem('current_trip_id')
 
         if (isOnline) {
-            const saleNumber = `POS-${Date.now()}`
+            const saleNumber = `INV-POS-MOBILE-${Date.now()}`
             const { data: sale, error: saleError } = await supabase.from('pos_sales').insert({
                 ...saleData,
                 sale_number: saleNumber,
@@ -248,6 +249,7 @@ export default function MobilePOSPage() {
             }
 
             toast.success('Sale completed successfully!')
+            emitSoftRefresh()
         } else {
             await addToQueue('CREATE_POS_SALE', {
                 ...saleData,
@@ -257,11 +259,12 @@ export default function MobilePOSPage() {
                     unit_price: item.selling_price || 0,
                     total_amount: (item.selling_price || 0) * item.quantity
                 })),
-                sale_number: `POS-OFF-${Date.now()}`,
+                sale_number: `INV-POS-MOBILE-${Date.now()}`,
                 is_synced: false,
                 trip_id: tripId
             })
             toast.success('Sale saved offline. Syncing soon.')
+            emitSoftRefresh()
         }
 
         setCart([])
@@ -279,7 +282,7 @@ export default function MobilePOSPage() {
     if (tripLoading) {
         return (
             <div className="flex flex-col h-screen bg-slate-50 items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 <p className="text-slate-500 text-sm mt-3">Checking trip status...</p>
             </div>
         )
@@ -300,7 +303,7 @@ export default function MobilePOSPage() {
                         You need to start a trip before you can make sales. This helps track your deliveries and inventory.
                     </p>
                     <Link href="/mobile/trip">
-                        <Button size="lg" className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200">
+                        <Button size="lg" className="bg-primary hover:bg-primary/90 shadow-lg shadow-blue-200">
                             <Navigation className="w-5 h-5 mr-2" />
                             Start Trip Now
                         </Button>
@@ -319,8 +322,8 @@ export default function MobilePOSPage() {
             <div className="bg-white border-b shadow-sm sticky top-0 z-20">
                 <div className="px-4 pt-4 pb-2 flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                        <div className="bg-blue-100 p-2 rounded-lg">
-                            <Truck className="w-5 h-5 text-blue-600" />
+                        <div className="bg-primary/10 p-2 rounded-lg">
+                            <Truck className="w-5 h-5 text-primary" />
                         </div>
                         <div>
                             <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Active Vehicle</p>
@@ -336,12 +339,12 @@ export default function MobilePOSPage() {
 
                 <div className="px-4 pb-4 mt-2">
                     <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 transition-colors group-focus-within:text-blue-500" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 transition-colors group-focus-within:text-primary" />
                         <Input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="Search in vehicle inventory..."
-                            className="pl-9 bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all rounded-xl h-11"
+                            className="pl-9 bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all rounded-xl h-11"
                         />
                         {search && (
                             <button
@@ -359,7 +362,7 @@ export default function MobilePOSPage() {
             <ScrollArea className="flex-1 px-4 py-4">
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-3">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                         <p className="text-slate-500 text-sm">Loading inventory...</p>
                     </div>
                 ) : !locationId ? (
@@ -396,7 +399,7 @@ export default function MobilePOSPage() {
                                             <p className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase mb-1">SKU: {product.sku || 'N/A'}</p>
                                         </div>
                                         <div className="flex items-center justify-between">
-                                            <p className="text-sm font-black text-blue-600">PKR {product.selling_price?.toLocaleString() || '0'}</p>
+                                            <p className="text-sm font-black text-primary">PKR {product.selling_price?.toLocaleString() || '0'}</p>
                                             <div className="flex items-center gap-1.5">
                                                 <Badge
                                                     variant="secondary"
@@ -407,7 +410,7 @@ export default function MobilePOSPage() {
                                                 >
                                                     {product.quantity_on_hand} in stock
                                                 </Badge>
-                                                <div className="p-1 bg-blue-600 text-white rounded-md shadow-sm">
+                                                <div className="p-1 bg-primary text-white rounded-md shadow-sm">
                                                     <Plus className="w-3.5 h-3.5" />
                                                 </div>
                                             </div>
@@ -427,7 +430,7 @@ export default function MobilePOSPage() {
                         <div className="p-4 space-y-4">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                    <ShoppingBag className="w-4 h-4 text-blue-600" />
+                                    <ShoppingBag className="w-4 h-4 text-primary" />
                                     Items in Cart ({cart.reduce((s, i) => s + i.quantity, 0)})
                                 </h3>
                                 <button
@@ -443,7 +446,7 @@ export default function MobilePOSPage() {
                                     <div key={item.id} className="flex items-start justify-between bg-slate-50/50 p-2 rounded-lg border border-slate-100">
                                         <div className="flex-1 pr-4">
                                             <p className="font-bold text-xs text-slate-800 line-clamp-1">{item.name}</p>
-                                            <p className="text-[10px] font-black text-blue-600 mt-0.5">Rs. {item.selling_price?.toLocaleString()}</p>
+                                            <p className="text-[10px] font-black text-primary mt-0.5">Rs. {item.selling_price?.toLocaleString()}</p>
                                         </div>
                                         <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-sm">
                                             <button
@@ -483,7 +486,7 @@ export default function MobilePOSPage() {
                                     setIsCheckoutOpen(true)
                                 }}
                                 size="lg"
-                                className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 active:scale-95 transition-all px-8 h-12 rounded-xl"
+                                className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-200 active:scale-95 transition-all px-8 h-12 rounded-xl"
                             >
                                 Checkout
                                 <ShoppingBag className="w-4 h-4 ml-2" />
@@ -530,7 +533,7 @@ export default function MobilePOSPage() {
                                         value={amountPaid}
                                         onChange={(e) => setAmountPaid(e.target.value)}
                                         placeholder="Enter amount..."
-                                        className="text-2xl h-14 font-bold text-blue-600 focus:ring-blue-500"
+                                        className="text-2xl h-14 font-bold text-primary focus:ring-primary/40"
                                         autoFocus
                                     />
                                 </div>

@@ -5,7 +5,8 @@ import { PermissionGuard } from "@/components/permission-guard"
 import { createClient } from "@/lib/supabase/client"
 import { FleetDriver } from "@/types/fleet"
 import { Button } from "@/components/ui/button"
-import { Plus, Search, MoreHorizontal, Pencil, Trash } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Plus, Search, Pencil, Trash } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import {
     Table,
@@ -15,17 +16,11 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { DriverDialog } from "@/components/fleet/driver-dialog"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { emitSoftRefresh } from "@/lib/soft-refresh"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -94,6 +89,7 @@ function DriversContent() {
         } else {
             toast.success("Driver deleted successfully")
             fetchDrivers()
+            emitSoftRefresh()
         }
         setDeletingDriver(null)
     }
@@ -114,87 +110,90 @@ function DriversContent() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-bold tracking-tight">Drivers</h1>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Drivers</h1>
+                    <p className="text-muted-foreground">Manage fleet drivers and licenses</p>
+                </div>
                 <Button onClick={() => setIsAddOpen(true)}>
                     <Plus className="mr-2 h-4 w-4" /> Add Driver
                 </Button>
             </div>
 
-            <div className="flex items-center space-x-2">
-                <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search drivers..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pl-8"
-                    />
-                </div>
-            </div>
-
-            <div className="border rounded-md">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Driver Name</TableHead>
-                            <TableHead>License Number</TableHead>
-                            <TableHead>License Expiry</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {loading ? (
+            <Card>
+                <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 pb-4">
+                    <CardTitle className="text-base font-medium">Driver List</CardTitle>
+                    <div className="relative w-full sm:w-[250px]">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search drivers..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-9"
+                        />
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
                             <TableRow>
-                                <TableCell colSpan={5} className="text-center py-10">Loading...</TableCell>
+                                <TableHead>Driver Name</TableHead>
+                                <TableHead>License Number</TableHead>
+                                <TableHead>License Expiry</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
-                        ) : filteredDrivers.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={5} className="text-center py-10">No drivers found</TableCell>
-                            </TableRow>
-                        ) : (
-                            filteredDrivers.map((driver) => (
-                                <TableRow key={driver.id}>
-                                    <TableCell className="font-medium">
-                                        <div>{driver.employee?.full_name || 'Unknown'}</div>
-                                        <div className="text-xs text-muted-foreground">{driver.employee?.employee_code}</div>
-                                    </TableCell>
-                                    <TableCell>{driver.license_number}</TableCell>
-                                    <TableCell>{format(new Date(driver.license_expiry), "MMM dd, yyyy")}</TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline" className={getStatusColor(driver.status)}>
-                                            {driver.status}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                onClick={() => setEditingDriver(driver)}
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                                <span className="sr-only">Edit</span>
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                onClick={() => setDeletingDriver(driver)}
-                                            >
-                                                <Trash className="h-4 w-4" />
-                                                <span className="sr-only">Delete</span>
-                                            </Button>
-                                        </div>
-                                    </TableCell>
+                        </TableHeader>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Loading...</TableCell>
                                 </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
-            </div>
+                            ) : filteredDrivers.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">No drivers found</TableCell>
+                                </TableRow>
+                            ) : (
+                                filteredDrivers.map((driver) => (
+                                    <TableRow key={driver.id}>
+                                        <TableCell className="font-medium">
+                                            <div>{driver.employee?.full_name || 'Unknown'}</div>
+                                            <div className="text-xs text-muted-foreground">{driver.employee?.employee_code}</div>
+                                        </TableCell>
+                                        <TableCell>{driver.license_number}</TableCell>
+                                        <TableCell>{format(new Date(driver.license_expiry), "MMM dd, yyyy")}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className={getStatusColor(driver.status)}>
+                                                {driver.status}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setEditingDriver(driver)}
+                                                >
+                                                    <Pencil className="mr-2 h-4 w-4" />
+                                                    Edit
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    onClick={() => setDeletingDriver(driver)}
+                                                >
+                                                    <Trash className="mr-2 h-4 w-4" />
+                                                    Delete
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
 
             <DriverDialog
                 open={isAddOpen}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useLocation } from '@/components/providers/location-provider'
 import { useStockTransfers, useUpdateTransferStatus, useDeleteTransfer } from '@/lib/queries/stock-transfers'
 import { PermissionGuard } from '@/components/permission-guard'
@@ -20,6 +20,7 @@ import { Plus, ArrowRight, Check, X, Trash2, Eye, Send, CheckCircle } from 'luci
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 import {
     AlertDialog,
@@ -44,6 +45,8 @@ function StockTransfersContent() {
     const { currentLocationId } = useLocation()
     const { data: allTransfersData, isLoading } = useStockTransfers()
     const updateStatus = useUpdateTransferStatus()
+    const [sortBy, setSortBy] = useState('transfer_date')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
     // Filter transfers based on location selection
     // Show transfer if it corresponds to FROM or TO the selected location
@@ -114,10 +117,32 @@ function StockTransfersContent() {
         )
     }
 
-    const draftTransfers = allTransfers?.filter(t => t.status === 'DRAFT')
-    const pendingTransfers = allTransfers?.filter(t => t.status === 'PENDING_APPROVAL')
-    const inProgressTransfers = allTransfers?.filter(t => ['APPROVED', 'IN_TRANSIT'].includes(t.status))
-    const completedTransfers = allTransfers?.filter(t => t.status === 'COMPLETED')
+    const sortTransfers = useMemo(() => {
+        const sorters: Record<string, (row: any) => string | number> = {
+            transfer_date: (row) => new Date(row.transfer_date || row.created_at).getTime(),
+            transfer_number: (row) => String(row.transfer_number || ''),
+            status: (row) => String(row.status || ''),
+            items: (row) => Number(row.items_count || row.transfer_items?.length || 0),
+        }
+        const getValue = sorters[sortBy] || sorters.transfer_date
+        return (list?: any[]) => {
+            const data = list ? [...list] : []
+            data.sort((a, b) => {
+                const av = getValue(a)
+                const bv = getValue(b)
+                if (av < bv) return sortOrder === 'asc' ? -1 : 1
+                if (av > bv) return sortOrder === 'asc' ? 1 : -1
+                return 0
+            })
+            return data
+        }
+    }, [sortBy, sortOrder])
+
+    const draftTransfers = sortTransfers(allTransfers?.filter(t => t.status === 'DRAFT'))
+    const pendingTransfers = sortTransfers(allTransfers?.filter(t => t.status === 'PENDING_APPROVAL'))
+    const inProgressTransfers = sortTransfers(allTransfers?.filter(t => ['APPROVED', 'IN_TRANSIT'].includes(t.status)))
+    const completedTransfers = sortTransfers(allTransfers?.filter(t => t.status === 'COMPLETED'))
+    const sortedAllTransfers = sortTransfers(allTransfers)
 
     return (
         <div className="space-y-6">
@@ -139,6 +164,20 @@ function StockTransfersContent() {
             </div>
 
             <Tabs defaultValue="all" className="space-y-4">
+                <div className="flex justify-end">
+                    <ListSortControls
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSortByChange={setSortBy}
+                        onSortOrderChange={setSortOrder}
+                        options={[
+                            { value: 'transfer_date', label: 'Date Added' },
+                            { value: 'transfer_number', label: 'Transfer #' },
+                            { value: 'items', label: 'Items' },
+                            { value: 'status', label: 'Status' },
+                        ]}
+                    />
+                </div>
                 <div className="flex justify-between items-center bg-white p-1 rounded-lg border">
                     <TabsList className="bg-transparent">
                         <TabsTrigger value="all" className="data-[state=active]:bg-slate-100">All ({allTransfers?.length || 0})</TabsTrigger>
@@ -151,7 +190,7 @@ function StockTransfersContent() {
 
                 {['all', 'draft', 'pending', 'in-progress', 'completed'].map(tab => {
                     const transfers =
-                        tab === 'all' ? allTransfers :
+                        tab === 'all' ? sortedAllTransfers :
                             tab === 'draft' ? draftTransfers :
                                 tab === 'pending' ? pendingTransfers :
                                     tab === 'in-progress' ? inProgressTransfers :
@@ -163,22 +202,22 @@ function StockTransfersContent() {
                                 <CardContent className="p-0">
                                     <div className="overflow-x-auto">
                                         <Table>
-                                            <TableHeader className="bg-slate-50/50">
+                                            <TableHeader>
                                                 <TableRow>
-                                                    <TableHead className="font-bold">Transfer #</TableHead>
-                                                    <TableHead className="font-bold">From</TableHead>
-                                                    <TableHead className="font-bold"></TableHead>
-                                                    <TableHead className="font-bold">To</TableHead>
-                                                    <TableHead className="font-bold">Date</TableHead>
-                                                    <TableHead className="font-bold">Items</TableHead>
-                                                    <TableHead className="font-bold">Status</TableHead>
-                                                    <TableHead className="text-right font-bold">Actions</TableHead>
+                                                    <TableHead>Transfer #</TableHead>
+                                                    <TableHead>From</TableHead>
+                                                    <TableHead></TableHead>
+                                                    <TableHead>To</TableHead>
+                                                    <TableHead>Date</TableHead>
+                                                    <TableHead>Items</TableHead>
+                                                    <TableHead>Status</TableHead>
+                                                    <TableHead className="text-right">Actions</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                                 {transfers?.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={8} className="text-center py-12 text-slate-500">
+                                                        <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
                                                             <p className="font-medium">No transfers found in this category</p>
                                                         </TableCell>
                                                     </TableRow>
@@ -207,37 +246,31 @@ function StockTransfersContent() {
                                                                 </Badge>
                                                             </TableCell>
                                                             <TableCell className="text-right">
-                                                                <div className="flex justify-end gap-2">
-                                                                    <Link href={`/dashboard/inventory/transfers/${transfer.id}`}>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                                                            title="View Details"
-                                                                        >
-                                                                            <Eye className="h-4 w-4" />
-                                                                        </Button>
-                                                                    </Link>
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <Button asChild variant="outline" size="sm">
+                                                                        <Link href={`/dashboard/inventory/transfers/${transfer.id}`}>
+                                                                            <Eye className="mr-2 h-4 w-4" />
+                                                                            View
+                                                                        </Link>
+                                                                    </Button>
 
                                                                     {transfer.status === 'DRAFT' && (
                                                                         <>
                                                                             <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                                                variant="outline"
+                                                                                size="sm"
                                                                                 onClick={() => handleStatusChange(transfer.id, 'PENDING_APPROVAL')}
-                                                                                title="Submit for Approval"
                                                                             >
-                                                                                <Send className="h-4 w-4" />
+                                                                                <Send className="mr-2 h-4 w-4" />
+                                                                                Submit
                                                                             </Button>
                                                                             <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                                                variant="destructive"
+                                                                                size="sm"
                                                                                 onClick={() => handleDelete(transfer.id, transfer.transfer_number)}
-                                                                                title="Delete Transfer"
                                                                             >
-                                                                                <Trash2 className="h-4 w-4" />
+                                                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                                                Delete
                                                                             </Button>
                                                                         </>
                                                                     )}
@@ -245,35 +278,32 @@ function StockTransfersContent() {
                                                                     {transfer.status === 'PENDING_APPROVAL' && (
                                                                         <>
                                                                             <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                                variant="outline"
+                                                                                size="sm"
                                                                                 onClick={() => handleStatusChange(transfer.id, 'APPROVED')}
-                                                                                title="Approve Transfer"
                                                                             >
-                                                                                <Check className="h-4 w-4" />
+                                                                                <Check className="mr-2 h-4 w-4" />
+                                                                                Approve
                                                                             </Button>
                                                                             <Button
-                                                                                variant="ghost"
-                                                                                size="icon"
-                                                                                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                                                variant="destructive"
+                                                                                size="sm"
                                                                                 onClick={() => handleStatusChange(transfer.id, 'CANCELLED')}
-                                                                                title="Cancel Transfer"
                                                                             >
-                                                                                <X className="h-4 w-4" />
+                                                                                <X className="mr-2 h-4 w-4" />
+                                                                                Cancel
                                                                             </Button>
                                                                         </>
                                                                     )}
 
                                                                     {transfer.status === 'APPROVED' && (
                                                                         <Button
-                                                                            variant="ghost"
-                                                                            size="icon"
-                                                                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                                            variant="outline"
+                                                                            size="sm"
                                                                             onClick={() => handleStatusChange(transfer.id, 'COMPLETED')}
-                                                                            title="Mark as Completed"
                                                                         >
-                                                                            <CheckCircle className="h-4 w-4" />
+                                                                            <CheckCircle className="mr-2 h-4 w-4" />
+                                                                            Complete
                                                                         </Button>
                                                                     )}
                                                                 </div>

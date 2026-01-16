@@ -33,7 +33,6 @@ export function useCreateReceiptVoucher() {
             receiptDate,
             receiptMethod,
             amount,
-            referenceNumber,
             notes,
             invoiceAllocations
         }: {
@@ -42,7 +41,6 @@ export function useCreateReceiptVoucher() {
             receiptDate: string
             receiptMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE'
             amount: number
-            referenceNumber?: string
             notes?: string
             invoiceAllocations?: { invoice_id: string, amount_allocated: number }[]
         }) => {
@@ -72,9 +70,8 @@ export function useCreateReceiptVoucher() {
                     customer_id: customerId,
                     bank_account_id: bankAccountId,
                     receipt_date: receiptDate,
-                    receipt_method: receiptMethod,
+                    payment_method: receiptMethod,
                     amount,
-                    reference_number: referenceNumber,
                     notes,
                     status: 'posted',
                     created_by: user.id
@@ -98,18 +95,19 @@ export function useCreateReceiptVoucher() {
                 for (const alloc of invoiceAllocations) {
                     const { data: invoice } = await supabase
                         .from('customer_invoices_accounting')
-                        .select('total_amount, amount_paid')
+                        .select('total_amount, amount_received')
                         .eq('id', alloc.invoice_id)
                         .single()
 
                     if (invoice) {
-                        const newAmountPaid = invoice.amount_paid + alloc.amount_allocated
-                        const paymentStatus = newAmountPaid >= invoice.total_amount ? 'paid' : newAmountPaid > 0 ? 'partial' : 'unpaid'
+                        const currentReceived = Number(invoice.amount_received || 0)
+                        const newAmountReceived = currentReceived + alloc.amount_allocated
+                        const paymentStatus = newAmountReceived >= invoice.total_amount ? 'paid' : newAmountReceived > 0 ? 'partial' : 'unpaid'
 
                         await supabase
                             .from('customer_invoices_accounting')
                             .update({
-                                amount_paid: newAmountPaid,
+                                amount_received: newAmountReceived,
                                 payment_status: paymentStatus
                             })
                             .eq('id', alloc.invoice_id)
@@ -119,7 +117,7 @@ export function useCreateReceiptVoucher() {
 
             // Post to GL
             await supabase.rpc('post_receipt_voucher', {
-                p_voucher_id: voucher.id
+                p_receipt_id: voucher.id
             })
 
             // Update customer balance (reduce receivable)

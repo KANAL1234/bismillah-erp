@@ -120,7 +120,7 @@ export default function LeavesPage() {
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     {req.status === 'PENDING' && (
-                                                        <div className="flex justify-end gap-2">
+                                                        <div className="flex items-center justify-end gap-2">
                                                             <PermissionGuard permission="hr.leaves.approve">
                                                                 <Button
                                                                     variant="outline"

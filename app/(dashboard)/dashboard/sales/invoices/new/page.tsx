@@ -28,6 +28,7 @@ import { format, addDays } from 'date-fns'
 import { useCreateSalesInvoice } from '@/lib/queries/sales-invoices'
 import { useCustomers } from '@/lib/queries/customers'
 import { useProducts } from '@/lib/queries/products'
+import { useLocation } from '@/components/providers/location-provider'
 import { toast } from 'sonner'
 
 type InvoiceItem = {
@@ -48,6 +49,7 @@ export default function NewSalesInvoicePage() {
     const createInvoice = useCreateSalesInvoice()
     const { data: customers } = useCustomers()
     const { data: products } = useProducts()
+    const { currentLocationId } = useLocation()
 
     // Form State
     const [customerId, setCustomerId] = useState('')
@@ -141,6 +143,10 @@ export default function NewSalesInvoicePage() {
             toast.error('Please select a customer')
             return
         }
+        if (!currentLocationId) {
+            toast.error('Please select a location from the header')
+            return
+        }
         if (items.length === 0) {
             toast.error('Please add at least one product')
             return
@@ -149,6 +155,7 @@ export default function NewSalesInvoicePage() {
         try {
             await createInvoice.mutateAsync({
                 customer_id: customerId,
+                location_id: currentLocationId,
                 invoice_date: invoiceDate,
                 due_date: dueDate,
                 status,

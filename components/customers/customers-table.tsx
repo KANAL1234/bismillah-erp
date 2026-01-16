@@ -39,23 +39,6 @@ export function CustomersTable({ customers, isLoading }: CustomersTableProps) {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
     const deleteCustomer = useDeleteCustomer()
 
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center p-8 text-slate-500">
-                Loading customers...
-            </div>
-        )
-    }
-
-    if (customers.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-                <p className="text-lg font-medium text-slate-900">No customers found</p>
-                <p className="text-sm text-slate-500">Add your first customer to get started.</p>
-            </div>
-        )
-    }
-
     const handleDelete = async () => {
         if (!selectedCustomer) return
         try {
@@ -68,10 +51,10 @@ export function CustomersTable({ customers, isLoading }: CustomersTableProps) {
     }
 
     return (
-        <div className="rounded-md border bg-white overflow-hidden shadow-sm">
+        <>
             <Table>
                 <TableHeader>
-                    <TableRow className="bg-slate-50">
+                    <TableRow>
                         <TableHead className="w-[120px]">Code</TableHead>
                         <TableHead>Customer Name</TableHead>
                         <TableHead>Type</TableHead>
@@ -83,72 +66,88 @@ export function CustomersTable({ customers, isLoading }: CustomersTableProps) {
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {customers.map((customer) => (
-                        <TableRow key={customer.id}>
-                            <TableCell className="font-mono text-xs text-slate-500">
-                                {customer.customer_code}
-                            </TableCell>
-                            <TableCell className="font-medium text-slate-900">
-                                {customer.name}
-                            </TableCell>
-                            <TableCell>
-                                <Badge variant="outline" className="text-[10px] uppercase">
-                                    {customer.customer_type}
-                                </Badge>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                                {customer.phone}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                                <div className="flex items-center justify-end gap-2">
-                                    <span className={customer.current_balance > 0 ? "text-red-600 font-bold" : "text-slate-900"}>
-                                        PKR {customer.current_balance?.toLocaleString() || '0'}
-                                    </span>
-                                </div>
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-slate-500">
-                                PKR {customer.credit_limit?.toLocaleString() || '0'}
-                            </TableCell>
-                            <TableCell>
-                                <Badge variant={customer.is_active ? "default" : "secondary"} className={customer.is_active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : ""}>
-                                    {customer.is_active ? 'Active' : 'Deactivated'}
-                                </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                                <div className="flex justify-end gap-1">
-                                    <Button variant="ghost" size="icon" asChild>
-                                        <Link href={`/dashboard/sales/customers/${customer.id}`}>
-                                            <Eye className="h-4 w-4 text-slate-500" />
-                                        </Link>
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => {
-                                            setSelectedCustomer(customer)
-                                            setIsEditDialogOpen(true)
-                                        }}
-                                    >
-                                        <Edit className="h-4 w-4 text-blue-500" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => {
-                                            setSelectedCustomer(customer)
-                                            setIsDeleteDialogOpen(true)
-                                        }}
-                                    >
-                                        <Trash2 className="h-4 w-4 text-red-500" />
-                                    </Button>
-                                </div>
+                    {isLoading ? (
+                        <TableRow>
+                            <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
+                                Loading customers...
                             </TableCell>
                         </TableRow>
-                    ))}
+                    ) : customers.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
+                                No customers found
+                            </TableCell>
+                        </TableRow>
+                    ) : (
+                        customers.map((customer) => (
+                            <TableRow key={customer.id}>
+                                <TableCell className="font-mono text-xs text-slate-500">
+                                    {customer.customer_code}
+                                </TableCell>
+                                <TableCell className="font-medium text-slate-900">
+                                    {customer.name}
+                                </TableCell>
+                                <TableCell>
+                                    <Badge variant="outline" className="text-[10px] uppercase">
+                                        {customer.customer_type}
+                                    </Badge>
+                                </TableCell>
+                                <TableCell className="text-slate-600">
+                                    {customer.phone}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                    <div className="flex items-center justify-end gap-2">
+                                        <span className={customer.current_balance > 0 ? "text-red-600 font-bold" : "text-slate-900"}>
+                                            PKR {customer.current_balance?.toLocaleString() || '0'}
+                                        </span>
+                                    </div>
+                                </TableCell>
+                                <TableCell className="text-right font-mono text-slate-500">
+                                    PKR {customer.credit_limit?.toLocaleString() || '0'}
+                                </TableCell>
+                                <TableCell>
+                                    <Badge variant={customer.is_active ? "default" : "secondary"} className={customer.is_active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : ""}>
+                                        {customer.is_active ? 'Active' : 'Deactivated'}
+                                    </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                        <Button variant="outline" size="sm" asChild>
+                                            <Link href={`/dashboard/sales/customers/${customer.id}`}>
+                                                <Eye className="mr-2 h-4 w-4" />
+                                                View
+                                            </Link>
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                setSelectedCustomer(customer)
+                                                setIsEditDialogOpen(true)
+                                            }}
+                                        >
+                                            <Edit className="mr-2 h-4 w-4" />
+                                            Edit
+                                        </Button>
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            onClick={() => {
+                                                setSelectedCustomer(customer)
+                                                setIsDeleteDialogOpen(true)
+                                            }}
+                                        >
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete
+                                        </Button>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ))
+                    )}
                 </TableBody>
             </Table>
 
-            {/* Dialogs */}
             {selectedCustomer && (
                 <>
                     <CustomerDialog
@@ -175,6 +174,6 @@ export function CustomersTable({ customers, isLoading }: CustomersTableProps) {
                     </AlertDialog>
                 </>
             )}
-        </div>
+        </>
     )
 }

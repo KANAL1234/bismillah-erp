@@ -1,10 +1,11 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { useGoodsReceipts } from '@/lib/queries/goods-receipts'
 import { createClient } from '@/lib/supabase/client'
 import { createGoodsReceiptPDF } from '@/lib/utils/export'
 import { PermissionGuard } from '@/components/permission-guard'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -19,6 +20,7 @@ import { Plus, Download, Printer } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 export default function GoodsReceiptsPage() {
     return (
@@ -31,6 +33,8 @@ export default function GoodsReceiptsPage() {
 function GoodsReceiptsContent() {
     const { data: grns, isLoading } = useGoodsReceipts()
     const supabase = createClient()
+    const [sortBy, setSortBy] = useState('receipt_date')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
     const getStatusBadge = (status: string) => {
         switch (status) {
@@ -146,14 +150,38 @@ function GoodsReceiptsContent() {
         window.open(url, '_blank', 'noopener,noreferrer')
     }
 
+    const sortedGrns = useMemo(() => {
+        const data = grns ? [...grns] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            receipt_date: (row) => new Date(row.receipt_date || row.created_at).getTime(),
+            grn_number: (row) => String(row.grn_number || ''),
+            po_number: (row) => String(row.purchase_orders?.po_number || ''),
+            vendor: (row) => String(row.vendors?.name || ''),
+            total_amount: (row) => Number(row.total_amount || 0),
+            status: (row) => String(row.status || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.receipt_date
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [grns, sortBy, sortOrder])
+
     if (isLoading) {
         return <div className="flex items-center justify-center h-64">Loading...</div>
     }
 
     return (
-        <div className="px-4 sm:px-0">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-3xl font-bold text-gray-900">Goods Receipts</h2>
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Goods Receipts</h1>
+                    <p className="text-muted-foreground">Track received inventory and GRNs</p>
+                </div>
                 <Link href="/dashboard/purchases/grn/new">
                     <Button>
                         <Plus className="mr-2 h-4 w-4" />
@@ -163,7 +191,24 @@ function GoodsReceiptsContent() {
             </div>
 
             <Card>
-                <CardContent className="pt-6">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardTitle className="text-base font-medium">Recent GRNs</CardTitle>
+                    <ListSortControls
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSortByChange={setSortBy}
+                        onSortOrderChange={setSortOrder}
+                        options={[
+                            { value: 'receipt_date', label: 'Date Added' },
+                            { value: 'grn_number', label: 'GRN #' },
+                            { value: 'po_number', label: 'PO #' },
+                            { value: 'vendor', label: 'Vendor' },
+                            { value: 'total_amount', label: 'Amount' },
+                            { value: 'status', label: 'Status' },
+                        ]}
+                    />
+                </CardHeader>
+                <CardContent>
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -178,21 +223,21 @@ function GoodsReceiptsContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {grns?.length === 0 ? (
+                            {sortedGrns?.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center text-gray-500">
+                                    <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                         No goods receipts found
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                grns?.map((grn) => (
+                                sortedGrns?.map((grn) => (
                                     <TableRow key={grn.id}>
                                         <TableCell className="font-medium">
                                             {grn.grn_number}
                                         </TableCell>
                                         <TableCell>
                                             {grn.purchase_orders?.po_number ? (
-                                                <Link href={`/dashboard/purchases/orders/${grn.po_id}`} className="text-blue-600 hover:underline">
+                                                <Link href={`/dashboard/purchases/orders/${grn.po_id}`} className="text-primary hover:underline">
                                                     {grn.purchase_orders.po_number}
                                                 </Link>
                                             ) : '-'}

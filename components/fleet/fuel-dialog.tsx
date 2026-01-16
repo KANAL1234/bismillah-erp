@@ -31,6 +31,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { FleetFuelLog, FleetVehicle } from "@/types/fleet"
+import { emitSoftRefresh } from "@/lib/soft-refresh"
 
 const formSchema = z.object({
     vehicle_id: z.string().min(1, "Vehicle is required"),
@@ -38,7 +39,7 @@ const formSchema = z.object({
     liters: z.string().min(1, "Amount is required"),
     cost_per_liter: z.string().min(1, "Cost is required"),
     odometer_reading: z.string().min(1, "Odometer required"),
-    payment_method: z.enum(["CASH", "CREDIT"]),
+    payment_method: z.enum(["CASH", "CREDIT", "ADVANCE"]),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -64,7 +65,7 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
             liters: "0",
             cost_per_liter: "0",
             odometer_reading: "0",
-            payment_method: "CASH",
+            payment_method: "ADVANCE",
         },
     })
 
@@ -138,6 +139,7 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
                 }
             }
 
+            emitSoftRefresh()
             setIsOpen(false)
             onOpenChange?.(false)
             onSuccess?.()
@@ -247,7 +249,8 @@ export function FuelDialog({ fuelLog, trigger, open, onOpenChange, onSuccess }: 
                                             </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                            <SelectItem value="CASH">Cash</SelectItem>
+                                            <SelectItem value="ADVANCE">Driver Advance (Recommended)</SelectItem>
+                                            <SelectItem value="CASH">Cash (Direct)</SelectItem>
                                             <SelectItem value="CREDIT">Credit (Payable)</SelectItem>
                                         </SelectContent>
                                     </Select>

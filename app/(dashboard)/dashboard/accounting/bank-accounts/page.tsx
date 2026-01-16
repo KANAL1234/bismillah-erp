@@ -20,10 +20,10 @@ function BankAccountsContent() {
     const { data: accounts, isLoading } = useBankAccounts()
 
     return (
-        <div className="p-6 space-y-6">
-            <div className="flex justify-between items-center">
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold">Bank Accounts</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Bank Accounts</h1>
                     <p className="text-muted-foreground">Manage your business bank accounts</p>
                 </div>
                 <Button>
@@ -69,8 +69,8 @@ function BankAccountsContent() {
             </div>
 
             <Card>
-                <CardHeader>
-                    <CardTitle>All Bank Accounts</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                    <CardTitle className="text-base font-medium">All Bank Accounts</CardTitle>
                     <CardDescription>View and manage your bank accounts</CardDescription>
                 </CardHeader>
                 <CardContent>

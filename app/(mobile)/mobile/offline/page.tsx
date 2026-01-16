@@ -21,7 +21,7 @@ export default function OfflinePage() {
             <div className="flex flex-col w-full gap-3">
                 <Button
                     onClick={() => window.location.reload()}
-                    className="w-full bg-blue-600 hover:bg-blue-700 h-12 rounded-xl"
+                    className="w-full bg-primary hover:bg-primary/90 h-12 rounded-xl"
                 >
                     <RotateCw className="w-4 h-4 mr-2" />
                     Try Again

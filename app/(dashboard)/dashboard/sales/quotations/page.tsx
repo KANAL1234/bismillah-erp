@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Search, FileText, Trash2, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,7 @@ import { formatDate } from '@/lib/utils'
 import { SalesQuotation } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import { ListSortControls } from '@/components/list-sort-controls'
 
 export default function SalesQuotationsPage() {
     return (
@@ -36,6 +37,8 @@ function SalesQuotationsContent() {
     const deleteQuotation = useDeleteSalesQuotation()
     const convertToOrder = useConvertQuotationToOrder()
     const [searchTerm, setSearchTerm] = useState('')
+    const [sortBy, setSortBy] = useState('created_at')
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const supabase = createClient()
 
     const handleConvert = async (quotationId: string) => {
@@ -73,11 +76,32 @@ function SalesQuotationsContent() {
         q.reference_number?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
+    const sortedQuotations = useMemo(() => {
+        const data = filteredQuotations ? [...filteredQuotations] : []
+        const sorters: Record<string, (row: any) => string | number> = {
+            created_at: (row) => new Date(row.created_at || row.quotation_date).getTime(),
+            quotation_date: (row) => new Date(row.quotation_date).getTime(),
+            valid_until: (row) => new Date(row.valid_until).getTime(),
+            quotation_number: (row) => String(row.quotation_number || ''),
+            total_amount: (row) => Number(row.total_amount || 0),
+            status: (row) => String(row.status || ''),
+        }
+        const getValue = sorters[sortBy] || sorters.created_at
+        data.sort((a, b) => {
+            const av = getValue(a)
+            const bv = getValue(b)
+            if (av < bv) return sortOrder === 'asc' ? -1 : 1
+            if (av > bv) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+        return data
+    }, [filteredQuotations, sortBy, sortOrder])
+
     const getStatusBadge = (status: SalesQuotation['status']) => {
         switch (status) {
             case 'draft': return <Badge variant="secondary">Draft</Badge>
             case 'pending': return <Badge className="bg-yellow-500 hover:bg-yellow-600">Pending</Badge>
-            case 'approved': return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>
+            case 'approved': return <Badge className="bg-primary/50 hover:bg-primary">Approved</Badge>
             case 'rejected': return <Badge variant="destructive">Rejected</Badge>
             case 'converted': return <Badge className="bg-green-700 hover:bg-green-800">Completed</Badge>
             case 'expired': return <Badge variant="outline" className="text-gray-500">Expired</Badge>
@@ -109,7 +133,7 @@ function SalesQuotationsContent() {
                     <CardTitle className="text-base font-medium">
                         Recent Quotations
                     </CardTitle>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         <div className="relative">
                             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input
@@ -119,6 +143,20 @@ function SalesQuotationsContent() {
                                 className="pl-8 w-[250px]"
                             />
                         </div>
+                        <ListSortControls
+                            sortBy={sortBy}
+                            sortOrder={sortOrder}
+                            onSortByChange={setSortBy}
+                            onSortOrderChange={setSortOrder}
+                            options={[
+                                { value: 'created_at', label: 'Date Added' },
+                                { value: 'quotation_date', label: 'Quotation Date' },
+                                { value: 'valid_until', label: 'Valid Until' },
+                                { value: 'quotation_number', label: 'Quotation #' },
+                                { value: 'total_amount', label: 'Amount' },
+                                { value: 'status', label: 'Status' },
+                            ]}
+                        />
                     </div>
                 </CardHeader>
                 <CardContent>
@@ -135,14 +173,14 @@ function SalesQuotationsContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredQuotations?.length === 0 ? (
+                            {sortedQuotations?.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                                         No quotations found. Create one to get started.
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredQuotations?.map((quotation) => (
+                                sortedQuotations?.map((quotation) => (
                                     <TableRow key={quotation.id}>
                                         <TableCell className="font-medium">
                                             {quotation.quotation_number}

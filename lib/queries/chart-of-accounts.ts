@@ -63,6 +63,26 @@ export function useCreateAccount() {
     })
 }
 
+export function useRecalculateAccountBalances() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async () => {
+            const supabase = createClient()
+            const { error } = await supabase.rpc('update_account_balances')
+            if (error) throw error
+            return true
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['chart-of-accounts'] })
+            toast.success('Account balances refreshed')
+        },
+        onError: (error: any) => {
+            toast.error('Failed to refresh balances: ' + error.message)
+        }
+    })
+}
+
 export function useUpdateAccount() {
     const queryClient = useQueryClient()
 

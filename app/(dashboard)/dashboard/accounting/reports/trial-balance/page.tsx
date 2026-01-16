@@ -6,20 +6,27 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { useChartOfAccounts } from '@/lib/queries/chart-of-accounts'
+import { useQuery } from '@tanstack/react-query'
+import { createClient } from '@/lib/supabase/client'
+import { useRecalculateAccountBalances } from '@/lib/queries/chart-of-accounts'
 import { FileDown, Calculator } from 'lucide-react'
 
 export default function TrialBalancePage() {
-    const { data: accounts, isLoading } = useChartOfAccounts()
+    const recalcBalances = useRecalculateAccountBalances()
     const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
 
-    const totalDebit = accounts?.reduce((sum, acc) => {
-        return sum + (acc.current_balance > 0 ? acc.current_balance : 0)
-    }, 0) || 0
+    const { data: rows = [], isLoading } = useQuery({
+        queryKey: ['trial-balance', asOfDate],
+        queryFn: async () => {
+            const supabase = createClient()
+            const { data, error } = await supabase.rpc('get_trial_balance_as_of', { p_as_of: asOfDate })
+            if (error) throw error
+            return data || []
+        },
+    })
 
-    const totalCredit = accounts?.reduce((sum, acc) => {
-        return sum + (acc.current_balance < 0 ? Math.abs(acc.current_balance) : 0)
-    }, 0) || 0
+    const totalDebit = rows.reduce((sum: number, row: any) => sum + (row.debit || 0), 0)
+    const totalCredit = rows.reduce((sum: number, row: any) => sum + (row.credit || 0), 0)
 
     const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01
 
@@ -30,10 +37,19 @@ export default function TrialBalancePage() {
                     <h1 className="text-3xl font-bold">Trial Balance</h1>
                     <p className="text-muted-foreground">Verify that debits equal credits</p>
                 </div>
-                <Button variant="outline">
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Export to Excel
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => recalcBalances.mutate()}
+                        disabled={recalcBalances.isPending}
+                    >
+                        Refresh Balances
+                    </Button>
+                    <Button variant="outline">
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Export to Excel
+                    </Button>
+                </div>
             </div>
 
             <Card>
@@ -89,15 +105,15 @@ export default function TrialBalancePage() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {accounts?.filter(acc => acc.current_balance !== 0).map((account) => (
-                                        <TableRow key={account.id}>
-                                            <TableCell className="font-mono">{account.account_code}</TableCell>
-                                            <TableCell>{account.account_name}</TableCell>
+                                    {rows.filter((row: any) => (row.debit || 0) !== 0 || (row.credit || 0) !== 0).map((row: any) => (
+                                        <TableRow key={row.account_id}>
+                                            <TableCell className="font-mono">{row.account_code}</TableCell>
+                                            <TableCell>{row.account_name}</TableCell>
                                             <TableCell className="text-right font-mono">
-                                                {account.current_balance > 0 ? `PKR ${account.current_balance.toLocaleString()}` : '-'}
+                                                {row.debit > 0 ? `PKR ${row.debit.toLocaleString()}` : '-'}
                                             </TableCell>
                                             <TableCell className="text-right font-mono">
-                                                {account.current_balance < 0 ? `PKR ${Math.abs(account.current_balance).toLocaleString()}` : '-'}
+                                                {row.credit > 0 ? `PKR ${row.credit.toLocaleString()}` : '-'}
                                             </TableCell>
                                         </TableRow>
                                     ))}

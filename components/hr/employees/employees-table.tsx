@@ -25,7 +25,6 @@ import { useEmployees, useUpdateEmployee } from '@/lib/queries/hr'
 import { PermissionGuard } from '@/components/permission-guard'
 import { toast } from 'sonner'
 import { formatCurrency } from '@/lib/utils'
-import { Skeleton } from '@/components/ui/skeleton'
 import { EmployeeDialog } from './employee-dialog'
 import { useState } from 'react'
 
@@ -79,33 +78,35 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
         }
     }
 
-    if (isLoading) {
-        return (
-            <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                    <Skeleton key={i} className="h-16 w-full" />
-                ))}
-            </div>
-        )
-    }
-
     return (
         <>
-            <div className="rounded-md border">
-                <Table>
-                    <TableHeader>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead>Designation</TableHead>
+                        <TableHead className="text-right">Basic Salary</TableHead>
+                        <TableHead className="text-center">Commission</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {isLoading ? (
                         <TableRow>
-                            <TableHead>Employee</TableHead>
-                            <TableHead>Department</TableHead>
-                            <TableHead>Designation</TableHead>
-                            <TableHead className="text-right">Basic Salary</TableHead>
-                            <TableHead className="text-center">Commission</TableHead>
-                            <TableHead className="text-center">Status</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
+                            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                                Loading employees...
+                            </TableCell>
                         </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {filteredEmployees?.map((employee) => (
+                    ) : filteredEmployees?.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                                No employees found.
+                            </TableCell>
+                        </TableRow>
+                    ) : (
+                        filteredEmployees?.map((employee) => (
                             <TableRow key={employee.id}>
                                 <TableCell>
                                     <div>
@@ -121,7 +122,7 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
                                 <TableCell>
                                     <div className="flex items-center gap-1">
                                         {employee.designation === 'Fleet Driver' && (
-                                            <Truck className="h-4 w-4 text-blue-600" />
+                                            <Truck className="h-4 w-4 text-primary" />
                                         )}
                                         {employee.designation}
                                     </div>
@@ -145,45 +146,34 @@ export function EmployeesTable({ searchQuery }: EmployeesTableProps) {
                                     </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                    <div className="flex justify-end gap-2">
+                                    <div className="flex items-center justify-end gap-2">
                                         <PermissionGuard permission="hr:employees:update">
                                             <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                                variant="outline"
+                                                size="sm"
                                                 onClick={() => setEditingEmployee(employee)}
-                                                title="Edit Employee"
                                             >
-                                                <Pencil className="h-4 w-4" />
-                                                <span className="sr-only">Edit</span>
+                                                <Pencil className="mr-2 h-4 w-4" />
+                                                Edit
                                             </Button>
                                         </PermissionGuard>
                                         <PermissionGuard permission="hr:employees:delete">
                                             <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                variant="destructive"
+                                                size="sm"
                                                 onClick={() => setDeactivatingEmployee(employee)}
-                                                title="Deactivate Employee"
                                             >
-                                                <Trash2 className="h-4 w-4" />
-                                                <span className="sr-only">Deactivate</span>
+                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                Deactivate
                                             </Button>
                                         </PermissionGuard>
                                     </div>
                                 </TableCell>
                             </TableRow>
-                        ))}
-                        {filteredEmployees?.length === 0 && (
-                            <TableRow>
-                                <TableCell colSpan={7} className="h-24 text-center">
-                                    No employees found.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </div>
+                        ))
+                    )}
+                </TableBody>
+            </Table>
 
             <EmployeeDialog
                 open={!!editingEmployee}

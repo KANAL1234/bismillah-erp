@@ -63,6 +63,7 @@ function NewJournalEntryContent() {
 
     const [lines, setLines] = useState<JournalLine[]>([])
     const [selectedAccountId, setSelectedAccountId] = useState('')
+    const [accountSearch, setAccountSearch] = useState('')
     const [lineDescription, setLineDescription] = useState('')
     const [debitAmount, setDebitAmount] = useState('')
     const [creditAmount, setCreditAmount] = useState('')
@@ -79,6 +80,11 @@ function NewJournalEntryContent() {
     const availableAccounts = accounts?.filter(
         acc => !lines.some(line => line.account_id === acc.id)
     )
+    const filteredAccounts = availableAccounts?.filter((account) => {
+        const query = accountSearch.trim().toLowerCase()
+        if (!query) return true
+        return `${account.account_code} ${account.account_name}`.toLowerCase().includes(query)
+    })
 
     const handleAddLine = () => {
         if (!selectedAccountId) {
@@ -114,6 +120,7 @@ function NewJournalEntryContent() {
 
         setLines([...lines, newLine])
         setSelectedAccountId('')
+        setAccountSearch('')
         setLineDescription('')
         setDebitAmount('')
         setCreditAmount('')
@@ -233,16 +240,37 @@ function NewJournalEntryContent() {
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                             <div className="md:col-span-2 space-y-2">
                                 <Label>Account *</Label>
-                                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                                <Select
+                                    value={selectedAccountId}
+                                    onValueChange={(value) => {
+                                        setSelectedAccountId(value)
+                                        setAccountSearch('')
+                                    }}
+                                >
                                     <SelectTrigger>
                                         <SelectValue placeholder="Select account" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {availableAccounts?.map((account) => (
-                                            <SelectItem key={account.id} value={account.id}>
-                                                {account.account_code} - {account.account_name}
-                                            </SelectItem>
-                                        ))}
+                                        <div className="p-2 border-b">
+                                            <Input
+                                                value={accountSearch}
+                                                onChange={(e) => setAccountSearch(e.target.value)}
+                                                onKeyDown={(e) => e.stopPropagation()}
+                                                placeholder="Search accounts..."
+                                                className="h-8"
+                                            />
+                                        </div>
+                                        {filteredAccounts?.length ? (
+                                            filteredAccounts.map((account) => (
+                                                <SelectItem key={account.id} value={account.id}>
+                                                    {account.account_code} - {account.account_name}
+                                                </SelectItem>
+                                            ))
+                                        ) : (
+                                            <div className="px-2 py-3 text-sm text-slate-500">
+                                                No accounts match your search.
+                                            </div>
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>

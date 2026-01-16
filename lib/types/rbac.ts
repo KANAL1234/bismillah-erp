@@ -15,13 +15,15 @@ export type RoleCode =
 export type ModuleType =
   | 'dashboard'
   | 'inventory'
+  | 'hr'
   | 'pos'
   | 'sales'
   | 'procurement'
   | 'accounting'
   | 'reports'
   | 'settings'
-  | 'system';
+  | 'system'
+  | 'fleet';
 
 export type ActionType =
   | 'create'
@@ -32,6 +34,8 @@ export type ActionType =
   | 'view'
   | 'post'
   | 'cancel'
+  | 'reverse'
+  | 'write'
   | 'send'
   | 'email'
   | 'void'
@@ -40,6 +44,8 @@ export type ActionType =
   | 'convert'
   | 'adjust'
   | 'transfer'
+  | 'request'
+  | 'mark'
   | 'approve_adjustment'
   | 'approve_transfer';
 
@@ -225,6 +231,8 @@ export const PERMISSION_ACTIONS = {
   VIEW: 'view',
   POST: 'post',
   CANCEL: 'cancel',
+  REVERSE: 'reverse',
+  WRITE: 'write',
   SEND: 'send',
   EMAIL: 'email',
   VOID: 'void',
@@ -232,19 +240,23 @@ export const PERMISSION_ACTIONS = {
   PERFORM: 'perform',
   CONVERT: 'convert',
   ADJUST: 'adjust',
-  TRANSFER: 'transfer'
+  TRANSFER: 'transfer',
+  REQUEST: 'request',
+  MARK: 'mark'
 } as const;
 
 export const MODULES = {
   DASHBOARD: 'dashboard',
   INVENTORY: 'inventory',
+  HR: 'hr',
   POS: 'pos',
   SALES: 'sales',
   PROCUREMENT: 'procurement',
   ACCOUNTING: 'accounting',
   REPORTS: 'reports',
   SETTINGS: 'settings',
-  SYSTEM: 'system'
+  SYSTEM: 'system',
+  FLEET: 'fleet'
 } as const;
 
 // ========================================
@@ -351,6 +363,57 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
           { action: 'read', label: 'View' },
           { action: 'update', label: 'Edit' }
         ]
+      },
+      {
+        resource: 'reports',
+        label: 'Reports',
+        actions: [{ action: 'view', label: 'View' }]
+      }
+    ]
+  },
+  {
+    module: 'hr',
+    label: 'Human Resources',
+    permissions: [
+      {
+        resource: 'employees',
+        label: 'Employees',
+        actions: [
+          { action: 'create', label: 'Create' },
+          { action: 'read', label: 'View' },
+          { action: 'update', label: 'Edit' },
+          { action: 'delete', label: 'Delete' }
+        ]
+      },
+      {
+        resource: 'attendance',
+        label: 'Attendance',
+        actions: [
+          { action: 'view', label: 'View' },
+          { action: 'mark', label: 'Mark' }
+        ]
+      },
+      {
+        resource: 'leaves',
+        label: 'Leaves',
+        actions: [
+          { action: 'request', label: 'Request' },
+          { action: 'approve', label: 'Approve' }
+        ]
+      },
+      {
+        resource: 'advances',
+        label: 'Employee Advances',
+        actions: [
+          { action: 'create', label: 'Create' },
+          { action: 'read', label: 'View' },
+          { action: 'approve', label: 'Approve' }
+        ]
+      },
+      {
+        resource: 'payroll',
+        label: 'Payroll',
+        actions: [{ action: 'view', label: 'View' }]
       }
     ]
   },
@@ -432,6 +495,16 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
           { action: 'read', label: 'View' },
           { action: 'approve', label: 'Approve' }
         ]
+      },
+      {
+        resource: 'deliveries',
+        label: 'Deliveries',
+        actions: [
+          { action: 'create', label: 'Create' },
+          { action: 'read', label: 'View' },
+          { action: 'update', label: 'Edit' },
+          { action: 'approve', label: 'Approve' }
+        ]
       }
     ]
   },
@@ -508,7 +581,10 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
           { action: 'create', label: 'Create' },
           { action: 'read', label: 'View' },
           { action: 'post', label: 'Post' },
-          { action: 'cancel', label: 'Cancel' }
+          { action: 'cancel', label: 'Cancel' },
+          { action: 'write', label: 'Edit' },
+          { action: 'delete', label: 'Delete' },
+          { action: 'reverse', label: 'Reverse' }
         ]
       },
       {
@@ -528,6 +604,47 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
           { action: 'read', label: 'View' },
           { action: 'update', label: 'Edit' }
         ]
+      },
+      {
+        resource: 'reports',
+        label: 'Reports',
+        actions: [{ action: 'read', label: 'View' }]
+      }
+    ]
+  },
+  {
+    module: 'fleet',
+    label: 'Fleet',
+    permissions: [
+      {
+        resource: 'overview',
+        label: 'Overview',
+        actions: [{ action: 'view', label: 'View' }]
+      },
+      {
+        resource: 'vehicles',
+        label: 'Vehicles',
+        actions: [{ action: 'view', label: 'View' }]
+      },
+      {
+        resource: 'drivers',
+        label: 'Drivers',
+        actions: [{ action: 'view', label: 'View' }]
+      },
+      {
+        resource: 'trips',
+        label: 'Trips',
+        actions: [{ action: 'view', label: 'View' }]
+      },
+      {
+        resource: 'maintenance',
+        label: 'Maintenance',
+        actions: [{ action: 'view', label: 'View' }]
+      },
+      {
+        resource: 'variances',
+        label: 'Variances',
+        actions: [{ action: 'view', label: 'View' }]
       }
     ]
   },
@@ -569,7 +686,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       {
         resource: 'company',
         label: 'Company',
-        actions: [{ action: 'update', label: 'Update Settings' }]
+        actions: [{ action: 'manage', label: 'Manage Settings' }]
       },
       {
         resource: 'users',
