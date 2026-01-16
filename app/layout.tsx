@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Providers } from '@/lib/providers'
 import { Toaster } from '@/components/ui/sonner'
@@ -36,6 +37,7 @@ export default function RootLayout({
           {children}
           <Toaster position="top-center" />
         </Providers>
+        <Analytics />
       </body>
     </html>
   )
