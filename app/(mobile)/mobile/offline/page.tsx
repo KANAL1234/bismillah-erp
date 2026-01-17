@@ -38,7 +38,7 @@ export default function OfflinePage() {
             </div>
 
             <p className="mt-10 text-[10px] text-slate-400 uppercase font-bold tracking-widest">
-                Bismillah Oil Agency
+                Business-ERP-Software
             </p>
         </div>
     )

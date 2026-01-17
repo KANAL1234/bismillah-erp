@@ -81,7 +81,7 @@ export default function PurchaseOrderDetailPage() {
             total_amount: order.total_amount || 0,
             notes: order.notes || undefined,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })

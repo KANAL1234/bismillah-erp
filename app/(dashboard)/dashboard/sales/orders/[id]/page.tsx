@@ -71,7 +71,7 @@ function SalesOrderDetailsContent() {
             total_amount: order.total_amount,
             notes: order.notes,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })
@@ -100,7 +100,7 @@ function SalesOrderDetailsContent() {
             total_amount: order.total_amount,
             notes: order.notes,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })

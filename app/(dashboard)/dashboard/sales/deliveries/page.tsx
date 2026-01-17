@@ -86,7 +86,7 @@ function DeliveryNotesContent() {
             })),
             notes: note.notes,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })
@@ -139,7 +139,7 @@ function DeliveryNotesContent() {
             })),
             notes: note.notes,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })

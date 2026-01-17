@@ -34,7 +34,7 @@ export default function DashboardPage() {
             permission="dashboard.overview.view"
             fallback={
                 <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-                    <h2 className="text-2xl font-bold tracking-tight text-slate-900">Welcome to Bismillah ERP</h2>
+                    <h2 className="text-2xl font-bold tracking-tight text-slate-900">Welcome to Business-ERP-Software</h2>
                     <p className="mt-2 text-slate-600">Please select a module from the sidebar to get started.</p>
                 </div>
             }

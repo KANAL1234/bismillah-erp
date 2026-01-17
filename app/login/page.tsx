@@ -77,7 +77,7 @@ export default function LoginPage() {
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
             <Card className="w-full max-w-md">
                 <CardHeader>
-                    <CardTitle className="text-2xl font-bold">Bismillah Oil Agency ERP</CardTitle>
+                    <CardTitle className="text-2xl font-bold">Business-ERP-Software</CardTitle>
                     <CardDescription>Sign in to access the system</CardDescription>
                 </CardHeader>
                 <CardContent>

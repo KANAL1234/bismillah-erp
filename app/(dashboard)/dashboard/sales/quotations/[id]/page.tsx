@@ -61,7 +61,7 @@ function SalesQuotationDetailsContent() {
             notes: quotation.notes,
             term_and_conditions: quotation.term_and_conditions,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })

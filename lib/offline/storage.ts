@@ -3,13 +3,13 @@ import localforage from 'localforage'
 
 // Configure offline storage
 export const offlineStore = localforage.createInstance({
-  name: 'bismillah-driver-app',
+  name: 'business-erp-software-driver-app',
   storeName: 'offline_data',
-  description: 'Offline data storage for Bismillah Driver App'
+  description: 'Offline data storage for Business-ERP-Software Driver App'
 })
 
 export const syncQueueStore = localforage.createInstance({
-  name: 'bismillah-driver-app',
+  name: 'business-erp-software-driver-app',
   storeName: 'sync_queue',
   description: 'Queue for pending sync operations'
 })
