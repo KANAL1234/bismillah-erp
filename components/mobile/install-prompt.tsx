@@ -69,7 +69,7 @@ export function InstallPrompt() {
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <Download className="w-5 h-5" />
-              <p className="font-semibold text-lg">Install Bismillah App</p>
+              <p className="font-semibold text-lg">Install Business-ERP-Software App</p>
             </div>
             <p className="text-sm text-primary-foreground/80">
               Install on your home screen for quick access and offline use

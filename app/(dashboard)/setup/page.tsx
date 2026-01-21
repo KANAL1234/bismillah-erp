@@ -22,7 +22,7 @@ export default function SetupWizardPage() {
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     // Step 1: Company Information
-    const [companyName, setCompanyName] = useState('Bismillah Trading Co.')
+    const [companyName, setCompanyName] = useState('Business-ERP-Software')
     const [ntn, setNtn] = useState('1234567-8')
     const [strn, setStrn] = useState('ST-123456789')
     const [address, setAddress] = useState('Main Bazaar, Shop No. 123')
@@ -149,7 +149,7 @@ export default function SetupWizardPage() {
             <div className="max-w-4xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-8">
-                    <h1 className="text-4xl font-bold text-slate-900 mb-2">Welcome to Bismillah ERP</h1>
+                    <h1 className="text-4xl font-bold text-slate-900 mb-2">Welcome to Business-ERP-Software</h1>
                     <p className="text-slate-600">Let's set up your accounting system in a few simple steps</p>
                 </div>
 

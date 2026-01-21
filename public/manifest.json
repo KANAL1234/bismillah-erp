@@ -1,7 +1,7 @@
 {
-  "name": "Bismillah Driver App",
-  "short_name": "Bismillah Driver",
-  "description": "Mobile app for Bismillah Oil Agency drivers - POS, Inventory, Fuel logs",
+  "name": "Business-ERP-Software Driver App",
+  "short_name": "Business-ERP-Software Driver",
+  "description": "Mobile app for Business-ERP-Software drivers - POS, Inventory, Fuel logs",
   "start_url": "/mobile",
   "display": "standalone",
   "background_color": "#ffffff",

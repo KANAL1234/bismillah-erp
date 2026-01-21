@@ -95,7 +95,7 @@ function GoodsReceiptsContent() {
             total_amount: grn.total_amount || 0,
             notes: grn.notes || undefined,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         }).save(`GRN_${grn.grn_number}.pdf`)
@@ -140,7 +140,7 @@ function GoodsReceiptsContent() {
             total_amount: grn.total_amount || 0,
             notes: grn.notes || undefined,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })

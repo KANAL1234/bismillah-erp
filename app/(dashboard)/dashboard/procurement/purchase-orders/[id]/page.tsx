@@ -118,7 +118,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             total_amount: po.total_amount || 0,
             notes: po.notes || undefined,
         }, {
-            name: 'Bismillah Oil Agency',
+            name: 'Business-ERP-Software',
             address: 'Rawalpindi, Pakistan',
             phone: '051-XXXXXXX',
         })

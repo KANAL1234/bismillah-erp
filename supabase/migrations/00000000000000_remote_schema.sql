@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict SD6Qi5uHXzyP5voOugdngUQb8rNsTYt46fGxwOlWN3PEuDruUnTfkB5aizcGb2D
+\restrict xDb0IQRU1CcRwpQs3N19ByAcJlsLay3kKjn433OS6E03VxgF391OOO7YPhdF644
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.7 (Homebrew)
@@ -256,6 +256,34 @@ $$;
 --
 
 COMMENT ON FUNCTION public.auto_create_vendor_bill_from_grn() IS 'Autonomous workflow: Automatically creates and posts vendor bill when GRN is created';
+
+
+--
+-- Name: auto_register_fleet_driver(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.auto_register_fleet_driver() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- If designation is 'Fleet Driver', auto-create fleet_driver record
+    IF NEW.designation = 'Fleet Driver' THEN
+        INSERT INTO fleet_drivers (employee_id, license_number, license_expiry, status)
+        VALUES (
+            NEW.id,
+            COALESCE(NEW.license_number, 'PENDING'),
+            COALESCE(NEW.license_expiry, (CURRENT_DATE + INTERVAL '1 year')::date),
+            'ACTIVE'
+        )
+        ON CONFLICT (employee_id) DO UPDATE SET
+            license_number = COALESCE(EXCLUDED.license_number, fleet_drivers.license_number),
+            license_expiry = COALESCE(EXCLUDED.license_expiry, fleet_drivers.license_expiry),
+            status = 'ACTIVE';
+    END IF;
+    
+    RETURN NEW;
+END;
+$$;
 
 
 --
@@ -630,6 +658,168 @@ COMMENT ON FUNCTION public.create_cost_layer(p_product_id uuid, p_location_id uu
 
 
 --
+-- Name: create_customer_invoice_from_pos_sale(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_customer_invoice_from_pos_sale() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_credit_days integer := 0;
+  v_due_date date;
+  v_amount_received numeric;
+  v_payment_status text;
+BEGIN
+  -- Prevent duplicates if an invoice already exists for this sale number
+  IF EXISTS (
+    SELECT 1 FROM customer_invoices_accounting
+    WHERE invoice_number = NEW.sale_number
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.customer_id IS NOT NULL THEN
+    SELECT COALESCE(credit_days, 0)
+    INTO v_credit_days
+    FROM customers
+    WHERE id = NEW.customer_id;
+  END IF;
+
+  v_due_date := (NEW.sale_date::date + v_credit_days);
+  v_amount_received := COALESCE(NEW.amount_paid, 0);
+
+  IF (NEW.total_amount - v_amount_received) <= 0 THEN
+    v_payment_status := 'paid';
+  ELSIF v_amount_received > 0 THEN
+    v_payment_status := 'partial';
+  ELSE
+    v_payment_status := 'unpaid';
+  END IF;
+
+  INSERT INTO customer_invoices_accounting (
+    invoice_number,
+    customer_id,
+    invoice_date,
+    due_date,
+    reference_number,
+    subtotal,
+    tax_amount,
+    discount_amount,
+    total_amount,
+    amount_received,
+    payment_status,
+    status,
+    notes,
+    created_by,
+    location_id
+  ) VALUES (
+    NEW.sale_number,
+    NEW.customer_id,
+    NEW.sale_date::date,
+    v_due_date,
+    NEW.sale_number,
+    NEW.subtotal,
+    NEW.tax_amount,
+    NEW.discount_amount,
+    NEW.total_amount,
+    v_amount_received,
+    v_payment_status,
+    'posted',
+    NEW.notes,
+    NEW.cashier_id,
+    NEW.location_id
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: create_customer_invoice_from_sales_invoice(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_customer_invoice_from_sales_invoice() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_amount_received numeric;
+  v_payment_status text;
+  v_status text;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM customer_invoices_accounting
+    WHERE invoice_number = NEW.invoice_number
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  v_amount_received := COALESCE(NEW.amount_paid, 0);
+
+  IF (NEW.total_amount - v_amount_received) <= 0 THEN
+    v_payment_status := 'paid';
+  ELSIF v_amount_received > 0 THEN
+    v_payment_status := 'partial';
+  ELSE
+    v_payment_status := 'unpaid';
+  END IF;
+
+  IF NEW.status = 'void' THEN
+    v_status := 'cancelled';
+  ELSIF NEW.status = 'draft' THEN
+    v_status := 'draft';
+  ELSE
+    v_status := 'posted';
+  END IF;
+
+  IF NEW.status = 'overdue' THEN
+    v_payment_status := 'overdue';
+  END IF;
+
+  INSERT INTO customer_invoices_accounting (
+    invoice_number,
+    customer_id,
+    sales_order_id,
+    invoice_date,
+    due_date,
+    reference_number,
+    subtotal,
+    tax_amount,
+    discount_amount,
+    total_amount,
+    amount_received,
+    payment_status,
+    status,
+    notes,
+    created_by,
+    location_id,
+    warehouse_id
+  ) VALUES (
+    NEW.invoice_number,
+    NEW.customer_id,
+    NEW.sales_order_id,
+    NEW.invoice_date,
+    NEW.due_date,
+    NEW.invoice_number,
+    NEW.subtotal,
+    NEW.tax_amount,
+    NEW.discount_amount,
+    NEW.total_amount,
+    v_amount_received,
+    v_payment_status,
+    v_status,
+    NEW.notes,
+    NEW.created_by,
+    NEW.location_id,
+    NEW.warehouse_id
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: create_employee_advance(uuid, text, numeric, text, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -721,6 +911,54 @@ EXCEPTION
             'success', false,
             'message', SQLERRM
         );
+END;
+$$;
+
+
+--
+-- Name: end_driver_trip(uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.end_driver_trip(p_trip_id uuid, p_end_mileage numeric) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_trip RECORD;
+    v_warehouse_name text;
+BEGIN
+    -- Get trip info
+    SELECT * INTO v_trip FROM fleet_trips WHERE id = p_trip_id;
+    IF v_trip IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Trip not found');
+    END IF;
+    
+    IF v_trip.status != 'IN_PROGRESS' THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Trip is not in progress');
+    END IF;
+    
+    -- Get warehouse name
+    SELECT name INTO v_warehouse_name FROM locations 
+    WHERE code = 'WH-001' OR name ILIKE '%warehouse%' 
+    LIMIT 1;
+    v_warehouse_name := COALESCE(v_warehouse_name, 'Main Warehouse');
+    
+    -- End trip
+    UPDATE fleet_trips SET
+        end_time = NOW(),
+        end_location = v_warehouse_name,
+        end_mileage = p_end_mileage,
+        status = 'COMPLETED'
+    WHERE id = p_trip_id;
+    
+    -- Update vehicle mileage
+    UPDATE fleet_vehicles SET current_mileage = p_end_mileage WHERE id = v_trip.vehicle_id;
+    
+    RETURN jsonb_build_object(
+        'success', true,
+        'trip_id', p_trip_id,
+        'distance', p_end_mileage - v_trip.start_mileage,
+        'message', 'Trip completed successfully'
+    );
 END;
 $$;
 
@@ -1199,10 +1437,9 @@ BEGIN
             'total', COALESCE(SUM(ci.amount_due), 0)
         ) as buckets
     FROM customers c
-    LEFT JOIN customer_invoices ci ON ci.customer_id = c.id
+    LEFT JOIN customer_invoices_accounting ci ON ci.customer_id = c.id
         AND ci.amount_due > 0
         AND ci.payment_status IN ('unpaid', 'partial', 'overdue')
-        AND ci.due_date <= p_as_of_date
     WHERE c.is_active = true
     GROUP BY c.id, c.name, c.customer_code
     HAVING SUM(ci.amount_due) > 0
@@ -1356,6 +1593,69 @@ BEGIN
     FROM customer_stats
     WHERE c_utilization >= p_threshold_pct OR c_balance > c_limit
     ORDER BY c_utilization DESC;
+END;
+$$;
+
+
+--
+-- Name: get_driver_active_trip(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_driver_active_trip(p_employee_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_driver RECORD;
+    v_trip RECORD;
+    v_allowance RECORD;
+    v_vehicle RECORD;
+BEGIN
+    -- Get driver
+    SELECT * INTO v_driver FROM fleet_drivers WHERE employee_id = p_employee_id;
+    IF v_driver IS NULL THEN
+        RETURN jsonb_build_object('has_trip', false, 'is_driver', false);
+    END IF;
+    
+    -- Get active trip
+    SELECT * INTO v_trip FROM fleet_trips 
+    WHERE driver_id = v_driver.id AND status = 'IN_PROGRESS'
+    LIMIT 1;
+    
+    IF v_trip IS NULL THEN
+        RETURN jsonb_build_object('has_trip', false, 'is_driver', true, 'driver_id', v_driver.id);
+    END IF;
+    
+    -- Get vehicle
+    SELECT * INTO v_vehicle FROM fleet_vehicles WHERE id = v_trip.vehicle_id;
+    
+    -- Get fuel allowance for this trip
+    SELECT * INTO v_allowance FROM fleet_fuel_allowances 
+    WHERE trip_id = v_trip.id 
+    ORDER BY created_at DESC LIMIT 1;
+    
+    RETURN jsonb_build_object(
+        'has_trip', true,
+        'is_driver', true,
+        'driver_id', v_driver.id,
+        'trip', jsonb_build_object(
+            'id', v_trip.id,
+            'start_time', v_trip.start_time,
+            'start_location', v_trip.start_location,
+            'start_mileage', v_trip.start_mileage,
+            'vehicle_id', v_trip.vehicle_id,
+            'vehicle_number', v_vehicle.registration_number
+        ),
+        'fuel_allowance', CASE WHEN v_allowance IS NOT NULL THEN
+            jsonb_build_object(
+                'id', v_allowance.id,
+                'budgeted_cost', v_allowance.budgeted_fuel_cost,
+                'cash_issued', v_allowance.cash_issued,
+                'actual_spent', v_allowance.actual_fuel_cost,
+                'cash_returned', v_allowance.cash_returned,
+                'outstanding', v_allowance.cash_issued - COALESCE(v_allowance.actual_fuel_cost, 0) - COALESCE(v_allowance.cash_returned, 0)
+            )
+        ELSE NULL END
+    );
 END;
 $$;
 
@@ -2149,6 +2449,34 @@ $$;
 
 
 --
+-- Name: get_trial_balance_as_of(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_trial_balance_as_of(p_as_of date) RETURNS TABLE(account_id uuid, account_code text, account_name text, debit numeric, credit numeric, balance numeric)
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    coa.id,
+    coa.account_code,
+    coa.account_name,
+    GREATEST(coa.opening_balance + COALESCE(SUM(CASE WHEN je.id IS NULL THEN 0 ELSE jel.debit_amount - jel.credit_amount END), 0), 0) AS debit,
+    GREATEST(-(coa.opening_balance + COALESCE(SUM(CASE WHEN je.id IS NULL THEN 0 ELSE jel.debit_amount - jel.credit_amount END), 0)), 0) AS credit,
+    coa.opening_balance + COALESCE(SUM(CASE WHEN je.id IS NULL THEN 0 ELSE jel.debit_amount - jel.credit_amount END), 0) AS balance
+  FROM chart_of_accounts coa
+  LEFT JOIN journal_entry_lines jel ON jel.account_id = coa.id
+  LEFT JOIN journal_entries je
+    ON je.id = jel.journal_entry_id
+   AND je.status = 'posted'
+   AND je.journal_date <= p_as_of
+  GROUP BY coa.id, coa.account_code, coa.account_name, coa.opening_balance
+  ORDER BY coa.account_code;
+END;
+$$;
+
+
+--
 -- Name: get_user_audit_logs(uuid, text, date, date, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2269,7 +2597,6 @@ BEGIN
     LEFT JOIN vendor_bills vb ON vb.vendor_id = v.id
         AND vb.amount_due > 0
         AND vb.payment_status IN ('unpaid', 'partial', 'overdue')
-        AND vb.due_date <= p_as_of_date
     WHERE v.is_active = true
     GROUP BY v.id, v.name, v.vendor_code
     HAVING SUM(vb.amount_due) > 0
@@ -2547,6 +2874,116 @@ Reduces stock at FROM location and increases stock at TO location.';
 
 
 --
+-- Name: issue_fuel_allowance(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.issue_fuel_allowance(p_allowance_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_allowance RECORD;
+    v_driver RECORD;
+    v_vehicle RECORD;
+    v_journal_entry_id uuid;
+    v_journal_number text;
+    v_fiscal_year_id uuid;
+    v_fuel_advance_account_id uuid;
+    v_cash_account_id uuid;
+    v_next_number integer;
+BEGIN
+    -- Get allowance details
+    SELECT * INTO v_allowance FROM fleet_fuel_allowances WHERE id = p_allowance_id;
+    
+    IF v_allowance IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Fuel allowance not found');
+    END IF;
+    
+    IF v_allowance.cash_issued > 0 THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Cash already issued for this allowance');
+    END IF;
+    
+    -- Get driver and vehicle info
+    SELECT * INTO v_driver FROM fleet_drivers WHERE id = v_allowance.driver_id;
+    SELECT * INTO v_vehicle FROM fleet_vehicles WHERE id = v_allowance.vehicle_id;
+    
+    -- Get accounts
+    SELECT id INTO v_fiscal_year_id FROM fiscal_years WHERE is_closed = false LIMIT 1;
+    SELECT id INTO v_fuel_advance_account_id FROM chart_of_accounts WHERE account_code = '1415';
+    SELECT id INTO v_cash_account_id FROM chart_of_accounts WHERE account_code = '1010';
+    
+    -- Generate journal number
+    SELECT COALESCE(MAX(CAST(SUBSTRING(journal_number FROM 12) AS INTEGER)), 0) + 1
+    INTO v_next_number
+    FROM journal_entries
+    WHERE journal_number LIKE 'JE-FUELADV-%';
+    
+    v_journal_number := 'JE-FUELADV-' || LPAD(v_next_number::text, 4, '0');
+    
+    -- Create journal entry: Dr. Fuel Advance, Cr. Cash
+    INSERT INTO journal_entries (
+        id, journal_number, journal_type, journal_date, fiscal_year_id,
+        reference_type, reference_id, reference_number, narration,
+        total_debit, total_credit, status, posted_at, created_at
+    ) VALUES (
+        gen_random_uuid(),
+        v_journal_number,
+        'AUTO',
+        v_allowance.allowance_date,
+        v_fiscal_year_id,
+        'FUEL_ALLOWANCE',
+        p_allowance_id,
+        v_journal_number,
+        'Fuel advance to driver ' || COALESCE(v_driver.name, 'Unknown') || ' for vehicle ' || COALESCE(v_vehicle.registration_number, 'Unknown'),
+        v_allowance.budgeted_fuel_cost,
+        v_allowance.budgeted_fuel_cost,
+        'posted',
+        NOW(),
+        NOW()
+    ) RETURNING id INTO v_journal_entry_id;
+    
+    -- Debit Fuel Advance
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_fuel_advance_account_id,
+        v_allowance.budgeted_fuel_cost,
+        0,
+        'Fuel advance issued to driver'
+    );
+    
+    -- Credit Cash
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_cash_account_id,
+        0,
+        v_allowance.budgeted_fuel_cost,
+        'Cash paid to driver for fuel'
+    );
+    
+    -- Update allowance record
+    UPDATE fleet_fuel_allowances
+    SET cash_issued = budgeted_fuel_cost,
+        cash_issued_date = NOW(),
+        issue_journal_entry_id = v_journal_entry_id
+    WHERE id = p_allowance_id;
+    
+    PERFORM update_account_balances();
+    
+    RETURN jsonb_build_object(
+        'success', true,
+        'journal_entry_id', v_journal_entry_id,
+        'journal_number', v_journal_number,
+        'amount', v_allowance.budgeted_fuel_cost,
+        'message', 'Fuel allowance issued successfully'
+    );
+END;
+$$;
+
+
+--
 -- Name: log_user_action(uuid, text, text, text, uuid, jsonb, jsonb, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2738,6 +3175,150 @@ $$;
 
 
 --
+-- Name: post_delivery_note(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.post_delivery_note(p_delivery_note_id uuid) RETURNS json
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_note RECORD;
+    v_order RECORD;
+    v_item RECORD;
+    v_journal_id UUID;
+    v_journal_number TEXT;
+    v_cogs_account_id UUID;
+    v_inventory_account_id UUID;
+    v_fiscal_year_id UUID;
+    v_location_id UUID;
+    v_total_cogs numeric := 0;
+    v_existing_journal_id UUID;
+BEGIN
+    -- Get delivery note
+    SELECT * INTO v_note FROM delivery_notes WHERE id = p_delivery_note_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Delivery Note not found: %', p_delivery_note_id;
+    END IF;
+
+    -- Prevent double posting
+    SELECT id INTO v_existing_journal_id
+    FROM journal_entries
+    WHERE reference_type = 'DELIVERY_NOTE'
+      AND reference_id = p_delivery_note_id
+    LIMIT 1;
+
+    IF v_existing_journal_id IS NOT NULL THEN
+        RETURN json_build_object(
+            'success', true,
+            'journal_id', v_existing_journal_id,
+            'journal_number', 'EXISTS'
+        );
+    END IF;
+
+    -- Get sales order to identify warehouse/location
+    SELECT id, warehouse_id, location_id, order_number
+    INTO v_order
+    FROM sales_orders
+    WHERE id = v_note.sales_order_id;
+
+    v_location_id := COALESCE(v_order.warehouse_id, v_order.location_id);
+    IF v_location_id IS NULL THEN
+        RAISE EXCEPTION 'No warehouse/location found for sales order %', v_note.sales_order_id;
+    END IF;
+
+    -- Get account IDs (prefer 5010/1300, fallback to 5000/1310/1200)
+    SELECT id INTO v_cogs_account_id
+    FROM chart_of_accounts
+    WHERE account_code IN ('5010', '5000')
+    ORDER BY CASE account_code WHEN '5010' THEN 1 WHEN '5000' THEN 2 ELSE 3 END
+    LIMIT 1;
+
+    SELECT id INTO v_inventory_account_id
+    FROM chart_of_accounts
+    WHERE account_code IN ('1300', '1310', '1200')
+    ORDER BY CASE account_code WHEN '1300' THEN 1 WHEN '1310' THEN 2 WHEN '1200' THEN 3 ELSE 4 END
+    LIMIT 1;
+
+    IF v_cogs_account_id IS NULL THEN
+        RAISE EXCEPTION 'COGS account not found (expected 5010 or 5000)';
+    END IF;
+
+    IF v_inventory_account_id IS NULL THEN
+        RAISE EXCEPTION 'Inventory account not found (expected 1300, 1310, or 1200)';
+    END IF;
+
+    -- Get current fiscal year
+    SELECT id INTO v_fiscal_year_id FROM fiscal_years WHERE is_closed = false LIMIT 1;
+
+    -- Calculate total COGS for delivered items
+    FOR v_item IN
+        SELECT * FROM delivery_note_items WHERE delivery_note_id = p_delivery_note_id
+    LOOP
+        v_total_cogs := v_total_cogs + COALESCE(
+            public.get_cogs_for_sale(v_item.product_id, v_location_id, v_item.quantity_delivered),
+            0
+        );
+    END LOOP;
+
+    -- Generate journal number
+    v_journal_number := 'JE-DN-' || COALESCE((SELECT delivery_note_number FROM delivery_notes WHERE id = p_delivery_note_id), p_delivery_note_id::text);
+
+    -- Create journal entry
+    INSERT INTO journal_entries (
+        journal_number,
+        journal_type,
+        journal_date,
+        fiscal_year_id,
+        reference_type,
+        reference_id,
+        reference_number,
+        narration,
+        total_debit,
+        total_credit,
+        status,
+        posted_at,
+        posted_by
+    ) VALUES (
+        v_journal_number,
+        'AUTO',
+        v_note.delivery_date::date,
+        v_fiscal_year_id,
+        'DELIVERY_NOTE',
+        p_delivery_note_id,
+        v_journal_number,
+        'Delivery Note - ' || v_journal_number,
+        v_total_cogs,
+        v_total_cogs,
+        'posted',
+        NOW(),
+        v_note.created_by
+    ) RETURNING id INTO v_journal_id;
+
+    -- Debit: COGS
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (v_journal_id, v_cogs_account_id, v_total_cogs, 0, 'Cost of Goods Sold');
+
+    -- Credit: Inventory
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (v_journal_id, v_inventory_account_id, 0, v_total_cogs, 'Inventory');
+
+    RETURN json_build_object(
+        'success', true,
+        'journal_id', v_journal_id,
+        'journal_number', v_journal_number,
+        'total_cogs', v_total_cogs
+    );
+
+EXCEPTION WHEN OTHERS THEN
+    RETURN json_build_object(
+        'success', false,
+        'error', SQLERRM
+    );
+END;
+$$;
+
+
+--
 -- Name: post_fleet_fuel_expense(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2747,46 +3328,52 @@ CREATE FUNCTION public.post_fleet_fuel_expense(p_fuel_log_id uuid) RETURNS jsonb
 DECLARE
     v_fuel_log RECORD;
     v_vehicle RECORD;
+    v_allowance RECORD;
     v_journal_entry_id uuid;
     v_journal_number text;
     v_fiscal_year_id uuid;
     v_fuel_expense_account_id uuid;
     v_cash_account_id uuid;
     v_ap_account_id uuid;
+    v_fuel_advance_account_id uuid;
     v_credit_account_id uuid;
     v_next_number integer;
 BEGIN
     SELECT * INTO v_fuel_log FROM fleet_fuel_logs WHERE id = p_fuel_log_id;
-
+    
     IF v_fuel_log IS NULL THEN
         RETURN jsonb_build_object('success', false, 'message', 'Fuel log not found');
     END IF;
-
+    
     IF v_fuel_log.journal_entry_id IS NOT NULL THEN
         RETURN jsonb_build_object('success', false, 'message', 'Fuel log already posted to accounting');
     END IF;
-
+    
     SELECT * INTO v_vehicle FROM fleet_vehicles WHERE id = v_fuel_log.vehicle_id;
-
+    
     SELECT id INTO v_fiscal_year_id FROM fiscal_years WHERE is_closed = false LIMIT 1;
-
+    
     SELECT id INTO v_fuel_expense_account_id FROM chart_of_accounts WHERE account_code = '5220';
     SELECT id INTO v_cash_account_id FROM chart_of_accounts WHERE account_code = '1010';
     SELECT id INTO v_ap_account_id FROM chart_of_accounts WHERE account_code = '2010';
-
+    SELECT id INTO v_fuel_advance_account_id FROM chart_of_accounts WHERE account_code = '1415';
+    
+    -- Determine credit account based on payment method
     IF v_fuel_log.payment_method = 'CREDIT' THEN
         v_credit_account_id := v_ap_account_id;
+    ELSIF v_fuel_log.payment_method = 'ADVANCE' THEN
+        v_credit_account_id := v_fuel_advance_account_id;
     ELSE
         v_credit_account_id := v_cash_account_id;
     END IF;
-
+    
     SELECT COALESCE(MAX(CAST(SUBSTRING(journal_number FROM 9) AS INTEGER)), 0) + 1
     INTO v_next_number
     FROM journal_entries
     WHERE journal_number LIKE 'JE-FUEL-%';
-
+    
     v_journal_number := 'JE-FUEL-' || LPAD(v_next_number::text, 4, '0');
-
+    
     INSERT INTO journal_entries (
         id, journal_number, journal_type, journal_date, fiscal_year_id,
         reference_type, reference_id, reference_number, narration,
@@ -2807,7 +3394,8 @@ BEGIN
         NOW(),
         NOW()
     ) RETURNING id INTO v_journal_entry_id;
-
+    
+    -- Debit Fuel Expense
     INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
     VALUES (
         gen_random_uuid(),
@@ -2817,7 +3405,8 @@ BEGIN
         0,
         'Fuel expense - ' || v_fuel_log.liters || ' liters @ ' || v_fuel_log.cost_per_liter || '/liter'
     );
-
+    
+    -- Credit appropriate account
     INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
     VALUES (
         gen_random_uuid(),
@@ -2825,15 +3414,27 @@ BEGIN
         v_credit_account_id,
         0,
         v_fuel_log.total_cost,
-        CASE WHEN v_fuel_log.payment_method = 'CREDIT' THEN 'Payable for fuel' ELSE 'Cash payment for fuel' END
+        CASE 
+            WHEN v_fuel_log.payment_method = 'CREDIT' THEN 'Payable for fuel'
+            WHEN v_fuel_log.payment_method = 'ADVANCE' THEN 'Paid from driver fuel advance'
+            ELSE 'Cash payment for fuel' 
+        END
     );
-
+    
     UPDATE fleet_fuel_logs
     SET journal_entry_id = v_journal_entry_id
     WHERE id = p_fuel_log_id;
-
+    
+    -- If fuel log is linked to a trip, update the allowance actual cost
+    IF v_fuel_log.trip_id IS NOT NULL THEN
+        UPDATE fleet_fuel_allowances
+        SET actual_fuel_cost = COALESCE(actual_fuel_cost, 0) + v_fuel_log.total_cost,
+            actual_fuel_liters = COALESCE(actual_fuel_liters, 0) + v_fuel_log.liters
+        WHERE trip_id = v_fuel_log.trip_id;
+    END IF;
+    
     PERFORM update_account_balances();
-
+    
     RETURN jsonb_build_object(
         'success', true,
         'journal_entry_id', v_journal_entry_id,
@@ -3287,6 +3888,166 @@ EXCEPTION WHEN OTHERS THEN
   );
 END;
 $$;
+
+
+--
+-- Name: post_sales_invoice(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.post_sales_invoice(p_invoice_id uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+  v_invoice RECORD;
+  v_customer RECORD;
+  v_journal_id UUID;
+  v_journal_number TEXT;
+  v_ar_account_id UUID;
+  v_sales_account_id UUID;
+  v_output_tax_account_id UUID;
+  v_fiscal_year_id UUID;
+  v_net_sales NUMERIC(15,2);
+BEGIN
+  -- Get invoice details
+  SELECT * INTO v_invoice FROM sales_invoices WHERE id = p_invoice_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Sales Invoice not found: %', p_invoice_id;
+  END IF;
+
+  -- Check if already posted to GL
+  IF v_invoice.journal_entry_id IS NOT NULL THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Invoice already posted to General Ledger',
+      'journal_id', v_invoice.journal_entry_id
+    );
+  END IF;
+
+  -- Get customer name for narration
+  SELECT name INTO v_customer FROM customers WHERE id = v_invoice.customer_id;
+
+  -- Get account IDs with fallbacks
+  SELECT id INTO v_ar_account_id FROM chart_of_accounts
+  WHERE account_code IN ('1100', '1110') AND is_active = true
+  ORDER BY account_code LIMIT 1;
+
+  SELECT id INTO v_sales_account_id FROM chart_of_accounts
+  WHERE account_code IN ('4010', '4000', '4100') AND is_active = true
+  ORDER BY account_code LIMIT 1;
+
+  SELECT id INTO v_output_tax_account_id FROM chart_of_accounts
+  WHERE account_code IN ('2100', '2110') AND is_active = true
+  ORDER BY account_code LIMIT 1;
+
+  -- Validate required accounts exist
+  IF v_ar_account_id IS NULL THEN
+    RAISE EXCEPTION 'Accounts Receivable account (1100) not found in Chart of Accounts';
+  END IF;
+
+  IF v_sales_account_id IS NULL THEN
+    RAISE EXCEPTION 'Sales Revenue account (4010) not found in Chart of Accounts';
+  END IF;
+
+  -- Get current fiscal year
+  SELECT id INTO v_fiscal_year_id FROM fiscal_years WHERE is_closed = false LIMIT 1;
+
+  -- Generate unique journal number
+  v_journal_number := 'JE-SINV-' || v_invoice.invoice_number;
+
+  -- Check if journal number already exists (prevent duplicates)
+  IF EXISTS (SELECT 1 FROM journal_entries WHERE journal_number = v_journal_number) THEN
+    -- Get the existing journal entry
+    SELECT id INTO v_journal_id FROM journal_entries WHERE journal_number = v_journal_number;
+
+    -- Update the invoice with the existing journal entry
+    UPDATE sales_invoices SET journal_entry_id = v_journal_id WHERE id = p_invoice_id;
+
+    RETURN json_build_object(
+      'success', true,
+      'journal_id', v_journal_id,
+      'journal_number', v_journal_number,
+      'message', 'Linked to existing journal entry'
+    );
+  END IF;
+
+  -- Calculate net sales (subtotal - discount + shipping)
+  v_net_sales := COALESCE(v_invoice.subtotal, 0) - COALESCE(v_invoice.discount_amount, 0) + COALESCE(v_invoice.shipping_charges, 0);
+
+  -- Create journal entry
+  INSERT INTO journal_entries (
+    journal_number,
+    journal_type,
+    journal_date,
+    fiscal_year_id,
+    reference_type,
+    reference_id,
+    reference_number,
+    narration,
+    total_debit,
+    total_credit,
+    status,
+    posted_at,
+    posted_by
+  ) VALUES (
+    v_journal_number,
+    'AUTO',
+    v_invoice.invoice_date,
+    v_fiscal_year_id,
+    'SALES_INVOICE',
+    p_invoice_id,
+    v_invoice.invoice_number,
+    'B2B Sales Invoice - ' || v_invoice.invoice_number || ' - ' || COALESCE(v_customer.name, 'Customer'),
+    v_invoice.total_amount,
+    v_invoice.total_amount,
+    'posted',
+    NOW(),
+    v_invoice.created_by
+  ) RETURNING id INTO v_journal_id;
+
+  -- Debit: Accounts Receivable (full invoice amount)
+  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description)
+  VALUES (v_journal_id, v_ar_account_id, v_invoice.total_amount, 0,
+          'Accounts Receivable - ' || COALESCE(v_customer.name, 'Customer'));
+
+  -- Credit: Sales Revenue (net sales amount)
+  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description)
+  VALUES (v_journal_id, v_sales_account_id, 0, v_net_sales,
+          'Sales Revenue - ' || v_invoice.invoice_number);
+
+  -- Credit: Output Sales Tax (if tax > 0)
+  IF COALESCE(v_invoice.tax_amount, 0) > 0 AND v_output_tax_account_id IS NOT NULL THEN
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (v_journal_id, v_output_tax_account_id, 0, v_invoice.tax_amount,
+            'Output Sales Tax - ' || v_invoice.invoice_number);
+  END IF;
+
+  -- Update invoice with journal entry ID
+  UPDATE sales_invoices SET journal_entry_id = v_journal_id WHERE id = p_invoice_id;
+
+  -- Update account balances
+  PERFORM update_account_balances();
+
+  RETURN json_build_object(
+    'success', true,
+    'journal_id', v_journal_id,
+    'journal_number', v_journal_number
+  );
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN json_build_object(
+    'success', false,
+    'error', SQLERRM
+  );
+END;
+$$;
+
+
+--
+-- Name: FUNCTION post_sales_invoice(p_invoice_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.post_sales_invoice(p_invoice_id uuid) IS 'Posts a B2B sales invoice to the General Ledger, creating journal entries for AR, Revenue, and Tax';
 
 
 --
@@ -3906,6 +4667,46 @@ $$;
 
 
 --
+-- Name: record_fuel_entry(uuid, uuid, date, text, numeric, numeric, numeric, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_fuel_entry(p_vehicle_id uuid, p_driver_id uuid, p_fuel_date date, p_fuel_type text, p_quantity_liters numeric, p_price_per_liter numeric, p_odometer_reading numeric, p_fuel_station text DEFAULT NULL::text, p_receipt_number text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_fuel_log_id uuid;
+    v_total_cost numeric;
+BEGIN
+    v_total_cost := p_quantity_liters * p_price_per_liter;
+
+    INSERT INTO fleet_fuel_logs (
+        vehicle_id, liters, cost_per_liter, total_cost,
+        odometer_reading, log_date
+    ) VALUES (
+        p_vehicle_id, p_quantity_liters, p_price_per_liter, v_total_cost,
+        p_odometer_reading, p_fuel_date
+    ) RETURNING id INTO v_fuel_log_id;
+
+    UPDATE fleet_vehicles
+    SET current_mileage = p_odometer_reading
+    WHERE id = p_vehicle_id;
+
+    BEGIN
+        PERFORM post_fleet_fuel_expense(v_fuel_log_id);
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Accounting post failed: %', SQLERRM;
+    END;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'fuel_log_id', v_fuel_log_id,
+        'total_cost', v_total_cost
+    );
+END;
+$$;
+
+
+--
 -- Name: remove_role_from_user(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4032,6 +4833,283 @@ $$;
 
 
 --
+-- Name: return_fuel_allowance_cash(uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.return_fuel_allowance_cash(p_allowance_id uuid, p_return_amount numeric) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_allowance RECORD;
+    v_driver RECORD;
+    v_journal_entry_id uuid;
+    v_journal_number text;
+    v_fiscal_year_id uuid;
+    v_fuel_advance_account_id uuid;
+    v_cash_account_id uuid;
+    v_next_number integer;
+    v_outstanding numeric;
+BEGIN
+    -- Get allowance details
+    SELECT * INTO v_allowance FROM fleet_fuel_allowances WHERE id = p_allowance_id;
+    
+    IF v_allowance IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Fuel allowance not found');
+    END IF;
+    
+    IF v_allowance.cash_issued = 0 THEN
+        RETURN jsonb_build_object('success', false, 'message', 'No cash was issued for this allowance');
+    END IF;
+    
+    -- Calculate outstanding balance (issued - actual spent)
+    v_outstanding := v_allowance.cash_issued - COALESCE(v_allowance.actual_fuel_cost, 0);
+    
+    IF p_return_amount > v_outstanding THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Return amount exceeds outstanding balance of ' || v_outstanding);
+    END IF;
+    
+    IF p_return_amount <= 0 THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Return amount must be greater than zero');
+    END IF;
+    
+    -- Get driver info
+    SELECT * INTO v_driver FROM fleet_drivers WHERE id = v_allowance.driver_id;
+    
+    -- Get accounts
+    SELECT id INTO v_fiscal_year_id FROM fiscal_years WHERE is_closed = false LIMIT 1;
+    SELECT id INTO v_fuel_advance_account_id FROM chart_of_accounts WHERE account_code = '1415';
+    SELECT id INTO v_cash_account_id FROM chart_of_accounts WHERE account_code = '1010';
+    
+    -- Generate journal number
+    SELECT COALESCE(MAX(CAST(SUBSTRING(journal_number FROM 12) AS INTEGER)), 0) + 1
+    INTO v_next_number
+    FROM journal_entries
+    WHERE journal_number LIKE 'JE-FUELRET-%';
+    
+    v_journal_number := 'JE-FUELRET-' || LPAD(v_next_number::text, 4, '0');
+    
+    -- Create journal entry: Dr. Cash, Cr. Fuel Advance
+    INSERT INTO journal_entries (
+        id, journal_number, journal_type, journal_date, fiscal_year_id,
+        reference_type, reference_id, reference_number, narration,
+        total_debit, total_credit, status, posted_at, created_at
+    ) VALUES (
+        gen_random_uuid(),
+        v_journal_number,
+        'AUTO',
+        CURRENT_DATE,
+        v_fiscal_year_id,
+        'FUEL_RETURN',
+        p_allowance_id,
+        v_journal_number,
+        'Fuel advance return from driver ' || COALESCE(v_driver.name, 'Unknown'),
+        p_return_amount,
+        p_return_amount,
+        'posted',
+        NOW(),
+        NOW()
+    ) RETURNING id INTO v_journal_entry_id;
+    
+    -- Debit Cash
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_cash_account_id,
+        p_return_amount,
+        0,
+        'Cash returned by driver'
+    );
+    
+    -- Credit Fuel Advance
+    INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, debit_amount, credit_amount, description)
+    VALUES (
+        gen_random_uuid(),
+        v_journal_entry_id,
+        v_fuel_advance_account_id,
+        0,
+        p_return_amount,
+        'Fuel advance cleared - cash returned'
+    );
+    
+    -- Update allowance record
+    UPDATE fleet_fuel_allowances
+    SET cash_returned = COALESCE(cash_returned, 0) + p_return_amount,
+        cash_returned_date = NOW(),
+        return_journal_entry_id = v_journal_entry_id,
+        status = CASE 
+            WHEN (cash_issued - COALESCE(actual_fuel_cost, 0) - COALESCE(cash_returned, 0) - p_return_amount) <= 0 
+            THEN 'COMPLETED' 
+            ELSE status 
+        END
+    WHERE id = p_allowance_id;
+    
+    PERFORM update_account_balances();
+    
+    RETURN jsonb_build_object(
+        'success', true,
+        'journal_entry_id', v_journal_entry_id,
+        'journal_number', v_journal_number,
+        'amount', p_return_amount,
+        'message', 'Cash return recorded successfully'
+    );
+END;
+$$;
+
+
+--
+-- Name: start_driver_trip(uuid, uuid, numeric, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.start_driver_trip(p_vehicle_id uuid, p_driver_id uuid, p_start_mileage numeric, p_fuel_budget numeric DEFAULT NULL::numeric) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    v_trip_id uuid;
+    v_vehicle RECORD;
+    v_driver RECORD;
+    v_warehouse_name text;
+    v_allowance_id uuid;
+BEGIN
+    -- Get vehicle info
+    SELECT * INTO v_vehicle FROM fleet_vehicles WHERE id = p_vehicle_id;
+    IF v_vehicle IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Vehicle not found');
+    END IF;
+    
+    -- Get driver info (from fleet_drivers using employee_id)
+    SELECT fd.* INTO v_driver FROM fleet_drivers fd WHERE fd.employee_id = p_driver_id;
+    IF v_driver IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Driver not registered');
+    END IF;
+    
+    -- Check if driver already has an active trip
+    IF EXISTS (
+        SELECT 1 FROM fleet_trips 
+        WHERE driver_id = v_driver.id AND status = 'IN_PROGRESS'
+    ) THEN
+        RETURN jsonb_build_object('success', false, 'message', 'You already have an active trip');
+    END IF;
+    
+    -- Get warehouse name
+    SELECT name INTO v_warehouse_name FROM locations 
+    WHERE code = 'WH-001' OR name ILIKE '%warehouse%' 
+    LIMIT 1;
+    v_warehouse_name := COALESCE(v_warehouse_name, 'Main Warehouse');
+    
+    -- Create trip
+    INSERT INTO fleet_trips (
+        id, vehicle_id, driver_id, 
+        start_time, start_location, start_mileage, 
+        status
+    ) VALUES (
+        gen_random_uuid(),
+        p_vehicle_id,
+        v_driver.id,
+        NOW(),
+        v_warehouse_name,
+        p_start_mileage,
+        'IN_PROGRESS'
+    ) RETURNING id INTO v_trip_id;
+    
+    -- Update vehicle mileage
+    UPDATE fleet_vehicles SET current_mileage = p_start_mileage WHERE id = p_vehicle_id;
+    
+    -- Create fuel allowance if budget provided
+    IF p_fuel_budget IS NOT NULL AND p_fuel_budget > 0 THEN
+        INSERT INTO fleet_fuel_allowances (
+            id, trip_id, driver_id, vehicle_id,
+            allowance_date, budgeted_fuel_liters, budgeted_fuel_cost,
+            status
+        ) VALUES (
+            gen_random_uuid(),
+            v_trip_id,
+            v_driver.id,
+            p_vehicle_id,
+            CURRENT_DATE,
+            0, -- Liters unknown at start
+            p_fuel_budget,
+            'ACTIVE'
+        ) RETURNING id INTO v_allowance_id;
+    END IF;
+    
+    RETURN jsonb_build_object(
+        'success', true,
+        'trip_id', v_trip_id,
+        'allowance_id', v_allowance_id,
+        'message', 'Trip started successfully'
+    );
+END;
+$$;
+
+
+--
+-- Name: sync_sales_invoices_to_accounting(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_sales_invoices_to_accounting() RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_inserted integer := 0;
+BEGIN
+  INSERT INTO customer_invoices_accounting (
+    invoice_number,
+    customer_id,
+    sales_order_id,
+    invoice_date,
+    due_date,
+    reference_number,
+    subtotal,
+    tax_amount,
+    discount_amount,
+    total_amount,
+    amount_received,
+    payment_status,
+    status,
+    notes,
+    created_by,
+    location_id,
+    warehouse_id
+  )
+  SELECT
+    si.invoice_number,
+    si.customer_id,
+    si.sales_order_id,
+    si.invoice_date,
+    si.due_date,
+    si.invoice_number,
+    si.subtotal,
+    si.tax_amount,
+    si.discount_amount,
+    si.total_amount,
+    COALESCE(si.amount_paid, 0),
+    CASE
+      WHEN (si.total_amount - COALESCE(si.amount_paid, 0)) <= 0 THEN 'paid'
+      WHEN COALESCE(si.amount_paid, 0) > 0 THEN 'partial'
+      ELSE 'unpaid'
+    END,
+    CASE
+      WHEN si.status = 'void' THEN 'cancelled'
+      WHEN si.status = 'draft' THEN 'draft'
+      ELSE 'posted'
+    END,
+    si.notes,
+    si.created_by,
+    si.location_id,
+    si.warehouse_id
+  FROM sales_invoices si
+  LEFT JOIN customer_invoices_accounting ci ON ci.invoice_number = si.invoice_number
+  WHERE ci.id IS NULL;
+
+  GET DIAGNOSTICS v_inserted = ROW_COUNT;
+  RETURN v_inserted;
+END;
+$$;
+
+
+--
 -- Name: toggle_user_location_access(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4045,6 +5123,20 @@ BEGIN
         INSERT INTO user_allowed_locations (user_id, location_id, assigned_by)
         VALUES (p_user_id, p_location_id, p_assigned_by);
     END IF;
+END;
+$$;
+
+
+--
+-- Name: trigger_update_account_balances(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.trigger_update_account_balances() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM update_account_balances();
+  RETURN NULL;
 END;
 $$;
 
@@ -4144,7 +5236,7 @@ COMMENT ON FUNCTION public.trigger_vendor_bill_on_items() IS 'Ensures vendor bil
 --
 
 CREATE FUNCTION public.update_account_balances() RETURNS void
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 BEGIN
   UPDATE chart_of_accounts coa
@@ -4155,7 +5247,8 @@ BEGIN
       JOIN journal_entries je ON je.id = jel.journal_entry_id
       WHERE jel.account_id = coa.id
         AND je.status = 'posted'
-    ), 0);
+    ), 0)
+  WHERE true;
 END;
 $$;
 
@@ -4743,6 +5836,8 @@ CREATE TABLE public.customer_invoices_accounting (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
+    location_id uuid,
+    warehouse_id uuid,
     CONSTRAINT customer_invoices_accounting_payment_status_check CHECK ((payment_status = ANY (ARRAY['unpaid'::text, 'partial'::text, 'paid'::text, 'overdue'::text]))),
     CONSTRAINT customer_invoices_accounting_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'posted'::text, 'cancelled'::text])))
 );
@@ -4949,7 +6044,9 @@ CREATE TABLE public.employees (
     bank_account_number text,
     bank_name text,
     created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now()
+    updated_at timestamp with time zone DEFAULT now(),
+    license_number text,
+    license_expiry date
 );
 
 
@@ -5092,6 +6189,12 @@ END) STORED,
     notes text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    cash_issued numeric(15,2) DEFAULT 0,
+    cash_issued_date timestamp with time zone,
+    cash_returned numeric(15,2) DEFAULT 0,
+    cash_returned_date timestamp with time zone,
+    issue_journal_entry_id uuid,
+    return_journal_entry_id uuid,
     CONSTRAINT fleet_fuel_allowances_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'COMPLETED'::text, 'EXCEEDED'::text, 'CANCELLED'::text])))
 );
 
@@ -5213,6 +6316,7 @@ CREATE TABLE public.fleet_vehicles (
     last_service_mileage numeric,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     location_id uuid,
+    default_fuel_budget numeric(15,2) DEFAULT 0,
     CONSTRAINT fleet_vehicles_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'MAINTENANCE'::text, 'RETIRED'::text])))
 );
 
@@ -6077,6 +7181,9 @@ CREATE TABLE public.sales_invoices (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     trip_id uuid,
+    journal_entry_id uuid,
+    location_id uuid,
+    warehouse_id uuid,
     CONSTRAINT sales_invoices_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'posted'::text, 'paid'::text, 'void'::text, 'overdue'::text])))
 );
 
@@ -8508,6 +9615,13 @@ CREATE INDEX idx_role_permissions_role ON public.role_permissions USING btree (r
 
 
 --
+-- Name: idx_sales_invoices_journal_entry_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sales_invoices_journal_entry_id ON public.sales_invoices USING btree (journal_entry_id);
+
+
+--
 -- Name: idx_sales_orders_customer; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8571,6 +9685,34 @@ CREATE TRIGGER trg_create_vehicle_location AFTER INSERT ON public.fleet_vehicles
 
 
 --
+-- Name: pos_sales trg_pos_sales_to_customer_invoices; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_pos_sales_to_customer_invoices AFTER INSERT ON public.pos_sales FOR EACH ROW EXECUTE FUNCTION public.create_customer_invoice_from_pos_sale();
+
+
+--
+-- Name: sales_invoices trg_sales_invoices_to_customer_invoices; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sales_invoices_to_customer_invoices AFTER INSERT ON public.sales_invoices FOR EACH ROW EXECUTE FUNCTION public.create_customer_invoice_from_sales_invoice();
+
+
+--
+-- Name: journal_entries trg_update_account_balances_on_je_status; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_update_account_balances_on_je_status AFTER UPDATE OF status ON public.journal_entries FOR EACH STATEMENT EXECUTE FUNCTION public.trigger_update_account_balances();
+
+
+--
+-- Name: journal_entry_lines trg_update_account_balances_on_jel; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_update_account_balances_on_jel AFTER INSERT OR DELETE OR UPDATE ON public.journal_entry_lines FOR EACH STATEMENT EXECUTE FUNCTION public.trigger_update_account_balances();
+
+
+--
 -- Name: customer_invoices_accounting trg_update_customer_balance_invoice; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8596,6 +9738,13 @@ CREATE TRIGGER trigger_adjustment_approval AFTER UPDATE ON public.stock_adjustme
 --
 
 CREATE TRIGGER trigger_auto_create_vendor_bill AFTER INSERT ON public.goods_receipts FOR EACH ROW EXECUTE FUNCTION public.auto_create_vendor_bill_from_grn();
+
+
+--
+-- Name: employees trigger_auto_register_fleet_driver; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trigger_auto_register_fleet_driver AFTER INSERT OR UPDATE OF designation ON public.employees FOR EACH ROW EXECUTE FUNCTION public.auto_register_fleet_driver();
 
 
 --
@@ -8949,11 +10098,27 @@ ALTER TABLE ONLY public.customer_invoices_accounting
 
 
 --
+-- Name: customer_invoices_accounting customer_invoices_accounting_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_invoices_accounting
+    ADD CONSTRAINT customer_invoices_accounting_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(id);
+
+
+--
 -- Name: customer_invoices_accounting customer_invoices_accounting_sales_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.customer_invoices_accounting
     ADD CONSTRAINT customer_invoices_accounting_sales_order_id_fkey FOREIGN KEY (sales_order_id) REFERENCES public.sales_orders(id);
+
+
+--
+-- Name: customer_invoices_accounting customer_invoices_accounting_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_invoices_accounting
+    ADD CONSTRAINT customer_invoices_accounting_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES public.inventory_locations(id);
 
 
 --
@@ -9250,6 +10415,22 @@ ALTER TABLE ONLY public.fleet_fuel_allowances
 
 ALTER TABLE ONLY public.fleet_fuel_allowances
     ADD CONSTRAINT fleet_fuel_allowances_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.fleet_drivers(id);
+
+
+--
+-- Name: fleet_fuel_allowances fleet_fuel_allowances_issue_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_allowances
+    ADD CONSTRAINT fleet_fuel_allowances_issue_journal_entry_id_fkey FOREIGN KEY (issue_journal_entry_id) REFERENCES public.journal_entries(id);
+
+
+--
+-- Name: fleet_fuel_allowances fleet_fuel_allowances_return_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fleet_fuel_allowances
+    ADD CONSTRAINT fleet_fuel_allowances_return_journal_entry_id_fkey FOREIGN KEY (return_journal_entry_id) REFERENCES public.journal_entries(id);
 
 
 --
@@ -9957,6 +11138,22 @@ ALTER TABLE ONLY public.sales_invoices
 
 
 --
+-- Name: sales_invoices sales_invoices_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_invoices
+    ADD CONSTRAINT sales_invoices_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES public.journal_entries(id);
+
+
+--
+-- Name: sales_invoices sales_invoices_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_invoices
+    ADD CONSTRAINT sales_invoices_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(id);
+
+
+--
 -- Name: sales_invoices sales_invoices_sales_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9970,6 +11167,14 @@ ALTER TABLE ONLY public.sales_invoices
 
 ALTER TABLE ONLY public.sales_invoices
     ADD CONSTRAINT sales_invoices_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.fleet_trips(id) ON DELETE SET NULL;
+
+
+--
+-- Name: sales_invoices sales_invoices_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_invoices
+    ADD CONSTRAINT sales_invoices_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES public.inventory_locations(id);
 
 
 --
@@ -11403,5 +12608,5 @@ ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict SD6Qi5uHXzyP5voOugdngUQb8rNsTYt46fGxwOlWN3PEuDruUnTfkB5aizcGb2D
+\unrestrict xDb0IQRU1CcRwpQs3N19ByAcJlsLay3kKjn433OS6E03VxgF391OOO7YPhdF644
 

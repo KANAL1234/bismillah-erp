@@ -1,6 +1,31 @@
 {
-  "name": "bismillah-erp",
-  "version": "0.1.0",
+  "name": "business-erp-system",
+  "version": "2.0.0",
+  "description": "A comprehensive, full-stack Enterprise Resource Planning (ERP) solution built with Next.js 16, TypeScript, and Supabase. Features complete modules for inventory, sales, procurement, accounting, HR, and fleet management.",
+  "author": "Kanal Chandna <officialkchandna@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KANAL1234/business-erp-system.git"
+  },
+  "homepage": "https://github.com/KANAL1234/business-erp-system#readme",
+  "keywords": [
+    "erp",
+    "enterprise-resource-planning",
+    "inventory-management",
+    "accounting",
+    "point-of-sale",
+    "pos",
+    "fleet-management",
+    "nextjs",
+    "typescript",
+    "supabase",
+    "postgresql",
+    "react",
+    "tailwindcss",
+    "pwa",
+    "offline-first"
+  ],
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",

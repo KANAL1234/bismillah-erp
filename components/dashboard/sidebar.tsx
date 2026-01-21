@@ -60,7 +60,7 @@ export function Sidebar() {
         <div className={cn("flex h-full flex-col border-r bg-slate-50 transition-all duration-300", isOpen ? "w-64" : "w-0 overflow-hidden border-none")}>
             {/* Logo/Brand */}
             <div className="flex h-16 items-center border-b px-6">
-                <h1 className="text-xl font-bold text-slate-900 truncate">Bismillah ERP</h1>
+                <h1 className="text-xl font-bold text-slate-900 truncate">Business-ERP-Software</h1>
             </div>
 
             {/* Navigation */}

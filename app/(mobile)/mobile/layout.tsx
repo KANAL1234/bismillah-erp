@@ -14,13 +14,13 @@ export const viewport: Viewport = {
 }
 
 export const metadata = {
-  title: 'Bismillah Driver App',
-  description: 'Mobile app for Bismillah Oil Agency drivers',
+  title: 'Business-ERP-Software Driver App',
+  description: 'Mobile app for Business-ERP-Software drivers',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Bismillah Driver'
+    title: 'Business-ERP-Software Driver'
   }
 }
 

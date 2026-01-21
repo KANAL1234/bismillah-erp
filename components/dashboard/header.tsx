@@ -50,7 +50,7 @@ export function DashboardHeader({ userEmail }: { userEmail: string }) {
                 >
                     <PanelLeft className="h-5 w-5" />
                 </Button>
-                <h2 className="text-lg font-semibold text-slate-900">Bismillah Oil Agency</h2>
+                <h2 className="text-lg font-semibold text-slate-900">Business-ERP-Software</h2>
             </div>
             <div className="flex items-center gap-4">
                 <LocationSelector />

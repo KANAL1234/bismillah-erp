@@ -200,7 +200,7 @@ export default function MobileProfilePage() {
             </Button>
 
             <p className="text-center text-xs text-muted-foreground pt-4">
-                Bismillah ERP Mobile • {new Date().getFullYear()}
+                Business-ERP-Software Mobile • {new Date().getFullYear()}
             </p>
         </div>
     )

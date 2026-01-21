@@ -55,7 +55,7 @@ export function Receipt({ saleId, onClose }: Props) {
                 <CardContent className="p-8 print:p-4">
                     {/* Company Header */}
                     <div className="text-center mb-6">
-                        <h1 className="text-2xl font-bold">Bismillah Oil Agency</h1>
+                        <h1 className="text-2xl font-bold">Business-ERP-Software</h1>
                         <p className="text-sm text-gray-600">Rawalpindi, Pakistan</p>
                         <p className="text-sm text-gray-600">Phone: 051-XXXXXXX</p>
                         <p className="text-sm text-gray-600">NTN: XXXXXXXXX</p>

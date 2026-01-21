@@ -14,13 +14,13 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Bismillah Oil Agency ERP',
+  title: 'Business-ERP-Software',
   description: 'Enterprise Resource Planning System',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Bismillah',
+    title: 'Business-ERP-Software',
   },
 }
 
