@@ -115,15 +115,6 @@ function StockTransfersContent() {
         }
     }
 
-    if (isLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 space-y-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
-                <p className="text-slate-500 font-medium">Loading transfers...</p>
-            </div>
-        )
-    }
-
     const sortTransfers = useMemo(() => {
         const sorters: Record<string, (row: any) => string | number> = {
             transfer_date: (row) => new Date(row.transfer_date || row.created_at).getTime(),
@@ -150,6 +141,15 @@ function StockTransfersContent() {
     const inProgressTransfers = sortTransfers(allTransfers?.filter(t => ['APPROVED', 'IN_TRANSIT'].includes(t.status)))
     const completedTransfers = sortTransfers(allTransfers?.filter(t => t.status === 'COMPLETED'))
     const sortedAllTransfers = sortTransfers(allTransfers)
+
+    if (isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+                <p className="text-slate-500 font-medium">Loading transfers...</p>
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6">

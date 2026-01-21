@@ -207,10 +207,6 @@ function PurchaseOrdersContent() {
         }
     }
 
-    if (isLoading) {
-        return <div className="flex items-center justify-center h-64">Loading...</div>
-    }
-
     const grnOrderIds = new Set((grns || []).map((grn: any) => grn.po_id).filter(Boolean))
 
     const sortOrders = useMemo(() => {
@@ -240,6 +236,10 @@ function PurchaseOrdersContent() {
     const approvedOrders = sortOrders(allOrders?.filter(o => ['APPROVED', 'SENT_TO_VENDOR'].includes(o.status)))
     const receivedOrders = sortOrders(allOrders?.filter(o => ['PARTIALLY_RECEIVED', 'RECEIVED'].includes(o.status)))
     const sortedAllOrders = sortOrders(allOrders)
+
+    if (isLoading) {
+        return <div className="flex items-center justify-center h-64">Loading...</div>
+    }
 
     return (
         <div className="space-y-6">

@@ -151,15 +151,6 @@ function StockAdjustmentsContent() {
         }
     }
 
-    if (isLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center h-64 space-y-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
-                <p className="text-slate-500 font-medium">Syncing adjustments...</p>
-            </div>
-        )
-    }
-
     const sortAdjustments = useMemo(() => {
         const sorters: Record<string, (row: any) => string | number> = {
             adjustment_date: (row) => new Date(row.adjustment_date || row.created_at).getTime(),
@@ -185,6 +176,15 @@ function StockAdjustmentsContent() {
     const pendingAdjustments = sortAdjustments(allAdjustments?.filter(a => a.status === 'PENDING_APPROVAL'))
     const approvedAdjustments = sortAdjustments(allAdjustments?.filter(a => a.status === 'APPROVED'))
     const sortedAllAdjustments = sortAdjustments(allAdjustments)
+
+    if (isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+                <p className="text-slate-500 font-medium">Syncing adjustments...</p>
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6">
